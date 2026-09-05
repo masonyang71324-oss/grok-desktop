@@ -1,0 +1,81 @@
+{
+  "name": "grok-desktop",
+  "version": "1.2.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "description": "Grok Build desktop workspace with English and Simplified Chinese UI",
+  "main": "electron/main.cjs",
+  "author": "Grok Desktop",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "electron .",
+    "build": "tsc --noEmit && vite build",
+    "test": "node --test tests/*.test.cjs",
+    "test:e2e": "node tests/e2e-smoke.cjs && node tests/e2e-lifecycle.cjs && node tests/e2e-recovery.cjs",
+    "bench:markdown": "node scripts/bench-markdown.cjs",
+    "format": "prettier --write src electron scripts tests *.json *.ts *.html *.md docs .github",
+    "format:check": "prettier --check src electron scripts tests *.json *.ts *.html *.md docs .github",
+    "dist": "npm run build && electron-builder --win nsis portable --x64"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "highlight.js": "^11.12.0",
+    "lucide-react": "^0.468.0",
+    "marked": "^18.0.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "electron": "44.2.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.55.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  },
+  "build": {
+    "appId": "local.grok.desktop",
+    "productName": "Grok Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico",
+      "signExecutable": false
+    },
+    "nsis": {
+      "artifactName": "Grok-Desktop-${version}-Setup.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Grok Desktop",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "Grok-Desktop-${version}-Windows.exe"
+    }
+  }
+}

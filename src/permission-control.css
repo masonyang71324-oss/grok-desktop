@@ -1,0 +1,114 @@
+.permission-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.permission-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+.permission-trigger strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+.permission-trigger:hover,
+.permission-trigger[aria-expanded='true'] {
+  background: var(--surface-hover);
+  border-color: var(--faint);
+}
+.permission-trigger.is-auto > svg:first-child,
+.permission-trigger.is-auto strong {
+  color: var(--accent);
+}
+.permission-menu {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 0;
+  z-index: 40;
+  width: 320px;
+  max-width: calc(100vw - 80px);
+  padding: 7px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+.permission-menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px 11px;
+}
+.permission-menu-heading strong {
+  font-size: 12px;
+  color: var(--text);
+}
+.permission-menu-heading span {
+  font-size: 11px;
+  color: var(--faint);
+}
+.permission-menu > [role='menuitemradio'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 10px;
+  border-radius: 7px;
+  text-align: left;
+}
+.permission-menu > [role='menuitemradio']:hover,
+.permission-menu > [role='menuitemradio']:focus-visible {
+  background: var(--surface-hover);
+}
+.permission-menu > [role='menuitemradio'][aria-checked='true'] {
+  background: var(--accent-soft);
+}
+.permission-menu > [role='menuitemradio'] strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.permission-menu > [role='menuitemradio'] small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.permission-menu > [role='menuitemradio'] > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.permission-menu > p {
+  padding: 10px 10px 5px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.permission-menu .inline-error {
+  margin: 7px;
+}
+.composer-bottom {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.composer-bottom .permission-control {
+  margin-right: auto;
+}
+@media (max-width: 1100px) {
+  .composer-bottom > span {
+    display: none;
+  }
+}

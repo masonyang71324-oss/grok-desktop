@@ -1,0 +1,210 @@
+.permission-review-header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 15px;
+}
+.permission-review-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 43px;
+  height: 43px;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  background: var(--accent-soft);
+  border-radius: 11px;
+  color: var(--accent);
+}
+.permission-review-header h3 {
+  font-size: 16px;
+  font-weight: 550;
+  line-height: 1.6;
+}
+.permission-review-header p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-top: 3px;
+}
+.permission-command-preview {
+  font:
+    11px/1.7 'Cascadia Code',
+    Consolas,
+    monospace;
+  padding: 11px 13px;
+  color: var(--muted);
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin-bottom: 11px;
+  user-select: text;
+}
+.permission-review-details,
+.permission-source-options {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 11px;
+}
+.permission-review-details > summary,
+.permission-source-options > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+.permission-review-details > summary::-webkit-details-marker,
+.permission-source-options > summary::-webkit-details-marker {
+  display: none;
+}
+.permission-review-details > summary > svg:last-child,
+.permission-source-options > summary > svg:last-child {
+  margin-left: auto;
+  width: 13px;
+}
+.permission-review-details[open] > summary > svg:last-child,
+.permission-source-options[open] > summary > svg:last-child {
+  transform: rotate(90deg);
+}
+.permission-review-details[open] > summary,
+.permission-source-options[open] > summary {
+  border-bottom: 1px solid var(--border-soft);
+}
+.permission-detail-section {
+  padding: 13px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.permission-detail-section:last-child {
+  border: 0;
+}
+.permission-detail-section h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--faint);
+}
+.permission-detail-section pre {
+  font:
+    12px/1.8 'Cascadia Code',
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  color: var(--text);
+  user-select: text;
+}
+.permission-source-options dl {
+  margin: 0;
+  padding: 11px 13px;
+  max-height: 240px;
+  overflow: auto;
+}
+.permission-source-options dt {
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 11px;
+  color: var(--text);
+}
+.permission-source-options dt:first-child {
+  margin-top: 0;
+}
+.permission-source-options dd {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.permission-following-mode {
+  margin-top: 21px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.permission-following-mode > p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin: 8px 0 0;
+}
+.permission-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 22px;
+}
+.permission-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 76px;
+  padding: 12px 13px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.permission-choice strong {
+  font-size: 12px;
+  line-height: 1.7;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.permission-choice small {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.permission-choice:hover {
+  background: var(--surface-hover);
+  border-color: var(--faint);
+}
+.permission-choice.primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.permission-choice.primary:hover {
+  border-color: var(--accent);
+}
+.permission-choice.primary small {
+  color: var(--accent);
+  opacity: 0.85;
+}
+.permission-cancel-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 13px;
+}
+.permission-cancel-row > .text-button {
+  font-size: 12px;
+  color: var(--muted);
+}
+.permission-cancel-row > .spin {
+  color: var(--muted);
+}
+.permission-footer {
+  width: 100%;
+  min-width: 0;
+}
+.permission-footer .permission-action-grid {
+  margin-top: 0;
+}

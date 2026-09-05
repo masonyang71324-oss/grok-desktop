@@ -1,0 +1,234 @@
+.code-block {
+  margin: 18px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sidebar);
+}
+.code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.code-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.code-toolbar button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.markdown .code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal {
+  color: #c5a9ed;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-regexp {
+  color: #a3d9b4;
+}
+.hljs-title,
+.hljs-built_in,
+.hljs-type {
+  color: #8ebde5;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-variable {
+  color: #e7ba8f;
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted);
+}
+:root[data-theme='light'] .hljs-keyword,
+:root[data-theme='light'] .hljs-selector-tag,
+:root[data-theme='light'] .hljs-literal {
+  color: #7845a9;
+}
+:root[data-theme='light'] .hljs-string,
+:root[data-theme='light'] .hljs-attr,
+:root[data-theme='light'] .hljs-regexp {
+  color: #287448;
+}
+:root[data-theme='light'] .hljs-title,
+:root[data-theme='light'] .hljs-built_in,
+:root[data-theme='light'] .hljs-type {
+  color: #245d99;
+}
+:root[data-theme='light'] .hljs-number,
+:root[data-theme='light'] .hljs-symbol,
+:root[data-theme='light'] .hljs-variable {
+  color: #99601e;
+}
+.tool-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 5px 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.tool-file-link:hover {
+  text-decoration: underline;
+}
+.tool-locations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 12px 0;
+}
+.tool-locations .eyebrow {
+  width: 100%;
+}
+.tool-diff {
+  margin: 10px 0;
+  min-width: 0;
+}
+.tool-diff-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.tool-diff-grid > div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.tool-diff-grid .eyebrow {
+  padding: 8px 12px;
+  background: var(--surface);
+}
+.tool-diff-grid pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  border-radius: 0;
+  font-size: 11px;
+}
+.tool-diff-old pre {
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
+}
+.tool-diff-new pre {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+}
+.workspace-entry {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.workspace-entry .file-row {
+  flex: 1;
+  min-width: 0;
+}
+.workspace-entry-actions {
+  display: flex;
+  flex-shrink: 0;
+  opacity: 0.65;
+  padding-right: 8px;
+}
+.workspace-entry-actions .icon-button {
+  width: 24px;
+  height: 26px;
+}
+.workspace-entry:hover .workspace-entry-actions,
+.workspace-entry:focus-within .workspace-entry-actions {
+  opacity: 1;
+}
+.inspector-options {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.inspector-options label,
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inspector-options input,
+.settings-check input {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+.file-preview-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.diff-line-number {
+  display: inline-block;
+  width: 4em;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+  flex-shrink: 0;
+  padding-right: 10px;
+}
+.diff-line-content {
+  white-space: pre;
+}
+.composer.is-dragging {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.drop-hint {
+  color: var(--accent);
+  font-size: 12px;
+  padding: 10px 14px 0;
+  pointer-events: none;
+}
+.dialog-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #0006;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  backdrop-filter: blur(3px);
+}
+.settings-check {
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+@media (max-width: 1100px) {
+  .tool-diff-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
