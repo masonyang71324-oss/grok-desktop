@@ -125,7 +125,14 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentPreview, setAttachmentPreview] = useState<
-    (Attachment & { dataUrl?: string; notice?: string; loading?: boolean; error?: string }) | null
+    | (Attachment & {
+        dataUrl?: string;
+        notice?: string;
+        native?: boolean;
+        loading?: boolean;
+        error?: string;
+      })
+    | null
   >(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -983,12 +990,14 @@ export default function App() {
     setAttachmentPreview(preview);
     if (file.text !== undefined || !file.path) return;
     try {
-      const value = await request<{ text?: string; dataUrl?: string; notice?: string }>(
-        'attachment.preview',
-        {
-          path: file.path,
-        },
-      );
+      const value = await request<{
+        text?: string;
+        dataUrl?: string;
+        notice?: string;
+        native?: boolean;
+      }>('attachment.preview', {
+        path: file.path,
+      });
       setAttachmentPreview((current) => (current === preview ? { ...file, ...value } : current));
     } catch (e) {
       setAttachmentPreview((current) =>
@@ -1675,8 +1684,8 @@ export default function App() {
                   : t('发送时会让 Grok 读取所附图片文件。')}
               </p>
             )}
-            {attachments.some((file) => /\.docx?$/i.test(file.path)) && (
-              <p className="attachment-hint">{t('Word 文档会自动提取文字，点击附件可预览。')}</p>
+            {attachments.some((file) => file.kind !== 'image') && (
+              <p className="attachment-hint">{t('文档会自动选择读取方式，点击附件可预览。')}</p>
             )}
             <textarea
               ref={draftRef}
@@ -1909,10 +1918,33 @@ export default function App() {
             {attachmentPreview.notice && (
               <p className="attachment-notice">{t('以下为发送给 Grok 的文字。')}</p>
             )}
-            {!attachmentPreview.loading && !attachmentPreview.error && (
-              <pre className="attachment-preview">
-                {attachmentPreview.text || attachmentPreview.path}
-              </pre>
+            {attachmentPreview.native && (
+              <p className="attachment-notice">
+                {t('由 Grok 原生读取；发送时读取本地文件的最新内容。')}
+              </p>
+            )}
+            {attachmentPreview.native && (
+              <p className="attachment-native-description">{attachmentPreview.text}</p>
+            )}
+            {!attachmentPreview.loading &&
+              !attachmentPreview.error &&
+              !attachmentPreview.native && (
+                <pre className="attachment-preview">
+                  {attachmentPreview.text || attachmentPreview.path}
+                </pre>
+              )}
+            {attachmentPreview.path && (
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  void request('system.open', {
+                    target: 'file',
+                    path: attachmentPreview.path,
+                  }).catch((e) => notify(errorText(e)));
+                }}
+              >
+                {t('用默认程序打开原文件')}
+              </button>
             )}
           </Modal>
         )}

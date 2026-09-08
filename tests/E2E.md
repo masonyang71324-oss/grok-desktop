@@ -21,3 +21,5 @@
 截图专项 e2e-images.cjs 也纳入 npm run test:e2e：使用 GROK_DESKTOP_MOCK_IMAGE=false 模拟当前 CLI，检查粘贴保存、缩略图、预览、纯图片发送、本地路径协议、草稿重载与文件丢失；另以英文界面验证原生图片通道。剪贴板测试先完整读取备份内容，再替换测试图片，结束后恢复。
 
 Word 专项 e2e-word.cjs 覆盖 .doc/.docx 的文件选择、提取预览、发送到 ACP，以及转换失败后的草稿保留和预览错误。测试使用公开 MIT 样例和自制中文文档，不包含用户实际文件，支持同样的已打包程序参数。
+
+通用文档专项 `e2e-documents.cjs` 覆盖中英界面的 PDF 原生读取说明、打开原文件、Excel/OFD 提取预览、多个格式混合发送，以及 CAJ 失败保留草稿。解析器和工作线程为真实实现；只替换 Grok 服务和操作系统打开文件动作，不使用真实订阅。PDF/PPTX 原生支持另由 Grok Build 1.0.13 的实际 ACP 探针确认，详情见 `docs/attachment-formats.md`。

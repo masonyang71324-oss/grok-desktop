@@ -1,4 +1,42 @@
 module.exports = {
+  '已提取工作表和单元格数据；公式显示文件中的已有结果，不会重新计算。图片、图表和排版未包含在内。':
+    'Worksheet and cell data extracted. Formulas show saved results and are not recalculated. Images, charts and layout are not included.',
+  '已提取正文和邮件信息；内嵌附件仅列出名称，需另行添加才能读取。图片和排版未包含在内。':
+    'Body text and email information extracted. Embedded attachments are listed by name; attach them separately to read them. Images and layout are not included.',
+  '已提取文档文字；图片、签章和原始排版未包含在内。':
+    'Document text extracted; images, seals and original layout are not included.',
+  常见文档: 'Common documents',
+  'Word 与 WPS 文字': 'Word and WPS documents',
+  表格: 'Spreadsheets',
+  演示文稿: 'Presentations',
+  'PDF 与 OFD': 'PDF and OFD',
+  '文档单个不得超过 10 MB。': 'Documents are limited to 10 MB each.',
+  '原生文档单个不得超过 10 MB，总计不得超过 20 MB。':
+    'Native documents are limited to 10 MB each and 20 MB combined.',
+  '文件不是有效的 {format} 文档。请确认能正常打开。':
+    'This is not a valid {format} document. Check that it opens normally.',
+  '此类 CAJ 文献暂不能可靠地自动转换。请用 CAJViewer 打开并打印为 PDF，再添加 PDF；草稿和原文件会保留。':
+    'This CAJ document cannot be converted reliably yet. Open it in CAJViewer, print to PDF, then attach the PDF. Your draft and original file are preserved.',
+  '不支持此文件格式或文本编码：{name}。请另存为 PDF 或 UTF-8 文本后重试。':
+    'Unsupported file format or text encoding: {name}. Save as PDF or UTF-8 text and retry.',
+  '已提取文档文字和数据；图片、签章和原始排版未包含在内。公式不会重新计算，邮件内的附件仅列出名称。':
+    'Document text and data extracted; images, seals and original layout are not included. Formulas are not recalculated; email attachments are listed by name only.',
+  '无法读取文档。请确认文件未加密且能正常打开，或另存为 PDF、DOCX、XLSX 后重试。':
+    'Could not read document. Check that it is unencrypted and opens normally, or save as PDF, DOCX or XLSX and retry.',
+  '暂不支持此文件的内部格式。请用原软件另存为 PDF、DOCX 或 XLSX 后重试。':
+    'This internal file format is not supported. Save as PDF, DOCX or XLSX in the original app and retry.',
+  '文档中没有可提取的文字或数据。扫描文档请另存为 PDF 或图片后添加。':
+    'No extractable text or data in this document. Save scanned documents as PDF or images and attach them.',
+  '文档提取内容超过 1 MB，请拆分文档后重试。':
+    'Extracted document content exceeds 1 MB. Split the document and retry.',
+  '文档读取超时，请拆分文档或另存为 PDF 后重试。':
+    'Document reading timed out. Split the document or save as PDF and retry.',
+  '发送后由 Grok 原生读取 PDF 页面，支持扫描页和图片。读取范围以会话中的工具结果为准。':
+    'Grok reads PDF pages natively, including scanned pages and images. The tool results in the conversation show which pages were read.',
+  '发送后由 Grok 原生读取幻灯片文字和备注；不保证读取其中的图片和图表。':
+    'Grok reads slide text and speaker notes natively. Embedded images and charts may not be read.',
+  '发送后由 Grok 原生读取笔记本单元格和已有输出，不会为预览运行代码。':
+    'Grok reads notebook cells and existing outputs natively. Preview does not execute code.',
   'Word 文档': 'Word documents',
   'Word 文档单个不得超过 10 MB。': 'Word documents are limited to 10 MB each.',
   '已提取 Word 文字；图片、签章和原始排版未包含在内。':

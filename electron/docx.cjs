@@ -6,6 +6,17 @@ const BufferReader = require('word-extractor/lib/buffer-reader');
 // word-extractor is pinned to 1.0.4: retain its document semantics while fixing
 // split UTF-8 chunks and modern textboxes without duplicating alternate markup.
 class DocxExtractor extends OpenOfficeExtractor {
+  constructor() {
+    super();
+    // These Word containers use the same document XML; VBA parts are never read.
+    for (const type of [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml',
+      'application/vnd.ms-word.document.macroEnabled.main+xml',
+      'application/vnd.ms-word.template.macroEnabledTemplate.main+xml',
+    ])
+      this._streamTypes[type] = true;
+  }
+
   createXmlParser() {
     const parser = super.createXmlParser();
     const decoder = new StringDecoder('utf8');

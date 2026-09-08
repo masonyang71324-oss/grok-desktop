@@ -29,6 +29,7 @@ const { createWorkspaceWatcher } = require('./workspace-watch.cjs');
 const { createCheckpointStore } = require('./checkpoints.cjs');
 const { createProjectRunner } = require('./project-runner.cjs');
 const { storeClipboardImage, previewAttachment } = require('./attachments.cjs');
+const documentFormats = require('./document.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -345,6 +346,10 @@ const handlers = {
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
+          name: t('常见文档'),
+          extensions: ['pdf', 'pptx', 'ipynb', ...documentFormats.extensions, 'txt', 'md'],
+        },
+        {
           name: t('文本与代码'),
           extensions: [
             'txt',
@@ -374,7 +379,10 @@ const handlers = {
             'ps1',
           ],
         },
-        { name: t('Word 文档'), extensions: ['doc', 'docx'] },
+        { name: t('Word 与 WPS 文字'), extensions: documentFormats.groups.word },
+        { name: t('表格'), extensions: documentFormats.groups.sheets },
+        { name: t('演示文稿'), extensions: ['pptx', ...documentFormats.groups.ppt, 'odp', 'otp'] },
+        { name: t('PDF 与 OFD'), extensions: ['pdf', 'ofd'] },
         { name: t('图片'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
         { name: t('所有文件'), extensions: ['*'] },
       ],

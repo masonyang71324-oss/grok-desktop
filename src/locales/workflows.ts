@@ -1,4 +1,9 @@
 export const workflows: Record<string, string> = {
+  '文档会自动选择读取方式，点击附件可预览。':
+    'Documents use the appropriate reader automatically. Click an attachment to preview.',
+  '由 Grok 原生读取；发送时读取本地文件的最新内容。':
+    'Read natively by Grok using the local file contents at the time of reading.',
+  用默认程序打开原文件: 'Open original in default app',
   'Word 文档会自动提取文字，点击附件可预览。':
     'Word text is extracted automatically. Click an attachment to preview.',
   '正在读取附件…': 'Reading attachment…',

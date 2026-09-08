@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" office:version="1.2" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+  <office:body><office:spreadsheet><table:table table:name="中文台账">
+    <table:table-row>
+      <table:table-cell office:value-type="string"><text:p>00123</text:p></table:table-cell>
+      <table:table-cell office:value-type="date" office:date-value="2026-09-08"><text:p>2026年09月08日</text:p></table:table-cell>
+      <table:table-cell office:value-type="currency" office:currency="CNY" office:value="12.5"><text:p>¥12.50</text:p></table:table-cell>
+      <table:table-cell office:value-type="float" office:value="25" table:formula="of:=[.C1]*2"><text:p>25.00</text:p></table:table-cell>
+    </table:table-row>
+  </table:table></office:spreadsheet></office:body>
+</office:document>

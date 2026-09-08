@@ -18,6 +18,19 @@ The Windows app uses Electron, React, TypeScript and Vite. It starts installed G
 
 ## Rendering and persistence
 
+The 1.4.0 attachment router in `document.cjs` separates native PDF/PPTX/IPYNB paths
+from local document extraction. `document-worker.cjs` runs spreadsheet, RTF/mail,
+OpenDocument/OFD/EPUB and legacy PPT readers in a short-lived worker with a 256 MB
+heap and 30-second timeout. Original files remain unchanged. `document-text.cjs`
+decodes UTF-8, BOM UTF-16 and Chinese GB18030 text. HTML/code files retain source
+text; HTML extraction is used for mail and Word-compatible HTML documents.
+
+SheetJS is vendored from the official 0.20.3 tarball rather than the outdated npm
+registry version. PPT binary reading follows the latest edit/persist directory
+and current slide references, excluding deleted revisions. OFD follows document
+and page references, and EPUB follows the OPF spine. The bilingual support matrix
+in `attachment-formats.md` documents incompatible proprietary variants and CAJ.
+
 The main process batches text chunks for up to 16 ms; permissions and terminal events first flush that batch. Preload restores the original event sequence. The renderer also coalesces timeline updates by animation frame and flushes before turn completion.
 
 Markdown is fully parsed and sanitized so later references, fences and nested lists remain correct. Unchanged DOM blocks are retained. Code languages and management dialogs load on demand; syntax highlighting never touches the source used for copying. Tool diffs retain old/new content and file locations.

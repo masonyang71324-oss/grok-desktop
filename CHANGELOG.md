@@ -1,5 +1,16 @@
 # Changes
 
+## 1.4.0
+
+- Native Grok PDF/PPTX/IPYNB attachment routes verified with Grok Build 1.0.13.
+- Local spreadsheet, compatible WPS/Office template, legacy PowerPoint, OFD,
+  OpenDocument, RTF, email and EPUB text extraction in bounded workers.
+- Chinese GBK/GB18030 and BOM UTF-16 decoding, original-file open buttons and
+  native-reading preview explanations in Chinese and English.
+- Explicit limits and unsupported proprietary-file guidance preserve failed
+  drafts; CAJ still needs CAJViewer → Print to PDF.
+- See [format matrix](docs/attachment-formats.md) for the support boundary.
+
 ## 1.3.2
 
 - Read common Word DOC/DOCX attachments by extracting text locally before sending. No Word, WPS or additional application is required; original files are not modified.

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uof:UOF xmlns:uof="http://schemas.uof.org/cn/2009/uof" xmlns:表="http://schemas.uof.org/cn/2009/spreadsheet" xmlns:字="http://schemas.uof.org/cn/2009/wordproc">
+  <表:电子表格文档><表:主体><表:工作表 表:名称="中文工作表">
+    <表:行 表:行号="1">
+      <表:数据 表:数据类型="text"><字:文本串>客户编号</字:文本串></表:数据>
+      <表:数据 表:数据类型="text"><字:文本串>00123</字:文本串></表:数据>
+    </表:行>
+  </表:工作表></表:主体></表:电子表格文档>
+</uof:UOF>

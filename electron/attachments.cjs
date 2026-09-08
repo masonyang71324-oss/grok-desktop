@@ -3,6 +3,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { translate: t } = require('./i18n.cjs');
+const documents = require('./document.cjs');
+const { decodeText } = require('./document-text.cjs');
 
 const MB = 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -27,7 +29,8 @@ function imageMime(bytes) {
 async function preparePrompt(text, attachments = [], capabilities = {}) {
   const content = text?.trim() ? [{ type: 'text', text }] : [];
   let textBytes = 0,
-    imageBytes = 0;
+    imageBytes = 0,
+    nativeBytes = 0;
   for (const attachment of attachments || []) {
     const name = String(attachment.name || 'Context');
     if (typeof attachment.text === 'string') {
@@ -39,6 +42,7 @@ async function preparePrompt(text, attachments = [], capabilities = {}) {
       continue;
     }
     const filename = path.resolve(attachment.path);
+    const extension = path.extname(filename).toLowerCase();
     const stat = await fs.stat(filename);
     if (!stat.isFile()) throw new Error(t('附件不是文件：{name}', { name }));
     const isImage =
@@ -58,31 +62,90 @@ async function preparePrompt(text, attachments = [], capabilities = {}) {
           text: `Attached local image (JSON-encoded absolute path): ${JSON.stringify(filename)}\nUse read_file to view this exact image before answering the user's request. Read the image visually, not as raw bytes or terminal text. If you cannot view it, explain the failure instead of guessing its contents.`,
         });
       }
-    } else if (/\.docx?$/i.test(filename)) {
-      if (stat.size > 10 * MB) throw new Error(t('Word 文档单个不得超过 10 MB。'));
+    } else if (documents.native.has(extension)) {
+      nativeBytes += stat.size;
+      if (stat.size > 10 * MB || nativeBytes > 20 * MB)
+        throw new Error(t('原生文档单个不得超过 10 MB，总计不得超过 20 MB。'));
       const bytes = await fs.readFile(filename);
-      if (bytes.length > 10 * MB) throw new Error(t('Word 文档单个不得超过 10 MB。'));
-      const extracted = await require('./word.cjs').wordText(bytes, name);
+      const valid =
+        extension === '.pdf'
+          ? bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))
+          : extension === '.pptx'
+            ? bytes.subarray(0, 4).equals(Buffer.from([80, 75, 3, 4]))
+            : (() => {
+                try {
+                  const n = JSON.parse(decodeText(bytes));
+                  return n.nbformat === 4 && Array.isArray(n.cells);
+                } catch {
+                  return false;
+                }
+              })();
+      if (!valid)
+        throw new Error(
+          t('文件不是有效的 {format} 文档。请确认能正常打开。', {
+            format: extension.slice(1).toUpperCase(),
+          }),
+        );
+      content.push({ type: 'text', text: documents.nativePrompt(filename, extension) });
+    } else if (['.caj', '.nh', '.hn', '.kdh'].includes(extension)) {
+      throw new Error(
+        t(
+          '此类 CAJ 文献暂不能可靠地自动转换。请用 CAJViewer 打开并打印为 PDF，再添加 PDF；草稿和原文件会保留。',
+        ),
+      );
+    } else if (documents.documentKind(extension) && !['.html', '.htm'].includes(extension)) {
+      const isWord = documents.documentKind(extension) === 'word';
+      if (stat.size > 10 * MB)
+        throw new Error(t(isWord ? 'Word 文档单个不得超过 10 MB。' : '文档单个不得超过 10 MB。'));
+      const bytes = await fs.readFile(filename);
+      if (bytes.length > 10 * MB) throw new Error(t('文档单个不得超过 10 MB。'));
+      const prefix = (
+        (bytes[0] === 255 && bytes[1] === 254) || (bytes[0] === 254 && bytes[1] === 255)
+          ? decodeText(bytes).slice(0, 200)
+          : bytes.subarray(0, 200).toString('utf8')
+      ).trimStart();
+      const disguised =
+        isWord &&
+        (/^\{\\rtf/i.test(prefix)
+          ? '.rtf'
+          : /^(?:<\?xml[^>]*>\s*)?(?:<!doctype html\b|<html\b)/i.test(prefix)
+            ? '.html'
+            : null);
+      const extracted =
+        isWord && !disguised
+          ? await require('./word.cjs').wordText(bytes, name)
+          : await documents.documentText(bytes, disguised || extension, name);
       const size = Buffer.byteLength(extracted);
       textBytes += size;
       if (size > MB || textBytes > 4 * MB)
         throw new Error(t('提取后的文本单个不得超过 1 MB，总计不得超过 4 MB。请拆分附件后重试。'));
       content.push({ type: 'text', text: extracted });
     } else {
-      if (!capabilities.embeddedContext) throw new Error(t('当前 Grok 版本不支持附件上下文'));
-      textBytes += stat.size;
-      if (stat.size > MB || textBytes > 4 * MB)
-        throw new Error(t('文本附件单个不得超过 1 MB，总计不得超过 4 MB'));
+      if (stat.size > MB) throw new Error(t('文本附件单个不得超过 1 MB，总计不得超过 4 MB'));
       const bytes = await fs.readFile(filename);
-      if (bytes.includes(0)) throw new Error(t('目前仅支持文本附件：{name}', { name }));
-      content.push({
-        type: 'resource',
-        resource: {
-          uri: pathToFileURL(filename).href,
-          mimeType: 'text/plain',
-          text: bytes.toString('utf8'),
-        },
-      });
+      let decoded;
+      try {
+        decoded = decodeText(bytes);
+      } catch {
+        throw new Error(
+          t('不支持此文件格式或文本编码：{name}。请另存为 PDF 或 UTF-8 文本后重试。', { name }),
+        );
+      }
+      textBytes += Buffer.byteLength(decoded);
+      if (Buffer.byteLength(decoded) > MB || textBytes > 4 * MB)
+        throw new Error(t('文本附件单个不得超过 1 MB，总计不得超过 4 MB'));
+      content.push(
+        capabilities.embeddedContext
+          ? {
+              type: 'resource',
+              resource: {
+                uri: pathToFileURL(filename).href,
+                mimeType: 'text/plain',
+                text: decoded,
+              },
+            }
+          : { type: 'text', text: `${name}\n${decoded}` },
+      );
     }
   }
   if (!content.length) throw new Error(t('请输入消息或添加附件'));
@@ -106,10 +169,13 @@ async function previewAttachment({ path: filename }) {
     embeddedContext: true,
   });
   const item = content[0];
+  const extension = path.extname(filename).toLowerCase();
+  if (documents.native.has(extension))
+    return { native: true, text: documents.nativeDescription(extension) };
   return item.type === 'image'
     ? { dataUrl: `data:${item.mimeType};base64,${item.data}` }
     : item.type === 'text'
-      ? { text: item.text, notice: require('./word.cjs').wordNotice() }
+      ? { text: item.text, notice: documents.documentNotice() }
       : { text: item.resource.text };
 }
 
