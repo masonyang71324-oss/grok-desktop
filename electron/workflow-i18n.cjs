@@ -1,4 +1,25 @@
 module.exports = {
+  'Word 文档': 'Word documents',
+  'Word 文档单个不得超过 10 MB。': 'Word documents are limited to 10 MB each.',
+  '已提取 Word 文字；图片、签章和原始排版未包含在内。':
+    'Word text extracted; images, seals and original layout are not included.',
+  '无法读取 Word 文档。请确认文件未加密且能正常打开，或另存为 TXT 后重试。':
+    'Could not read Word document. Check that it is unencrypted and opens normally, or save it as TXT and retry.',
+  'Word 文档中没有可提取的文字。扫描页或图片请另存为图片后添加。':
+    'No extractable text in this Word document. Attach scanned pages or images as image files.',
+  'Word 提取文字超过 1 MB，请拆分文档后重试。':
+    'Extracted Word text exceeds 1 MB. Split the document and retry.',
+  'Word 文档读取超时，请拆分文档或另存为 TXT 后重试。':
+    'Word document reading timed out. Split the document or save it as TXT and retry.',
+  '提取后的文本单个不得超过 1 MB，总计不得超过 4 MB。请拆分附件后重试。':
+    'Extracted text is limited to 1 MB per attachment and 4 MB in total. Split the attachments and retry.',
+  正文: 'Body',
+  文本框: 'Text boxes',
+  页眉: 'Headers',
+  页脚: 'Footers',
+  脚注: 'Footnotes',
+  尾注: 'Endnotes',
+  批注: 'Comments',
   '检查点编号无效。': 'Invalid checkpoint id.',
   '检查点存储已达到 512 MB 上限，请删除旧检查点记录后重试。':
     'Checkpoint storage has reached the 512 MB limit. Remove old checkpoint records in Project tools and retry.',

@@ -12,6 +12,8 @@ The Windows app uses Electron, React, TypeScript and Vite. It starts installed G
 - electron/checkpoints.cjs records bounded before/after file contents including dirty/untracked text. Restore checks all selected after-states before writing and creates an undo record. Dependencies, binaries, large files and unsupported entries are explicitly omitted.
 - electron/project-runner.cjs discovers npm scripts and owns child process trees, bounded logs and loopback preview links. Normal shutdown awaits owned process cleanup.
 - electron/attachments.cjs prepares inline context, file resources and native ACP images when advertised. Otherwise validated image attachments become exact absolute paths with read_file instructions. Clipboard images are persisted before being placed in a draft; thumbnails are transient UI state.
+- electron/word.cjs supervises a short-lived word-worker.cjs thread using bundled word-extractor. It extracts DOC/DOCX content from a file buffer, with 30-second and 128 MB worker heap limits. Text extraction never writes the source file; failures stop submission before the ACP prompt is sent. Preview uses the same extraction path.
+- electron/docx.cjs adapts the pinned word-extractor 1.0.4 DOCX parser: streaming UTF-8 decoding preserves Chinese across chunk boundaries, and DrawingML textboxes are retained while alternate fallback markup is skipped. Regression fixtures cover both fixes; review this adapter when updating the dependency.
 - src/App.tsx manages the selected project/session, timeline, composer and recovery. The fast App state harness is supplemented by real Electron E2E coverage.
 
 ## Rendering and persistence

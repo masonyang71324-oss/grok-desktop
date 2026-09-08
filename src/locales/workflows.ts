@@ -1,4 +1,8 @@
 export const workflows: Record<string, string> = {
+  'Word 文档会自动提取文字，点击附件可预览。':
+    'Word text is extracted automatically. Click an attachment to preview.',
+  '正在读取附件…': 'Reading attachment…',
+  '以下为发送给 Grok 的文字。': 'This is the text that will be sent to Grok.',
   移除: 'Remove',
   运行: 'Run',
   停止: 'Stop',

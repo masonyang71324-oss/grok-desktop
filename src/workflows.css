@@ -95,6 +95,11 @@
   color: var(--muted);
   font-size: 11px;
 }
+.attachment-notice {
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 12px;
+}
 .queue-send {
   margin-left: auto;
   margin-right: 10px;

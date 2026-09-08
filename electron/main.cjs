@@ -374,6 +374,7 @@ const handlers = {
             'ps1',
           ],
         },
+        { name: t('Word 文档'), extensions: ['doc', 'docx'] },
         { name: t('图片'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
         { name: t('所有文件'), extensions: ['*'] },
       ],

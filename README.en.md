@@ -23,6 +23,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 - A task center for background conversations, pending approvals and queued messages. Different projects can run concurrently; tasks in the same folder run in sequence. Stopped or failed queues require manual continuation.
 - Per-turn file checkpoints with review, selective restore, undo and record deletion. Later file changes prevent overwriting.
 - Attach files, selected code or Git diffs. Pasted screenshots are saved automatically with clickable thumbnails; sending uses native image input or asks Grok to read the exact local image files.
+- Attach `.doc` / `.docx` files to extract text automatically and preview it before sending. No Word/WPS installation is required; originals are preserved and conversion failures keep the draft.
 - Discover npm scripts and run, stop or restart them with buttons, live logs and local preview links.
 - English / Simplified Chinese UI, including approval choices, management forms, usage panels, native menus and notifications.
 - Switching languages preserves conversation text, code, file contents and command arguments. Per-conversation permissions remain available; pending approvals always keep their explicit decision.
@@ -51,6 +52,8 @@ The E2E suite uses a local mock ACP process and does not need a Grok account. Se
 Use npm run format / npm run format:check for formatting, npm run bench:markdown for a reproducible renderer benchmark, and npm run dist for Windows installer and portable builds. For frontend development, start npm run dev, then launch Electron with GROK_DESKTOP_DEV_URL=http://127.0.0.1:5197.
 
 ## Data and current limits
+
+Word documents are limited to 10 MB each; extracted text is limited to 1 MB per document and counts toward the 4 MB total text limit. Local background extraction times out after 30 seconds. It includes body text, text boxes, headers/footers, footnotes/endnotes and comments; images, seals and original layout are omitted, without OCR. Unreadable, encrypted, empty or oversized results are rejected rather than silently truncated. Preview and send each read the current file; preview again if you edit it in between.
 
 Desktop settings, drafts, queued messages, pasted images, file checkpoints and rotating operational logs are local to the application data directory. Checkpoints contain recorded project file contents and can be removed in Project tools. They are bounded recovery records, not full project backups; omitted files are listed explicitly. Logs exclude prompt text, tool arguments, attachment contents and upstream error bodies. Online tasks still send the requested context to the selected Grok service.
 

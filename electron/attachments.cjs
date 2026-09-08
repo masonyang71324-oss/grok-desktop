@@ -58,6 +58,16 @@ async function preparePrompt(text, attachments = [], capabilities = {}) {
           text: `Attached local image (JSON-encoded absolute path): ${JSON.stringify(filename)}\nUse read_file to view this exact image before answering the user's request. Read the image visually, not as raw bytes or terminal text. If you cannot view it, explain the failure instead of guessing its contents.`,
         });
       }
+    } else if (/\.docx?$/i.test(filename)) {
+      if (stat.size > 10 * MB) throw new Error(t('Word 文档单个不得超过 10 MB。'));
+      const bytes = await fs.readFile(filename);
+      if (bytes.length > 10 * MB) throw new Error(t('Word 文档单个不得超过 10 MB。'));
+      const extracted = await require('./word.cjs').wordText(bytes, name);
+      const size = Buffer.byteLength(extracted);
+      textBytes += size;
+      if (size > MB || textBytes > 4 * MB)
+        throw new Error(t('提取后的文本单个不得超过 1 MB，总计不得超过 4 MB。请拆分附件后重试。'));
+      content.push({ type: 'text', text: extracted });
     } else {
       if (!capabilities.embeddedContext) throw new Error(t('当前 Grok 版本不支持附件上下文'));
       textBytes += stat.size;
@@ -98,7 +108,9 @@ async function previewAttachment({ path: filename }) {
   const item = content[0];
   return item.type === 'image'
     ? { dataUrl: `data:${item.mimeType};base64,${item.data}` }
-    : { text: item.resource.text };
+    : item.type === 'text'
+      ? { text: item.text, notice: require('./word.cjs').wordNotice() }
+      : { text: item.resource.text };
 }
 
 module.exports = { preparePrompt, storeClipboardImage, imageMime, previewAttachment };

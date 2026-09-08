@@ -125,7 +125,7 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentPreview, setAttachmentPreview] = useState<
-    (Attachment & { dataUrl?: string }) | null
+    (Attachment & { dataUrl?: string; notice?: string; loading?: boolean; error?: string }) | null
   >(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -979,15 +979,21 @@ export default function App() {
     notify(t('已加入上下文'));
   }
   async function inspectAttachment(file: Attachment) {
-    setAttachmentPreview(file);
+    const preview = { ...file, loading: file.text === undefined && !!file.path };
+    setAttachmentPreview(preview);
     if (file.text !== undefined || !file.path) return;
     try {
-      const value = await request<{ text?: string; dataUrl?: string }>('attachment.preview', {
-        path: file.path,
-      });
-      setAttachmentPreview((current) => (current === file ? { ...file, ...value } : current));
+      const value = await request<{ text?: string; dataUrl?: string; notice?: string }>(
+        'attachment.preview',
+        {
+          path: file.path,
+        },
+      );
+      setAttachmentPreview((current) => (current === preview ? { ...file, ...value } : current));
     } catch (e) {
-      notify(errorText(e));
+      setAttachmentPreview((current) =>
+        current === preview ? { ...file, error: errorText(e) } : current,
+      );
     }
   }
   async function pasteImage(event: React.ClipboardEvent) {
@@ -1669,6 +1675,9 @@ export default function App() {
                   : t('发送时会让 Grok 读取所附图片文件。')}
               </p>
             )}
+            {attachments.some((file) => /\.docx?$/i.test(file.path)) && (
+              <p className="attachment-hint">{t('Word 文档会自动提取文字，点击附件可预览。')}</p>
+            )}
             <textarea
               ref={draftRef}
               value={draft}
@@ -1891,9 +1900,20 @@ export default function App() {
                 alt={attachmentPreview.name}
               />
             )}
-            <pre className="attachment-preview">
-              {attachmentPreview.text || attachmentPreview.path}
-            </pre>
+            {attachmentPreview.loading && (
+              <p role="status">
+                <Spinner /> {t('正在读取附件…')}
+              </p>
+            )}
+            {attachmentPreview.error && <p role="alert">{attachmentPreview.error}</p>}
+            {attachmentPreview.notice && (
+              <p className="attachment-notice">{t('以下为发送给 Grok 的文字。')}</p>
+            )}
+            {!attachmentPreview.loading && !attachmentPreview.error && (
+              <pre className="attachment-preview">
+                {attachmentPreview.text || attachmentPreview.path}
+              </pre>
+            )}
           </Modal>
         )}
         {dialog === 'actions' && (

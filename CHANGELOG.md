@@ -1,5 +1,12 @@
 # Changes
 
+## 1.3.2
+
+- Read common Word DOC/DOCX attachments by extracting text locally before sending. No Word, WPS or additional application is required; original files are not modified.
+- Preview extracted body text, text boxes, headers, footers, notes and comments, with a clear notice that images, seals and original layout are not included.
+- Run extraction in a worker with a 30-second timeout. Reject unreadable, empty or oversized results without sending partial text; keep drafts on submission failure.
+- Add Chinese/English document preview and error states, document fixtures and real Electron coverage for both Word formats.
+
 ## 1.3.1
 
 - Enable screenshot sending on Grok Build 1.0.13 through its local read_file image tool when native ACP image input is unavailable. Native image support remains in use when advertised.
