@@ -3,9 +3,6 @@ const { translate: t } = require('./i18n.cjs');
 const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { randomUUID } = require('node:crypto');
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 
 const RPC_TIMEOUT = 30_000;
 const SESSION_LOAD_TIMEOUT = 120_000;
@@ -555,31 +552,11 @@ class GrokClient {
   }
 
   async _promptContent(text, attachments) {
-    const content = text?.trim() ? [{ type: 'text', text }] : [];
-    if (attachments?.length && !this.capabilities.promptCapabilities?.embeddedContext)
-      throw new Error(t('当前 Grok 版本不支持附件上下文'));
-    let total = 0;
-    for (const attachment of attachments || []) {
-      const filename = path.resolve(attachment.path);
-      const stat = await fs.stat(filename);
-      if (!stat.isFile()) throw new Error(t('附件不是文件：{name}', { name: attachment.name }));
-      total += stat.size;
-      if (stat.size > 1024 * 1024 || total > 4 * 1024 * 1024)
-        throw new Error(t('文本附件单个不得超过 1 MB，总计不得超过 4 MB'));
-      const bytes = await fs.readFile(filename);
-      if (bytes.includes(0))
-        throw new Error(t('目前仅支持文本附件：{name}', { name: attachment.name }));
-      content.push({
-        type: 'resource',
-        resource: {
-          uri: pathToFileURL(filename).href,
-          mimeType: 'text/plain',
-          text: bytes.toString('utf8'),
-        },
-      });
-    }
-    if (!content.length) throw new Error(t('请输入消息或添加文本附件'));
-    return content;
+    return require('./attachments.cjs').preparePrompt(
+      text,
+      attachments,
+      this.capabilities.promptCapabilities,
+    );
   }
 
   async send(payload) {

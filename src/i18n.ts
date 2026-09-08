@@ -2,10 +2,11 @@ import { useSyncExternalStore } from 'react';
 import { app } from './locales/app';
 import { dialogs } from './locales/dialogs';
 import { workspace } from './locales/workspace';
+import { workflows } from './locales/workflows';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
-const english: Record<string, string> = { ...app, ...dialogs, ...workspace };
+const english: Record<string, string> = { ...app, ...dialogs, ...workspace, ...workflows };
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';
 try {

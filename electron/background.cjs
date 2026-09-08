@@ -28,8 +28,10 @@ class RuntimeActivity {
   }
 
   onEvent(event) {
-    if (event.type === 'connection' && ['disconnected', 'error'].includes(event.state))
-      this.background.clear();
+    if (event.type === 'connection' && ['disconnected', 'error'].includes(event.state)) {
+      const scope = `${event.sessionId || ''}:`;
+      for (const key of this.background) if (key.startsWith(scope)) this.background.delete(key);
+    }
     if (event.type !== 'notification') return;
     const payload = event.payload || {};
     let id, prefix, active;
@@ -53,7 +55,7 @@ class RuntimeActivity {
       else return;
     }
     if (!id) return;
-    const key = `${prefix}:${id}`;
+    const key = `${event.sessionId || ''}:${prefix}:${id}`;
     if (active) this.background.add(key);
     else this.background.delete(key);
   }

@@ -16,7 +16,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
-const { GrokClient } = require('./acp.cjs');
+const { SessionHub } = require('./session-hub.cjs');
 const { RuntimeActivity } = require('./background.cjs');
 const { loadSettings, writeSettings, resolveGrok } = require('./settings.cjs');
 const { runChecked } = require('./process.cjs');
@@ -26,6 +26,9 @@ const { createEventDelivery } = require('./event-delivery.cjs');
 const { createNotifications } = require('./notifications.cjs');
 const { createLogger } = require('./logger.cjs');
 const { createWorkspaceWatcher } = require('./workspace-watch.cjs');
+const { createCheckpointStore } = require('./checkpoints.cjs');
+const { createProjectRunner } = require('./project-runner.cjs');
+const { storeClipboardImage, previewAttachment } = require('./attachments.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -55,6 +58,11 @@ const notifications = createNotifications({
   onFailure: () => logger.log('notification-failed'),
 });
 const workspaceWatcher = createWorkspaceWatcher(emit, () => logger.log('workspace-watch-failed'));
+const checkpoints = createCheckpointStore({
+  directory: path.join(app.getPath('userData'), 'checkpoints'),
+});
+const activeCheckpoints = new Map();
+const runner = createProjectRunner({ emit: (type, data) => emit({ type, ...data }) });
 logger.log('app-start', { version: app.getVersion() });
 
 function emit(event) {
@@ -66,10 +74,25 @@ function emit(event) {
   delivery.push(event);
 }
 
-const client = new GrokClient({
+const client = new SessionHub({
+  storageFile: path.join(app.getPath('userData'), 'queued-tasks.json'),
   getExecutable: () => resolveGrok(settings.grokPath),
   emit,
   clientVersion: app.getVersion(),
+  beforeTurn: async ({ cwd, sessionId, turnId }) => {
+    const id = await checkpoints.begin({ cwd, sessionId, turnId });
+    activeCheckpoints.set(turnId, id);
+  },
+  afterTurn: async ({ cwd, sessionId, turnId }) => {
+    const id = activeCheckpoints.get(turnId);
+    if (!id) return;
+    try {
+      await checkpoints.finish(id);
+      emit({ type: 'checkpoints-changed', cwd, sessionId });
+    } finally {
+      activeCheckpoints.delete(turnId);
+    }
+  },
   ...(process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
     ? {
         spawnFn: (executable, args, options) =>
@@ -136,6 +159,7 @@ async function bootstrap() {
       path: cliPath,
       version,
       connected: !!client.connected,
+      capabilities: client.capabilities || {},
       ...(error ? { error } : {}),
     },
     models: client.models || { currentModelId: '', availableModels: [] },
@@ -284,8 +308,19 @@ const handlers = {
   'settings.save': saveSettings,
   'clipboard.write': ({ text }) => {
     if (typeof text !== 'string') throw new Error(t('复制内容无效。'));
-    clipboard.writeText(text);
+    return clipboard.writeText(text);
   },
+  'clipboard.image': async () => {
+    const items = await clipboard.read();
+    const image = items.find((item) => item.types.includes('image/png'));
+    if (!image) return null;
+    const blob = await image.getType('image/png');
+    return storeClipboardImage(
+      Buffer.from(await blob.arrayBuffer()),
+      path.join(app.getPath('userData'), 'attachments'),
+    );
+  },
+  'attachment.preview': previewAttachment,
   'dialog.grok': async () => {
     const result = await dialog.showOpenDialog(win, {
       title: t('选择 Grok Build 程序'),
@@ -339,6 +374,7 @@ const handlers = {
             'ps1',
           ],
         },
+        { name: t('图片'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
         { name: t('所有文件'), extensions: ['*'] },
       ],
     });
@@ -374,6 +410,13 @@ const handlers = {
     ),
   'session.send': (payload) =>
     activity.runSession(async () => client.send({ ...payload, cwd: await validCwd(payload.cwd) })),
+  'session.enqueue': (payload) =>
+    activity.runSession(async () =>
+      client.enqueue({ ...payload, cwd: await validCwd(payload.cwd) }),
+    ),
+  'tasks.list': () => client.listTasks(),
+  'tasks.remove': (payload) => client.remove(payload),
+  'tasks.resume': (payload) => activity.runSession(() => client.resume(payload)),
   'session.configure': (payload) => activity.runSession(() => client.configure(payload)),
   'session.cancel': (payload) => client.cancel(payload),
   'session.permission': (payload) => client.respondPermission(payload),
@@ -388,6 +431,24 @@ const handlers = {
   'workspace.save': workspace.saveFile,
   'workspace.changes': workspace.gitChanges,
   'workspace.diff': workspace.gitDiff,
+  'checkpoints.list': async ({ cwd, sessionId }) =>
+    checkpoints.list({ cwd: await validCwd(cwd), sessionId }),
+  'checkpoints.detail': (payload) => checkpoints.detail(payload),
+  'checkpoints.remove': (payload) => checkpoints.remove(payload),
+  'checkpoints.restore': async (payload) => {
+    const checkpoint = await checkpoints.detail({ id: payload.id });
+    const cwd = await validCwd(checkpoint.cwd);
+    return client.runWorkspaceMutation(cwd, async () => {
+      const result = await checkpoints.restore(payload);
+      emit({ type: 'workspace-changed', cwd });
+      emit({ type: 'checkpoints-changed', cwd, sessionId: checkpoint.sessionId });
+      return result;
+    });
+  },
+  'runner.inspect': async ({ cwd }) => runner.inspect({ cwd: await validCwd(cwd) }),
+  'runner.state': async ({ cwd }) => runner.state({ cwd: await validCwd(cwd) }),
+  'runner.start': async ({ cwd, script }) => runner.start({ cwd: await validCwd(cwd), script }),
+  'runner.stop': async ({ cwd }) => runner.stop({ cwd: await validCwd(cwd) }),
   'system.open': openSystem,
   'system.run': management,
 };
@@ -479,13 +540,12 @@ function createWindow() {
           type: 'error',
           title: t('界面已停止响应'),
           message: t('界面进程异常退出。'),
-          detail: t('重新连接会中断当前任务并清除待批准操作，然后从历史中恢复会话。'),
+          detail: t('重新载入界面后会恢复仍在运行的任务和待批准操作。'),
           buttons: [t('重新连接并载入'), t('关闭')],
         })
         .then(({ response }) => {
           if (!win || win.isDestroyed()) return;
           if (response === 0) {
-            client.dispose();
             win.reload();
           } else win.close();
         })
@@ -493,7 +553,7 @@ function createWindow() {
   });
   win.on('close', (event) => {
     saveWindowState();
-    if (quitting || !activity.busy) return;
+    if (quitting || (!activity.busy && !runner.busy)) return;
     event.preventDefault();
     if (exitDialogOpen) return;
     exitDialogOpen = true;
@@ -502,7 +562,7 @@ function createWindow() {
         type: 'question',
         title: t('任务仍在运行'),
         message: t('退出会中断 Grok 正在执行的任务。'),
-        detail: t('包括此应用启动的本地代理和后台任务。会话记录会保留。'),
+        detail: t('包括此应用启动的本地代理、后台任务和项目脚本。会话记录会保留。'),
         buttons: [t('继续运行'), t('停止并退出')],
         defaultId: 0,
         cancelId: 0,
@@ -583,13 +643,15 @@ else {
     quitting = true;
     saveWindowState();
     workspaceWatcher.close();
-    client.dispose();
+    const agentShutdown = client.dispose();
     delivery.dispose();
     notifications.clear();
     logger.log('app-stop');
-    Promise.allSettled([settingsQueue, logger.flush()]).then(() => {
-      shutdownReady = true;
-      app.quit();
-    });
+    Promise.allSettled([settingsQueue, logger.flush(), runner.dispose(), agentShutdown]).then(
+      () => {
+        shutdownReady = true;
+        app.quit();
+      },
+    );
   });
 }

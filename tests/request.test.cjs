@@ -41,3 +41,17 @@ test('stuck renderer reads time out but human dialogs and mutations stay pending
   pending.at(-1)({ ok: true, data: null });
   assert.equal(await dialog, null);
 });
+
+test('recovery suggests the relevant user action without invoking or resending requests', () => {
+  let requests = 0;
+  const lib = fixture(() => {
+    requests++;
+  });
+  assert.equal(typeof lib.classifyFailure, 'function');
+  assert.equal(lib.classifyFailure('HTTP 401 Unauthorized').action, 'login');
+  assert.equal(lib.classifyFailure('429 rate limit exceeded').action, 'usage');
+  assert.equal(lib.classifyFailure('ECONNRESET').action, 'reconnect');
+  assert.equal(lib.classifyFailure('Grok executable not found').action, 'settings');
+  assert.equal(lib.classifyFailure('unexpected failure').action, 'retry');
+  assert.equal(requests, 0);
+});

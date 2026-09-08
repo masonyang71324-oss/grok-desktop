@@ -1,5 +1,15 @@
 # Changes
 
+## 1.3.0
+
+- Add per-conversation background connections, a task center and persistent message queues. Serialize writes in the same project and pause queues on cancellation, interruption or error.
+- Preserve running tasks and pending approvals across interface reloads. Route approval IDs by conversation and provide targeted recovery actions without automatic resubmission.
+- Record bounded per-turn file checkpoints, review changes, restore selected files with conflict checks, undo restores and remove old recovery records.
+- Attach selected code, whole files and Git diffs; inspect attachments before sending. Support native image payloads and clipboard screenshots only when the CLI advertises image input.
+- Add npm script discovery, run/stop/restart controls, bounded logs and local preview links. Closing the app also accounts for owned project processes.
+- Retain Chinese and English controls. Update compatible DOMPurify and marked patches, GitHub Actions, and grouped dependency maintenance without changing the runtime/toolchain major versions.
+- Extend regression coverage across real Electron IPC, background tasks, checkpoint restoration, clipboard attachments and project process cleanup.
+
 ## 1.2.1
 
 - Confirm before closing or reloading a window with unsaved file edits; cancelling exit keeps both the editor and any running task intact.

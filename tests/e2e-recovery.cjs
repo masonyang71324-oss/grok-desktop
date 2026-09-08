@@ -94,7 +94,7 @@ async function send(text) {
     assert.ok(originalPermission);
     assert.equal(originalPermission.sessionId, originalTurn.sessionId);
 
-    phase = 'reload-settles-interrupted-turn';
+    phase = 'reload-preserves-live-turn';
     const loaded = page.waitForEvent('domcontentloaded');
     await app.evaluate(({ BrowserWindow, dialog }) => {
       const original = dialog.showMessageBox;
@@ -110,23 +110,38 @@ async function send(text) {
     });
     await loaded;
     const recoveredEvents = await events();
-    assert.ok(
+    assert.equal(
       recoveredEvents.some(
         (event) => event.type === 'turn-error' && event.turnId === originalTurn.turnId,
       ),
-      'Reload must settle the interrupted foreground turn before restoring history',
+      false,
+      'Renderer reload must preserve the live foreground turn',
     );
-    assert.ok(
+    assert.equal(
       recoveredEvents.some(
         (event) =>
           event.type === 'permission-resolved' && event.requestId === originalPermission.requestId,
       ),
-      'Reload must release the exact outstanding permission request',
+      false,
+      'Renderer reload must preserve the exact outstanding permission request',
     );
     await page.locator('.sidebar-status').filter({ hasText: 'Grok 已连接' }).waitFor();
     await page.locator('.user-text').filter({ hasText: 'MOCK_PERMISSION' }).waitFor();
-    assert.equal(await approval.count(), 0);
-    assert.equal(await page.getByRole('button', { name: '停止生成', exact: true }).count(), 0);
+    await approval.waitFor();
+    const tasks = await page.evaluate(
+      async () => (await window.desktop.request('tasks.list')).data,
+    );
+    const live = tasks.find((task) => task.sessionId === originalTurn.sessionId);
+    assert.equal(live.turnId, originalTurn.turnId);
+    assert.equal(live.permissions[0].requestId, originalPermission.requestId);
+    assert.equal(
+      recoveredEvents.filter((event) => event.type === 'turn-start').length,
+      1,
+      'Recovery must never replay a prompt',
+    );
+    await approval.getByRole('button', { name: '允许本次', exact: true }).click();
+    await page.locator('.message.assistant').filter({ hasText: '模拟操作已获准。' }).waitFor();
+    await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
 
     phase = 'send-after-recovery';
     await send('MOCK_STREAM');
@@ -154,7 +169,11 @@ async function send(text) {
     const freshPermission = (await events()).filter((event) => event.type === 'permission').at(-1);
     assert.notEqual(freshPermission.requestId, originalPermission.requestId);
     await approval.getByRole('button', { name: '允许本次', exact: true }).click();
-    await page.locator('.message.assistant').filter({ hasText: '模拟操作已获准。' }).waitFor();
+    await page
+      .locator('.message.assistant')
+      .filter({ hasText: '模拟操作已获准。' })
+      .last()
+      .waitFor();
     await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
     assert.equal(await approval.count(), 0);
     assert.ok(
@@ -169,11 +188,11 @@ async function send(text) {
       .map((line) => JSON.parse(line));
     assert.deepEqual(
       requests.filter((event) => event.type === 'permission-response').map((event) => event.status),
-      ['allow-once'],
-      'Only the new permission request may receive the chosen approval',
+      ['allow-once', 'allow-once'],
+      'The preserved and new permission requests receive their explicit approvals exactly once',
     );
     assert.deepEqual(pageErrors, []);
-    process.stdout.write('PASS renderer-recovery-settles-permission-and-resumes-session\n');
+    process.stdout.write('PASS renderer-recovery-preserves-permission-and-resumes-session\n');
   } catch (error) {
     process.stderr.write(`FAIL ${phase}: ${error.message || error}\n`);
     process.exitCode = 1;

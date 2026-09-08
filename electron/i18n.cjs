@@ -1,6 +1,7 @@
 // Only application-owned copy belongs here. Never translate server output or user content.
 let locale = 'zh-CN';
 const english = {
+  ...require('./workflow-i18n.cjs'),
   文件有未保存的修改: 'Unsaved file changes',
   '关闭或重新载入会丢失尚未保存的文件修改。':
     'Closing or reloading will discard your unsaved file changes.',

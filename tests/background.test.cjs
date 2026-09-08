@@ -10,6 +10,27 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
+test('session-scoped disconnect cannot clear another session background task', () => {
+  const activity = new RuntimeActivity({ isForegroundBusy: () => false });
+  for (const sessionId of ['a', 'b'])
+    activity.onEvent({
+      type: 'notification',
+      sessionId,
+      kind: 'task_backgrounded',
+      payload: { task_id: 'same' },
+    });
+  activity.onEvent({ type: 'connection', sessionId: 'a', state: 'error' });
+  assert.equal(activity.background.size, 1);
+  assert.equal(activity.busy, true);
+  activity.onEvent({
+    type: 'notification',
+    sessionId: 'b',
+    kind: 'task_completed',
+    payload: { task_id: 'same' },
+  });
+  assert.equal(activity.busy, false);
+});
+
 test('nested task completion clears its background task without clearing other agents', () => {
   const activity = new RuntimeActivity({ isForegroundBusy: () => false });
   activity.onEvent({

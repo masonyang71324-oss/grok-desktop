@@ -118,7 +118,7 @@ async function runCapability(client, action, values = {}) {
   const params = Object.fromEntries(
     definition.fields.map((field) => [field, requiredTarget(values, field)]),
   );
-  const data = unwrapResult(await client.extension(definition.method, params));
+  const data = unwrapResult(await client.extension(definition.method, params, values.sessionId));
   if (definition.list) {
     if (!Array.isArray(data[definition.list]))
       throw new Error(t('Grok 返回的能力列表格式不正确。'));

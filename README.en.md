@@ -20,6 +20,10 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 ## Features
 
 - Project conversations, local drafts and restart recovery.
+- A task center for background conversations, pending approvals and queued messages. Different projects can run concurrently; tasks in the same folder run in sequence. Stopped or failed queues require manual continuation.
+- Per-turn file checkpoints with review, selective restore, undo and record deletion. Later file changes prevent overwriting.
+- Attach files, selected code or Git diffs with inspectable context. Paste screenshots or attach images when the connected CLI supports them.
+- Discover npm scripts and run, stop or restart them with buttons, live logs and local preview links.
 - English / Simplified Chinese UI, including approval choices, management forms, usage panels, native menus and notifications.
 - Switching languages preserves conversation text, code, file contents and command arguments. Per-conversation permissions remain available; pending approvals always keep their explicit decision.
 - Notifications and taskbar attention for approvals, completion and failures while the app is in the background.
@@ -48,8 +52,10 @@ Use npm run format / npm run format:check for formatting, npm run bench:markdown
 
 ## Data and current limits
 
-Desktop settings, drafts and rotating operational logs are local to the application data directory. Logs exclude prompt text, tool arguments, attachment contents and upstream error bodies. Online tasks still send the requested context to the selected Grok service.
+Desktop settings, drafts, queued messages, pasted images, file checkpoints and rotating operational logs are local to the application data directory. Checkpoints contain recorded project file contents and can be removed in Project tools. They are bounded recovery records, not full project backups; omitted files are listed explicitly. Logs exclude prompt text, tool arguments, attachment contents and upstream error bodies. Online tasks still send the requested context to the selected Grok service.
 
-This release runs one foreground conversation at a time. Text and code attachments are supported; image/audio input depends on future CLI capabilities. macOS/Linux packaging and terminal integration are not implemented. The “Grok Build update” action updates the CLI only.
+Each opened conversation has its own Grok connection. Different folders can run concurrently; turns and file restoration in the same folder are serialized. Reloading the interface reconnects to live tasks. Work interrupted by an application exit is never resent automatically; review and resume it in the task center. Account limits still apply to concurrent requests.
+
+Text attachments are limited to 1 MB each / 4 MB total, and images to 10 MB each / 20 MB total. Image input follows the CLI's negotiated capability. On 2026-09-08, stable Grok 1.0.13 did not provide ACP image input; the interface explains this and preserves your draft. Audio input is not implemented. Running npm scripts requires Node.js. macOS/Linux packaging and terminal integration are not implemented. The “Grok Build update” action updates the CLI only.
 
 Builds are unsigned; desktop auto-update hosting and a source license remain unconfigured. The source remains UNLICENSED. The package's private field prevents accidental npm publication; this GitHub repository is public. See [architecture](docs/architecture.md), [changes](CHANGELOG.md), the [1.1.0 historical review](docs/review-response-1.1.0.md) and the [GitHub publishing guide](docs/github-publishing.md).

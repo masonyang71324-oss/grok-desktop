@@ -5,3 +5,24 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      vite-toolchain:
+        patterns:
+          - vite
+          - '@vitejs/plugin-react'
+      compatible-patches:
+        update-types:
+          - patch
+    ignore:
+      # Keep types aligned with the Node 22 runtime; upgrade them with the runtime.
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - '*'

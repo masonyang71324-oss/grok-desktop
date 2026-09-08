@@ -414,6 +414,11 @@ async function mockLog() {
     await app.close();
     app = null;
     await launch('en');
+    // Catalog connectivity precedes loading the independent session transport.
+    await page.waitForFunction(
+      (value) => document.querySelector('textarea[aria-label="Message to Grok"]')?.value === value,
+      multilingualDraft,
+    );
     assert.equal(
       await page.getByRole('textbox', { name: 'Message to Grok', exact: true }).inputValue(),
       multilingualDraft,
@@ -440,7 +445,7 @@ async function mockLog() {
     assert.deepEqual(pageErrors, []);
     pass('renderer-errors-none');
   } catch (error) {
-    process.stderr.write(`FAIL ${phase} ${error.name || 'Error'}\n`);
+    process.stderr.write(`FAIL ${phase} ${error.stack || error}\n`);
     process.exitCode = 1;
   } finally {
     if (app) {

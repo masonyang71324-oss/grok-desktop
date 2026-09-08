@@ -5,6 +5,21 @@ const os = require('node:os');
 const path = require('node:path');
 const { createCapabilities, runCapability } = require('../electron/capabilities.cjs');
 
+test('subagent cancellation preserves owning session routing outside protocol parameters', async () => {
+  await runCapability(
+    {
+      extension: async (method, params, route) => {
+        assert.equal(method, '_x.ai/subagent/cancel');
+        assert.deepEqual(params, { subagentId: 'agent-1' });
+        assert.equal(route, 'session-1');
+        return { result: { cancelled: true } };
+      },
+    },
+    'subagent-stop',
+    { sessionId: 'session-1', subagentId: 'agent-1' },
+  );
+});
+
 async function temporaryDirectory(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-capabilities-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

@@ -1,6 +1,6 @@
 # Architecture
 
-The Windows app uses Electron, React, TypeScript and Vite. It starts the installed Grok Build CLI as a persistent ACP stdio child with agent --no-leader stdio. The desktop does not store Grok credentials.
+The Windows app uses Electron, React, TypeScript and Vite. It starts installed Grok Build CLI processes with agent --no-leader stdio. A catalog connection discovers capabilities/history, and each opened conversation owns a separate persistent ACP connection. The desktop does not store Grok credentials.
 
 ## Process boundaries
 
@@ -8,6 +8,10 @@ The Windows app uses Electron, React, TypeScript and Vite. It starts the install
 - electron/preload.cjs exposes a fixed command list and desktop events. Context isolation and renderer sandboxing are enabled; navigation and additional windows are restricted. Native clipboard writes and dropped-file paths use explicit preload/main APIs.
 - electron/acp.cjs owns JSON-RPC request lifetimes, official model/mode discovery, permissions, session replay and the active foreground turn. Every outward snapshot is isolated from internal history. A session/load request may take 120 seconds; an unresolved state-changing request invalidates the transport because the active backend state is unknown.
 - electron/background.cjs prevents incompatible management/restart operations while the client owns foreground or background work.
+- electron/session-hub.cjs qualifies events and permissions by session, queues messages and reserves a normalized directory lock across turn/checkpoint lifetimes and file restoration. Queued and interrupted work is persisted; startup requires explicit continuation.
+- electron/checkpoints.cjs records bounded before/after file contents including dirty/untracked text. Restore checks all selected after-states before writing and creates an undo record. Dependencies, binaries, large files and unsupported entries are explicitly omitted.
+- electron/project-runner.cjs discovers npm scripts and owns child process trees, bounded logs and loopback preview links. Normal shutdown awaits owned process cleanup.
+- electron/attachments.cjs prepares inline context, file resources and capability-gated native ACP images. Clipboard images are persisted before being placed in a draft.
 - src/App.tsx manages the selected project/session, timeline, composer and recovery. The fast App state harness is supplemented by real Electron E2E coverage.
 
 ## Rendering and persistence
@@ -22,7 +26,7 @@ Window bounds, maximized state, side panels and the Inspector tab are stored wit
 
 Unsaved or in-flight Inspector edits block `beforeunload`. Native confirmation defaults to keeping the editor open. Quitting first closes the window through its normal task and editor confirmations; the agent and queues are disposed only after the window has actually closed. Cancelling either confirmation therefore keeps ongoing work alive.
 
-Renderer failure recovery explicitly interrupts the owned agent connection and settles pending approvals before reloading the page. The reloaded interface restores history through the normal initialization flow. This is an interruption-and-reconnect path, not live continuation of the failed renderer.
+Renderer reload preserves main-process transports and running tasks. The reloaded interface retrieves live session snapshots and qualified pending approvals. Application shutdown and transport failures pause queued work; the user must review and resume interrupted tasks. The interface never silently replays a prompt.
 
 ## Interface language
 
@@ -45,6 +49,6 @@ Background attention is opt-out and uses fixed notification text without task co
 - npm run bench:markdown compares synchronous React rendering and layout on one page, using five warmups and fifteen measured updates at 10k/30k/60k characters. It reports medians, maxima, DOM counts and the browser version. It measures renderer cost, not model generation speed.
 - CI runs on Windows for pushes and pull requests: install, format check, tests, production build and mock E2E. Hosted results are available in [GitHub Actions](https://github.com/masonyang71324-oss/grok-desktop/actions).
 
-## Deferred architecture
+## Verification boundary
 
-The desktop still owns one active foreground session/turn. Upstream [ACP routing](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/agent/mvp_agent/acp_agent.rs) and [session execution](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/session/acp_session_impl/spawn.rs) provide a basis for multi-session execution. Implementing it here requires session-scoped event queues, permissions, background lifetime, cancellation and UI navigation; simply removing the exclusive lock is insufficient. The installed CLI has not been verified with simultaneous real prompts.
+Concurrent transports, approval isolation, cancellation and queue recovery are checked with separate mock ACP processes. These tests do not claim to measure real model speed or account concurrency limits. Actual installed Grok 1.0.13 was checked for initialization and update availability; its image capability was false. No billable model prompts are used during tests.

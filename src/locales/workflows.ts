@@ -1,0 +1,80 @@
+export const workflows: Record<string, string> = {
+  移除: 'Remove',
+  运行: 'Run',
+  停止: 'Stop',
+  个文件: 'files',
+  后台任务运行中: 'Background work running',
+  '本轮后台操作尚未完成，同项目的新请求会继续等待。可打开会话管理后台操作。':
+    'Background work from this turn is still running. New requests in this project will wait. Open the conversation to manage background work.',
+  松开以添加文件或图片: 'Drop to attach files or images',
+  添加文件或图片: 'Attach files or images',
+  '任务已中断，请检查记录后手动重试。':
+    'The task was interrupted. Review its history before retrying.',
+  '请先完成当前操作并关闭文件编辑器。':
+    'Finish the current operation and close the file editor first.',
+  请求已加入队列: 'Request queued',
+  '打开 Grok 登录': 'Open Grok sign-in',
+  查看额度: 'View usage',
+  已加入上下文: 'Added to context',
+  '当前 Grok CLI 不支持图片输入。请移除图片后发送，草稿已保留。':
+    'This Grok CLI does not support images. Remove the image to send; your draft is preserved.',
+  任务中心: 'Task center',
+  项目工具: 'Project tools',
+  加入队列: 'Add to queue',
+  文本上下文: 'Text context',
+  加入上下文: 'Add to context',
+  添加文件内容: 'Attach file content',
+  请先选择要添加的文本: 'Select the text to attach first',
+  添加选中文本: 'Attach selected text',
+  添加差异到上下文: 'Attach diff to context',
+  '切换会话不会停止任务。队列暂停后需手动继续。':
+    'Tasks keep running when you switch conversations. Paused queues must be resumed manually.',
+  暂无任务: 'No tasks yet',
+  等待中: 'Waiting',
+  已暂停: 'Paused',
+  等待审批: 'Awaiting approval',
+  继续队列: 'Resume queue',
+  '文件已恢复，可从新的检查点撤销恢复。':
+    'Files restored. Use the new checkpoint to undo this restore.',
+  运行项目: 'Run project',
+  项目脚本: 'Project script',
+  重新运行: 'Restart',
+  打开预览: 'Open preview',
+  '未检测到可运行的 npm 脚本': 'No runnable npm scripts found',
+  运行日志: 'Run log',
+  暂无运行日志: 'No output yet',
+  任务检查点: 'Task checkpoints',
+  '恢复只修改所选文件，不会回退会话。后续修改会阻止覆盖。':
+    'Restoring changes only the selected files. It preserves the conversation and refuses to overwrite later edits.',
+  暂无检查点: 'No checkpoints yet',
+  删除记录: 'Delete record',
+  检查点文件: 'Checkpoint files',
+  任务前: 'Before task',
+  文件不存在: 'File does not exist',
+  任务后: 'After task',
+  未纳入检查点: 'Excluded from checkpoint',
+  '请先保存并关闭文件编辑器，再恢复文件。':
+    'Save and close the file editor before restoring files.',
+  恢复所选文件: 'Restore selected files',
+  '确认恢复这些文件？': 'Restore these files?',
+  确认恢复: 'Confirm restore',
+  '这些文件将恢复到任务开始前的内容。':
+    'These files will be restored to their contents before the task started.',
+  '删除检查点记录？': 'Delete checkpoint record?',
+  '只删除这条恢复记录，项目文件保持不变。删除后无法使用此记录恢复文件。':
+    'Only this recovery record will be deleted. Project files stay unchanged. This record will no longer be available for restoring files.',
+  '找不到 Grok 程序': 'Grok executable not found',
+  '请在设置中选择 Grok 程序，再重新连接。':
+    'Select the Grok executable in Settings, then reconnect.',
+  需要重新登录: 'Sign in again',
+  '登录后可回到当前会话，草稿会保留。':
+    'Return to this conversation after signing in. Your draft will be preserved.',
+  额度或请求频率受限: 'Usage or request limit reached',
+  '查看套餐用量和重置时间，稍后再继续。': 'Check plan usage and reset times, then continue later.',
+  连接中断: 'Connection interrupted',
+  '重新连接会保留现有会话，任务不会自动重发。':
+    'Reconnect to keep your conversation. Tasks will not be resent automatically.',
+  本次操作未完成: 'The operation did not complete',
+  '内容已保留，请确认已有修改后再重试。':
+    'Your content is preserved. Review existing changes before retrying.',
+};

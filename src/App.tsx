@@ -46,6 +46,7 @@ import type {
   SessionSnapshot,
   SessionSummary,
   Settings,
+  TaskSummary,
 } from './types';
 import {
   appendUpdate,
@@ -54,7 +55,7 @@ import {
   fromReplay,
   type TimelineRow,
 } from './timeline.mjs';
-import { baseName, errorText, readableDate, request } from './lib';
+import { baseName, classifyFailure, errorText, readableDate, request } from './lib';
 import { Brand, IconButton, Message, Modal, Spinner } from './components';
 const ActionsDialog = lazy(() =>
   import('./Dialogs').then((module) => ({ default: module.ActionsDialog })),
@@ -73,6 +74,9 @@ const UsageDialog = lazy(() =>
 );
 import Inspector from './Inspector';
 import PermissionControl from './PermissionControl';
+import TaskCenter from './TaskCenter';
+import ProjectTools from './ProjectTools';
+import './workflows.css';
 import './enhancements.css';
 import { createDraftStore, sameDraft, type Draft } from './drafts.mjs';
 
@@ -92,7 +96,8 @@ type Permission = {
   params: PermissionRequest;
   sessionId: string;
 };
-type Dialog = 'actions' | 'settings' | 'management' | 'usage' | 'shortcuts' | null;
+type Dialog =
+  'actions' | 'settings' | 'management' | 'usage' | 'shortcuts' | 'tasks' | 'project-tools' | null;
 export default function App() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<Settings>(defaults);
@@ -118,6 +123,11 @@ export default function App() {
   const [loadingSession, setLoadingSession] = useState('');
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentPreview, setAttachmentPreview] = useState<
+    (Attachment & { dataUrl?: string }) | null
+  >(null);
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [projectMenu, setProjectMenu] = useState(false);
   const [sessionMenu, setSessionMenu] = useState<SessionSummary | null>(null);
@@ -248,6 +258,20 @@ export default function App() {
     }
   }
   function applySnapshot(snapshot: SessionSnapshot, transferDraft = false) {
+    cwdRef.current = snapshot.cwd;
+    setCwd(snapshot.cwd);
+    const active = snapshot.runtime?.turnId
+      ? { sessionId: snapshot.sessionId, turnId: snapshot.runtime.turnId }
+      : null;
+    runRef.current = active;
+    busyRef.current = !!active;
+    setRun(active);
+    setPending(false);
+    setCancelling(false);
+    setPermissions((previous) => [
+      ...previous.filter((item) => item.sessionId !== snapshot.sessionId),
+      ...(snapshot.runtime?.permissions || []),
+    ]);
     draftStoreRef.current!.remember(snapshot.cwd, snapshot.sessionId);
     activateDraft(snapshot.cwd, snapshot.sessionId, transferDraft);
     sessionRef.current = snapshot;
@@ -255,15 +279,18 @@ export default function App() {
     modelsRef.current = snapshot.models;
     setModels(snapshot.models);
     setCommands(snapshot.commands || []);
-    setRows(fromReplay(snapshot.updates || [], snapshot.sessionId));
+    setRows(fromReplay(snapshot.updates || [], snapshot.sessionId, snapshot.runtime));
     const replayPlan = [...(snapshot.updates || [])]
       .reverse()
       .find((update) => update.sessionUpdate === 'plan');
     setPlan(replayPlan?.entries || []);
-    setTurnError('');
+    setTurnError(
+      snapshot.runtime?.error ||
+        (snapshot.runtime?.status === 'interrupted' ? t('任务已中断，请检查记录后手动重试。') : ''),
+    );
     setTurnNotice('');
     needsRestoreRef.current = false;
-    setConnection('ready');
+    setConnection(snapshot.runtime?.connection || 'ready');
     setConnectionError('');
     stickToBottom.current = true;
   }
@@ -319,6 +346,11 @@ export default function App() {
     setSessions(history);
     sessionRef.current = null;
     setSession(null);
+    runRef.current = null;
+    busyRef.current = false;
+    setRun(null);
+    setPending(false);
+    setCancelling(false);
     setRows([]);
     setPlan([]);
     setTurnError('');
@@ -363,6 +395,12 @@ export default function App() {
     setConnectionError('');
     try {
       const data = await request<Bootstrap>('bootstrap');
+      void request<TaskSummary[]>('tasks.list')
+        .then((value) => {
+          setTasks(value);
+          setPermissions(value.flatMap((task) => task.permissions));
+        })
+        .catch(() => {});
       setBootstrap(data);
       setSettings(data.settings);
       setLocale(data.settings.language);
@@ -412,28 +450,32 @@ export default function App() {
     }
   }
   useEffect(() => {
-    const buffer = createFrameBuffer<{ update: AcpUpdate; turnId: string }>((items) => {
-      setRows((previous) =>
-        items.reduce((list, item) => appendUpdate(list, item.update, item.turnId), previous),
-      );
-      for (const item of items) {
-        if (item.update.sessionUpdate === 'plan') setPlan(item.update.entries || []);
-        if (item.update.sessionUpdate === 'current_mode_update') {
-          const current = sessionRef.current;
-          const modeId = item.update.currentModeId || item.update.modeId;
-          if (current?.modes && modeId) {
-            const next = {
-              ...current,
-              modes: { ...current.modes, currentModeId: modeId },
-            };
-            sessionRef.current = next;
-            setSession(next);
+    const buffer = createFrameBuffer<{ update: AcpUpdate; turnId: string; sessionId: string }>(
+      (buffered) => {
+        const items = buffered.filter((item) => item.sessionId === sessionRef.current?.sessionId);
+        setRows((previous) =>
+          items.reduce((list, item) => appendUpdate(list, item.update, item.turnId), previous),
+        );
+        for (const item of items) {
+          if (item.update.sessionUpdate === 'plan') setPlan(item.update.entries || []);
+          if (item.update.sessionUpdate === 'current_mode_update') {
+            const current = sessionRef.current;
+            const modeId = item.update.currentModeId || item.update.modeId;
+            if (current?.modes && modeId) {
+              const next = {
+                ...current,
+                modes: { ...current.modes, currentModeId: modeId },
+              };
+              sessionRef.current = next;
+              setSession(next);
+            }
           }
         }
-      }
-    });
+      },
+    );
     const unsub = window.desktop?.onEvent((event: DesktopEvent) => {
       if (event.type === 'connection') {
+        if (event.sessionId && event.sessionId !== sessionRef.current?.sessionId) return;
         if (event.state === 'error' || event.state === 'disconnected') {
           if (sessionRef.current) needsRestoreRef.current = true;
           setConnection(event.state);
@@ -447,6 +489,12 @@ export default function App() {
         }
         return;
       }
+      if (event.type === 'tasks-changed') {
+        setTasks(event.tasks);
+        setPermissions(event.tasks.flatMap((task) => task.permissions));
+        return;
+      }
+      if (event.type === 'runner-changed') return;
       if (event.type === 'workspace-changed') {
         if (event.cwd === cwdRef.current) setRevision((value) => value + 1);
         return;
@@ -456,7 +504,13 @@ export default function App() {
         return;
       }
       if (event.type === 'permission-resolved') {
-        setPermissions((items) => items.filter((item) => item.requestId !== event.requestId));
+        setPermissions((items) =>
+          items.filter(
+            (item) =>
+              item.requestId !== event.requestId ||
+              (!!event.sessionId && item.sessionId !== event.sessionId),
+          ),
+        );
         return;
       }
       if (event.type === 'commands') {
@@ -473,7 +527,9 @@ export default function App() {
       }
       if (event.type === 'permission') {
         setPermissions((items) =>
-          items.some((item) => item.requestId === event.requestId)
+          items.some(
+            (item) => item.requestId === event.requestId && item.sessionId === event.sessionId,
+          )
             ? items
             : [
                 ...items,
@@ -503,6 +559,18 @@ export default function App() {
       }
       if (event.sessionId !== sessionRef.current?.sessionId) return;
       if (event.type === 'turn-start') {
+        if (event.queueId)
+          setRows((previous) => [
+            ...previous,
+            {
+              id: `queue:${event.queueId}`,
+              kind: 'user',
+              text: event.text || '',
+              attachments: event.attachments || [],
+              turnId: event.turnId,
+              streaming: false,
+            },
+          ]);
         const next = { sessionId: event.sessionId, turnId: event.turnId };
         runRef.current = next;
         busyRef.current = true;
@@ -516,6 +584,7 @@ export default function App() {
         if (event.replay) return;
         if (event.turnId && runRef.current && event.turnId !== runRef.current.turnId) return;
         buffer.push({
+          sessionId: event.sessionId,
           update: event.update,
           turnId: event.turnId || runRef.current?.turnId || 'live',
         });
@@ -579,8 +648,8 @@ export default function App() {
   }
   async function openProject(path?: string) {
     if (transitionRef.current) return;
-    if (busyRef.current) {
-      notify(t('当前任务正在运行，请先停止或等待完成后切换项目。'));
+    if (pending || editorOpen) {
+      notify(t('请先完成当前操作并关闭文件编辑器。'));
       return;
     }
     setProjectMenu(false);
@@ -609,10 +678,7 @@ export default function App() {
   }
   async function newConversation() {
     if (transitionRef.current) return;
-    if (busyRef.current) {
-      notify(t('当前任务正在运行，请先停止或等待完成后新建会话。'));
-      return;
-    }
+    if (pending) return;
     if (!cwdRef.current) {
       await openProject();
       return;
@@ -637,8 +703,8 @@ export default function App() {
   async function loadConversation(summary: SessionSummary) {
     setSessionMenu(null);
     if (transitionRef.current) return;
-    if (busyRef.current) {
-      notify(t('当前任务正在运行，请先停止或等待完成后切换会话。'));
+    if (pending || (editorOpen && summary.cwd !== cwdRef.current)) {
+      notify(t('请先完成当前操作并关闭文件编辑器。'));
       return;
     }
     if (summary.sessionId === sessionRef.current?.sessionId) {
@@ -653,6 +719,7 @@ export default function App() {
         sessionId: summary.sessionId,
       });
       applySnapshot(snapshot);
+      void refreshSessions(snapshot.cwd);
     } catch (e) {
       notify(t('无法载入会话：{value0}', { value0: errorText(e) }));
     } finally {
@@ -754,7 +821,14 @@ export default function App() {
       setDraft('');
       return;
     }
-    if (!text || busyRef.current || transitionRef.current || loadingSession) return;
+    if (
+      (!text && !submitted.attachments.length) ||
+      busyRef.current ||
+      transitionRef.current ||
+      loadingSession
+    )
+      return;
+    if (!validateImages(submitted.attachments)) return;
     const recovered = needsRestoreRef.current && (await restoreSession());
     if ((connection !== 'ready' && !recovered) || needsRestoreRef.current) {
       notify(t('Grok 尚未连接，请先重新连接或检查设置。'));
@@ -778,6 +852,8 @@ export default function App() {
           ...preferences(true),
         });
         applySnapshot(target, true);
+        busyRef.current = true;
+        setPending(true);
       }
       const userRow: TimelineRow = {
         id: crypto.randomUUID(),
@@ -790,7 +866,7 @@ export default function App() {
       userRowId = userRow.id;
       setRows((previous) => [...previous, userRow]);
       stickToBottom.current = true;
-      const result = await request<{ turnId: string }>('session.send', {
+      const result = await request<{ turnId?: string; queueId?: string }>('session.send', {
         cwd: cwdRef.current,
         sessionId: target.sessionId,
         text,
@@ -801,7 +877,14 @@ export default function App() {
         replaceDraft({ text: '', attachments: [] });
         persistDraft();
       }
-      if (busyRef.current) {
+      if (result.queueId) {
+        setRows((previous) => previous.filter((row) => row.id !== userRowId));
+        runRef.current = null;
+        busyRef.current = false;
+        setRun(null);
+        setPending(false);
+        notify(t('请求已加入队列'));
+      } else if (busyRef.current && result.turnId) {
         const active = { sessionId: target.sessionId, turnId: result.turnId };
         runRef.current = active;
         setRun(active);
@@ -829,6 +912,33 @@ export default function App() {
       notify(errorText(e));
     }
   }
+  function recover(error: string) {
+    const action = classifyFailure(error).action;
+    if (action === 'usage') setDialog('usage');
+    else if (action === 'settings') setDialog('settings');
+    else if (action === 'login')
+      void request('system.open', { target: 'terminal', cwd: cwdRef.current }).catch((e) =>
+        notify(errorText(e)),
+      );
+    else if (action === 'reconnect') void initialize();
+    else {
+      const last = [...rows].reverse().find((row) => row.kind === 'user');
+      if (last && !draftValueRef.current.trim() && !attachmentRef.current.length)
+        fillDraft(last.text, last.attachments || []);
+      else draftRef.current?.focus();
+    }
+  }
+  function recoveryLabel(error: string) {
+    return t(
+      {
+        login: '打开 Grok 登录',
+        usage: '查看额度',
+        settings: '连接设置',
+        reconnect: '重新连接',
+        retry: '重新编辑请求',
+      }[classifyFailure(error).action],
+    );
+  }
   async function attach() {
     try {
       const selected = await request<Attachment[]>('dialog.attach');
@@ -836,6 +946,71 @@ export default function App() {
         ...previous,
         ...selected.filter((item) => !previous.some((file) => file.path === item.path)),
       ]);
+    } catch (e) {
+      notify(errorText(e));
+    }
+  }
+  async function enqueue() {
+    const submitted = currentDraft();
+    const target = sessionRef.current;
+    if (!target || (!submitted.text.trim() && !submitted.attachments.length) || pending) return;
+    if (!validateImages(submitted.attachments)) return;
+    try {
+      await request('session.enqueue', {
+        cwd: target.cwd,
+        sessionId: target.sessionId,
+        text: submitted.text.trim(),
+        attachments: submitted.attachments,
+        ...preferences(),
+      });
+      if (
+        target.sessionId === sessionRef.current?.sessionId &&
+        sameDraft(currentDraft(), submitted)
+      ) {
+        replaceDraft({ text: '', attachments: [] });
+        persistDraft();
+      }
+      notify(t('请求已加入队列'));
+    } catch (e) {
+      notify(errorText(e));
+    }
+  }
+  function addContext(file: Attachment) {
+    setAttachments((previous) => [...previous, file]);
+    notify(t('已加入上下文'));
+  }
+  function validateImages(files: Attachment[]) {
+    const supportsImages =
+      (sessionRef.current?.runtime?.capabilities || bootstrap?.cli.capabilities)?.promptCapabilities
+        ?.image === true;
+    if (
+      !supportsImages &&
+      files.some((file) => file.kind === 'image' || /\.(?:png|jpe?g|gif|webp)$/i.test(file.path))
+    ) {
+      notify(t('当前 Grok CLI 不支持图片输入。请移除图片后发送，草稿已保留。'));
+      return false;
+    }
+    return true;
+  }
+  async function inspectAttachment(file: Attachment) {
+    setAttachmentPreview(file);
+    if (file.text !== undefined || !file.path) return;
+    try {
+      const value = await request<{ text?: string; dataUrl?: string }>('attachment.preview', {
+        path: file.path,
+      });
+      setAttachmentPreview((current) => (current === file ? { ...file, ...value } : current));
+    } catch (e) {
+      notify(errorText(e));
+    }
+  }
+  async function pasteImage(event: React.ClipboardEvent) {
+    if (!Array.from(event.clipboardData.items).some((item) => item.type.startsWith('image/')))
+      return;
+    event.preventDefault();
+    try {
+      const file = await request<Attachment | null>('clipboard.image');
+      if (file) addContext(file);
     } catch (e) {
       notify(errorText(e));
     }
@@ -1208,6 +1383,16 @@ export default function App() {
             <span title={currentTitle}>{currentTitle}</span>
           </div>
           <div className="topbar-actions">
+            <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
+              <Workflow size={17} />
+            </IconButton>
+            <IconButton
+              label={t('项目工具')}
+              disabled={!cwd}
+              onClick={() => setDialog('project-tools')}
+            >
+              <Terminal size={17} />
+            </IconButton>
             <span
               className={`connection-pill ${connection === 'ready' ? '' : 'offline'}`}
               title={connectionError || connectionLabel}
@@ -1289,11 +1474,12 @@ export default function App() {
           <div className="connection-banner">
             <TriangleAlert size={16} />
             <div>
-              <strong>{t('暂时无法连接 Grok')}</strong>
+              <strong>{classifyFailure(connectionError).title}</strong>
               <span>{connectionError || t('请检查可执行文件和登录状态。')}</span>
+              <span>{classifyFailure(connectionError).description}</span>
             </div>
-            <button onClick={() => void initialize()} disabled={initializing}>
-              {initializing ? <Spinner /> : t('重新连接')}
+            <button onClick={() => recover(connectionError)} disabled={initializing}>
+              {initializing ? <Spinner /> : recoveryLabel(connectionError)}
             </button>
             <button onClick={() => setDialog('settings')}>{t('连接设置')}</button>
           </div>
@@ -1402,16 +1588,11 @@ export default function App() {
                 <div className="turn-error">
                   <TriangleAlert size={18} />
                   <div>
-                    <strong>{t('这次任务未能完成')}</strong>
+                    <strong>{classifyFailure(turnError).title}</strong>
                     <p>{turnError}</p>
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        const last = [...rows].reverse().find((row) => row.kind === 'user');
-                        if (last) fillDraft(last.text, last.attachments || []);
-                      }}
-                    >
-                      {t('重新编辑请求')}
+                    <p>{classifyFailure(turnError).description}</p>
+                    <button className="text-button" onClick={() => recover(turnError)}>
+                      {recoveryLabel(turnError)}
                       <ArrowRight size={14} />
                     </button>
                   </div>
@@ -1473,15 +1654,17 @@ export default function App() {
             }}
             onDrop={dropFiles}
           >
-            {dragging && <div className="drop-hint">{t('松开以添加文本或代码文件')}</div>}
+            {dragging && <div className="drop-hint">{t('松开以添加文件或图片')}</div>}
             <div className="attachment-list">
-              {attachments.map((file) => (
-                <span key={file.path} title={file.path}>
+              {attachments.map((file, index) => (
+                <span key={`${file.path}:${index}`} title={file.path}>
                   <Paperclip size={13} />
-                  {file.name}
+                  <button className="attachment-name" onClick={() => void inspectAttachment(file)}>
+                    {file.name}
+                  </button>
                   <button
                     onClick={() =>
-                      setAttachments((items) => items.filter((item) => item.path !== file.path))
+                      setAttachments((items) => items.filter((_, itemIndex) => itemIndex !== index))
                     }
                     title={t('移除 {value0}', { value0: file.name })}
                   >
@@ -1494,6 +1677,7 @@ export default function App() {
               ref={draftRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onPaste={(event) => void pasteImage(event)}
               onKeyDown={(event) => {
                 if (
                   event.key === 'Enter' &&
@@ -1514,7 +1698,7 @@ export default function App() {
             />
             <div className="composer-toolbar">
               <div className="composer-tools">
-                <IconButton label={t('添加文本或代码文件')} onClick={() => void attach()}>
+                <IconButton label={t('添加文件或图片')} onClick={() => void attach()}>
                   <Paperclip size={18} />
                 </IconButton>
                 <IconButton label={t('打开动作库 · Ctrl K')} onClick={() => void openActions()}>
@@ -1584,21 +1768,30 @@ export default function App() {
                 )}
               </div>
               {busy ? (
-                <button
-                  className="send-button stop"
-                  onClick={() => void stop()}
-                  disabled={pending || cancelling}
-                  title={cancelling ? t('正在停止') : t('停止生成')}
-                  aria-label={t('停止生成')}
-                >
-                  {cancelling || pending ? <Spinner /> : <Square size={15} fill="currentColor" />}
-                </button>
+                <>
+                  <button
+                    className="secondary-button queue-send"
+                    disabled={(!draft.trim() && !attachments.length) || pending}
+                    onClick={() => void enqueue()}
+                  >
+                    {t('加入队列')}
+                  </button>
+                  <button
+                    className="send-button stop"
+                    onClick={() => void stop()}
+                    disabled={pending || cancelling}
+                    title={cancelling ? t('正在停止') : t('停止生成')}
+                    aria-label={t('停止生成')}
+                  >
+                    {cancelling || pending ? <Spinner /> : <Square size={15} fill="currentColor" />}
+                  </button>
+                </>
               ) : (
                 <button
                   className="send-button"
                   onClick={() => void send()}
                   disabled={
-                    !draft.trim() ||
+                    (!draft.trim() && !attachments.length) ||
                     !!loadingSession ||
                     configuring ||
                     initializing ||
@@ -1648,6 +1841,8 @@ export default function App() {
           openFile={fileToOpen}
           onClose={() => setInspector(false)}
           notify={notify}
+          onAddContext={addContext}
+          onEditorOpenChange={setEditorOpen}
         />
       )}
       {notice && (
@@ -1666,6 +1861,45 @@ export default function App() {
           </div>
         }
       >
+        {dialog === 'tasks' && (
+          <TaskCenter
+            tasks={tasks}
+            onClose={() => setDialog(null)}
+            notify={notify}
+            onOpen={(task) => {
+              setDialog(null);
+              void loadConversation(task);
+            }}
+          />
+        )}
+        {dialog === 'project-tools' && (
+          <ProjectTools
+            cwd={cwd}
+            sessionId={session?.sessionId}
+            editorOpen={editorOpen}
+            onRestored={() => setRevision((value) => value + 1)}
+            onClose={() => setDialog(null)}
+            notify={notify}
+          />
+        )}
+        {attachmentPreview && (
+          <Modal
+            title={attachmentPreview.name}
+            subtitle={attachmentPreview.path || t('文本上下文')}
+            onClose={() => setAttachmentPreview(null)}
+          >
+            {attachmentPreview.dataUrl && (
+              <img
+                className="attachment-image"
+                src={attachmentPreview.dataUrl}
+                alt={attachmentPreview.name}
+              />
+            )}
+            <pre className="attachment-preview">
+              {attachmentPreview.text || attachmentPreview.path}
+            </pre>
+          </Modal>
+        )}
         {dialog === 'actions' && (
           <ActionsDialog
             commands={commands}
@@ -1793,7 +2027,7 @@ export default function App() {
         )}
         {permissions[0] && (
           <PermissionDialog
-            key={String(permissions[0].requestId)}
+            key={`${permissions[0].sessionId}:${permissions[0].requestId}`}
             item={permissions[0]}
             permissionMode={
               permissions[0].sessionId === session?.sessionId ? session.permissionMode : undefined
@@ -1805,12 +2039,16 @@ export default function App() {
             }
             onReply={async (optionId, cancelled) => {
               const id = permissions[0].requestId;
+              const originSessionId = permissions[0].sessionId;
               await request('session.permission', {
+                sessionId: originSessionId,
                 requestId: id,
                 optionId,
                 cancelled,
               });
-              setPermissions((items) => items.filter((item) => item.requestId !== id));
+              setPermissions((items) =>
+                items.filter((item) => item.requestId !== id || item.sessionId !== originSessionId),
+              );
             }}
           />
         )}

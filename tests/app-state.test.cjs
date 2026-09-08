@@ -182,6 +182,8 @@ async function fixture(
     if (command === 'project.open')
       return { cwd: payload.cwd, sessions: await client.listSessions(payload) };
     if (command === 'sessions.list') return client.listSessions(payload);
+    if (command === 'tasks.list') return [];
+    if (command === 'session.enqueue') return { queueId: 'queued-1' };
     if (command === 'session.load')
       return loadOverride ? loadOverride(payload) : client.loadSession(payload);
     if (command === 'session.new') return client.newSession(payload);
@@ -231,7 +233,7 @@ async function fixture(
   const returnStatement = appFunction.body.statements.find(ts.isReturnStatement);
   const source =
     original.slice(0, returnStatement.getStart(sourceFile)) +
-    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
+    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, permissions, tasks, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -283,6 +285,117 @@ async function fixture(
     },
   };
 }
+
+test('active task switching retains runtime and isolates background connection and approvals', async () => {
+  const f = await fixture();
+  try {
+    const snapshots = Object.fromEntries(
+      summaries.map((item) => [
+        item.sessionId,
+        {
+          ...item,
+          models,
+          commands: [],
+          updates: [],
+          permissionMode: 'ask',
+          runtime: {
+            turnId: item.sessionId === 'session-a' ? 'turn-a' : undefined,
+            connection: 'ready',
+            queued: [],
+            permissions: [],
+          },
+        },
+      ]),
+    );
+    f.setLoadOverride((payload) => snapshots[payload.sessionId]);
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    assert.equal(f.view.run.turnId, 'turn-a');
+    f.emit({
+      type: 'permission',
+      sessionId: 'session-a',
+      requestId: 7,
+      params: { sessionId: 'session-a', options: [] },
+    });
+    f.emit({
+      type: 'permission',
+      sessionId: 'session-b',
+      requestId: 7,
+      params: { sessionId: 'session-b', options: [] },
+    });
+    await settle();
+    assert.equal(f.view.permissions.length, 2);
+    await f.view.loadConversation(summaries[1]);
+    await settle();
+    assert.equal(f.view.busy, false);
+    assert.equal(f.view.permissions[0].sessionId, 'session-a');
+    f.emit({
+      type: 'connection',
+      sessionId: 'session-a',
+      state: 'error',
+      message: 'background failure',
+    });
+    f.emit({ type: 'turn-start', sessionId: 'session-a', turnId: 'other' });
+    await settle();
+    assert.equal(f.view.connection, 'ready');
+    assert.equal(f.view.run, null);
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    assert.equal(f.view.run.turnId, 'turn-a');
+    assert.equal(
+      f.requests.some((item) => item.command === 'session.cancel'),
+      false,
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('explicit queue preserves inline context and unsupported image submission keeps draft', async () => {
+  const f = await fixture();
+  try {
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    const attachment = { name: 'code.ts:2', path: '', kind: 'text', text: 'selected code' };
+    f.view.setDraft('next task');
+    f.view.setAttachments([attachment]);
+    await settle();
+    await f.view.enqueue();
+    await settle();
+    assert.equal(
+      f.requests.find((item) => item.command === 'session.enqueue').payload.attachments[0].text,
+      'selected code',
+    );
+    assert.equal(f.view.draft, '');
+    f.emit({
+      type: 'turn-start',
+      sessionId: 'session-a',
+      turnId: 'queued-turn',
+      queueId: 'queued-1',
+      text: 'next task',
+      attachments: [attachment],
+    });
+    await settle();
+    assert.equal(f.view.rows[0].text, 'next task');
+    f.emit({
+      type: 'turn-end',
+      sessionId: 'session-a',
+      turnId: 'queued-turn',
+      result: { stopReason: 'end_turn' },
+    });
+    await settle();
+    f.view.setDraft('image request');
+    f.view.setAttachments([{ name: 'shot.png', path: 'C:/shot.png', kind: 'image' }]);
+    await settle();
+    await f.view.send();
+    await settle();
+    assert.equal(f.view.draft, 'image request');
+    assert.equal(f.view.attachments.length, 1);
+    assert.equal(f.requests.filter((item) => item.command === 'session.send').length, 0);
+  } finally {
+    f.close();
+  }
+});
 
 test('session/project switches and app restart retain each draft and selected session', async () => {
   const storage = storageFixture();
@@ -427,6 +540,24 @@ test('idle reconnection keeps new input during history restoration and merges du
     assert.equal(f.view.draft, 'new input during restoration');
     assert.equal(f.view.attachments.length, 1);
     assert.equal(f.requests.filter((req) => req.command === 'session.load').length, 2);
+  } finally {
+    f.close();
+  }
+});
+
+test('attachment-only context can be sent and clears only after acceptance', async () => {
+  const f = await fixture();
+  try {
+    await f.view.newConversation();
+    await settle();
+    f.view.setAttachments([
+      { name: 'selected.ts', path: '', kind: 'text', text: 'const value = 1;' },
+    ]);
+    await settle();
+    await f.view.send();
+    await settle();
+    assert.equal(f.requests.filter((req) => req.command === 'session.send').length, 1);
+    assert.equal(f.view.attachments.length, 0);
   } finally {
     f.close();
   }

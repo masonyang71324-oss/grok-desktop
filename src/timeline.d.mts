@@ -28,7 +28,11 @@ export function appendUpdate(
   turnId?: string,
 ): TimelineRow[];
 export function finalizeTurn(rows: TimelineRow[], turnId: string, failed?: boolean): TimelineRow[];
-export function fromReplay(updates: AcpUpdate[], sessionId: string): TimelineRow[];
+export function fromReplay(
+  updates: AcpUpdate[],
+  sessionId: string,
+  runtime?: { turnId?: string; activeTurnStartIndex?: number },
+): TimelineRow[];
 export function createFrameBuffer<T>(
   deliver: (items: T[]) => void,
   schedule?: (fn: () => void) => number,

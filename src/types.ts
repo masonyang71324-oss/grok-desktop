@@ -62,6 +62,8 @@ export interface SessionSummary {
   createdAt?: string;
 }
 export interface SessionSnapshot {
+  capabilities?: { image?: boolean };
+  runtime?: TaskRuntime;
   permissionMode: PermissionMode;
   sessionId: string;
   cwd: string;
@@ -82,6 +84,7 @@ export interface PermissionRequest {
 export type DesktopEvent =
   | {
       type: 'connection';
+      sessionId?: string;
       state: 'connecting' | 'ready' | 'error' | 'disconnected';
       message?: string;
     }
@@ -106,16 +109,68 @@ export type DesktopEvent =
       requestId: string | number;
       sessionId?: string;
     }
-  | { type: 'turn-start'; sessionId: string; turnId: string }
+  | {
+      type: 'turn-start';
+      sessionId: string;
+      turnId: string;
+      queueId?: string;
+      text?: string;
+      attachments?: Attachment[];
+    }
   | { type: 'turn-end'; sessionId: string; turnId: string; result: any }
   | { type: 'turn-error'; sessionId: string; turnId: string; message: string }
   | { type: 'notification'; sessionId?: string; kind: string; payload: any }
   | { type: 'sessions-changed'; sessionId?: string }
-  | { type: 'workspace-changed'; cwd: string };
+  | { type: 'workspace-changed'; cwd: string }
+  | { type: 'checkpoints-changed'; cwd: string; sessionId?: string }
+  | { type: 'tasks-changed'; tasks: TaskSummary[] }
+  | { type: 'runner-changed'; cwd: string; state: RunnerState };
+export interface TaskPermission {
+  requestId: string | number;
+  sessionId: string;
+  params: PermissionRequest;
+}
+export interface TaskRuntime {
+  capabilities?: { promptCapabilities?: { image?: boolean } };
+  status?: string;
+  turnId?: string;
+  activeTurnStartIndex?: number;
+  connection?: string;
+  queued: { id: string; text: string; createdAt: string; attachments?: Attachment[] }[];
+  error?: string;
+  permissions: TaskPermission[];
+}
+export interface TaskSummary extends TaskRuntime, SessionSummary {
+  status: string;
+}
+export interface RunnerState {
+  status: string;
+  script?: string;
+  log: string;
+  url?: string;
+  error?: string;
+}
+export interface Checkpoint {
+  id: string;
+  cwd: string;
+  sessionId: string;
+  turnId: string;
+  createdAt: string;
+  status: string;
+  files: { path: string; status: string; before?: string | null; after?: string | null }[];
+  skipped?: { path: string; reason: string }[];
+}
 export interface Bootstrap {
+  capabilities?: { image?: boolean };
   settings: Settings;
   version: string;
-  cli: { path: string; version: string; connected: boolean; error?: string };
+  cli: {
+    path: string;
+    version: string;
+    connected: boolean;
+    error?: string;
+    capabilities?: { promptCapabilities?: { image?: boolean } };
+  };
   models: ModelsState;
   commands: Command[];
 }
@@ -135,6 +190,9 @@ export interface GitChange {
 export interface Attachment {
   name: string;
   path: string;
+  kind?: 'text' | 'image';
+  text?: string;
+  mimeType?: string;
 }
 export interface ManagementResult {
   text: string;

@@ -285,6 +285,29 @@ test('a requested file location opens its line and reports the active tab', asyn
   assert.equal(await page.evaluate(() => window.lastTab), 'files');
 });
 
+test('editor selection becomes labeled inline context without saving edits', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() =>
+    window.showInspector('C:/a', { onAddContext: (file) => (window.addedContext = file) }),
+  );
+  await page.getByRole('button', { name: 'note.txt', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: '文件内容' });
+  await editor.fill('first\nselected\nlast');
+  await editor.evaluate((element) => element.setSelectionRange(6, 14));
+  await page.getByRole('button', { name: '添加选中文本' }).click();
+  assert.deepEqual(await page.evaluate(() => window.addedContext), {
+    name: 'note.txt:2',
+    path: '',
+    kind: 'text',
+    text: 'selected',
+  });
+  assert.equal(
+    await page.evaluate(() => window.calls.some((call) => call.command === 'workspace.save')),
+    false,
+  );
+  assert.equal(await editor.inputValue(), 'first\nselected\nlast');
+});
+
 test('diff line numbers distinguish removed and added lines and restart at each hunk', async (t) => {
   const page = await fixture(t);
   await page.evaluate(() => {

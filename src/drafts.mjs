@@ -9,7 +9,11 @@ export function sameDraft(left, right) {
     left.attachments.length === right.attachments.length &&
     left.attachments.every(
       (file, index) =>
-        file.path === right.attachments[index].path && file.name === right.attachments[index].name,
+        file.path === right.attachments[index].path &&
+        file.name === right.attachments[index].name &&
+        file.kind === right.attachments[index].kind &&
+        file.text === right.attachments[index].text &&
+        file.mimeType === right.attachments[index].mimeType,
     )
   );
 }

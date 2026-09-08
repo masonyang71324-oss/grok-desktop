@@ -16,7 +16,7 @@ import {
   Save,
   X,
 } from 'lucide-react';
-import type { GitChange, WorkspaceEntry } from './types';
+import type { Attachment, GitChange, WorkspaceEntry } from './types';
 import { baseName, errorText, request } from './lib';
 import { EmptyBox, IconButton, Modal, Spinner } from './components';
 import { useI18n } from './i18n';
@@ -46,6 +46,8 @@ export default function Inspector({
   openFile: requestedFile,
   tab: initialTab = 'files',
   onTabChange,
+  onAddContext,
+  onEditorOpenChange,
 }: {
   cwd: string;
   plan: any[];
@@ -55,6 +57,8 @@ export default function Inspector({
   openFile?: { path: string; line?: number; requestId: number };
   tab?: InspectorTab;
   onTabChange?: (tab: InspectorTab) => void;
+  onAddContext?: (file: Attachment) => void;
+  onEditorOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<InspectorTab>(initialTab);
@@ -85,6 +89,10 @@ export default function Inspector({
   const editorRef = useRef<HTMLTextAreaElement>(null),
     jumpLineRef = useRef<number | undefined>(undefined);
   const dirty = !!file && normalizeText(edited) !== normalizeText(file.text);
+  useEffect(() => {
+    onEditorOpenChange?.(!!file);
+    return () => onEditorOpenChange?.(false);
+  }, [!!file]);
   useEffect(() => {
     if (!dirty && !saving) return;
     const preventUnload = (event: BeforeUnloadEvent) => {
@@ -286,6 +294,20 @@ export default function Inspector({
             <span>{entry.name}</span>
           </button>
           <div className="workspace-entry-actions">
+            {!entry.isDirectory && onAddContext && (
+              <button
+                className="text-button"
+                title={t('加入上下文')}
+                onClick={() =>
+                  onAddContext({
+                    name: entry.path,
+                    path: cwd.replace(/[\\/]$/, '') + '/' + entry.path,
+                  })
+                }
+              >
+                +
+              </button>
+            )}
             <IconButton
               label={t('用默认程序打开 {name}', { name: entry.name })}
               onClick={() => void openSystemFile(entry.path, 'workspace-file')}
@@ -524,6 +546,38 @@ export default function Inspector({
           }
         >
           <div className="file-preview-actions">
+            {onAddContext && (
+              <>
+                <button
+                  className="secondary-button"
+                  onClick={() =>
+                    onAddContext({ name: file.path, path: '', kind: 'text', text: edited })
+                  }
+                  disabled={file.truncated}
+                >
+                  {t('添加文件内容')}
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    const editor = editorRef.current;
+                    if (!editor || editor.selectionStart === editor.selectionEnd) {
+                      notify(t('请先选择要添加的文本'));
+                      return;
+                    }
+                    const start = edited.slice(0, editor.selectionStart).split('\n').length;
+                    onAddContext({
+                      name: `${file.path}:${start}`,
+                      path: '',
+                      kind: 'text',
+                      text: edited.slice(editor.selectionStart, editor.selectionEnd),
+                    });
+                  }}
+                >
+                  {t('添加选中文本')}
+                </button>
+              </>
+            )}
             <button
               className="secondary-button"
               onClick={() => void openSystemFile(file.path, 'workspace-file')}
@@ -579,6 +633,22 @@ export default function Inspector({
           }}
         >
           <div className="diff-view">
+            {onAddContext && (
+              <button
+                className="secondary-button"
+                disabled={!diff.text}
+                onClick={() =>
+                  onAddContext({
+                    name: diff.path + ' (diff)',
+                    path: '',
+                    kind: 'text',
+                    text: diff.text,
+                  })
+                }
+              >
+                {t('添加差异到上下文')}
+              </button>
+            )}
             {diff.text ? (
               diffRows.map((line, index) => (
                 <div

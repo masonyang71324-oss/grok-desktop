@@ -1,0 +1,93 @@
+.workflow-list {
+  display: grid;
+  gap: 12px;
+}
+.workflow-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.workflow-card h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.workflow-card small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  margin: 5px 0;
+}
+.workflow-card select {
+  max-width: 100%;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.workflow-actions,
+.queue-item,
+.checkpoint-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+.queue-item {
+  justify-content: space-between;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.workflow-log,
+.attachment-preview,
+.checkpoint-diff pre {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.6 var(--font-mono, monospace);
+}
+.checkpoint-row {
+  flex: 1;
+  min-width: 0;
+  justify-content: space-between;
+  padding: 10px;
+}
+.workflow-actions > .text-button,
+.queue-item > .text-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.checkpoint-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.checkpoint-diff > div {
+  min-width: 0;
+}
+.workflow-card details {
+  margin: 10px 0;
+}
+.workflow-card summary {
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.attachment-list .attachment-name {
+  color: inherit;
+  width: auto;
+  padding: 0;
+}
+.queue-send {
+  margin-left: auto;
+  margin-right: 10px;
+}
+.attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  margin: auto;
+}

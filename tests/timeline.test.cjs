@@ -2,6 +2,36 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const load = () => import('../src/timeline.mjs');
 
+test('active snapshot resumes existing tool and message rows with the live turn id', async () => {
+  const { fromReplay, appendUpdate } = await load();
+  const updates = [
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'old' } },
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old answer' } },
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'new' } },
+    { sessionUpdate: 'tool_call', toolCallId: 'tool', status: 'in_progress' },
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'part' } },
+  ];
+  let rows = fromReplay(updates, 's1', { turnId: 'live', activeTurnStartIndex: 2 });
+  rows = appendUpdate(
+    rows,
+    { sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'completed' },
+    'live',
+  );
+  rows = appendUpdate(
+    rows,
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ' rest' } },
+    'live',
+  );
+  assert.equal(rows.filter((row) => row.kind === 'tool').length, 1);
+  assert.equal(rows.find((row) => row.kind === 'tool').status, 'completed');
+  assert.equal(rows.at(-1).text, 'part rest');
+  assert.notEqual(rows[0].turnId, 'live');
+  assert.equal(
+    fromReplay(updates, 's1', { turnId: 'preparing' }).some((row) => row.turnId === 'preparing'),
+    false,
+  );
+});
+
 test('stream keeps thought, tool and answer chronology and joins only adjacent chunks', async () => {
   const { appendUpdate } = await load();
   let rows = [];

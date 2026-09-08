@@ -1,6 +1,7 @@
 'use strict';
 // A standalone ACP fixture for the real desktop transport. No account or network.
 const fs = require('node:fs');
+const path = require('node:path');
 const readline = require('node:readline');
 const { randomUUID } = require('node:crypto');
 const stateFile = process.env.GROK_DESKTOP_MOCK_STATE;
@@ -38,20 +39,49 @@ let state = { sessions: [], clientVersion: '' },
   activeSessionId = '',
   turn = null;
 const permissions = new Map();
-try {
-  if (stateFile && fs.existsSync(stateFile)) state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-} catch {
-  process.stderr.write('[mock] state_read_error\n');
-  process.exit(1);
+let stateLocked = false;
+// Every synchronous fixture transaction reloads shared state. Stream callbacks
+// participate too, so concurrent session processes never overwrite each other.
+function withState(action) {
+  if (!stateFile || stateLocked) return action();
+  const lock = `${stateFile}.lock`;
+  const until = Date.now() + 5000;
+  let fd;
+  while (fd === undefined) {
+    try {
+      fd = fs.openSync(lock, 'wx');
+    } catch (error) {
+      if (error.code !== 'EEXIST' || Date.now() >= until) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    }
+  }
+  try {
+    stateLocked = true;
+    if (fs.existsSync(stateFile)) state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    return action();
+  } finally {
+    stateLocked = false;
+    fs.closeSync(fd);
+    fs.unlinkSync(lock);
+  }
 }
 const save = () => {
-  if (stateFile) fs.writeFileSync(stateFile, JSON.stringify(state));
+  if (stateFile) {
+    fs.writeFileSync(`${stateFile}.tmp`, JSON.stringify(state));
+    fs.renameSync(`${stateFile}.tmp`, stateFile);
+  }
 };
-const log = (type, method, status) => {
+const log = (type, method, status, detail = {}) => {
   if (logFile)
     fs.appendFileSync(
       logFile,
-      JSON.stringify({ type, ...(method ? { method } : {}), ...(status ? { status } : {}) }) + '\n',
+      JSON.stringify({
+        type,
+        pid: process.pid,
+        ...detail,
+        ...(method ? { method } : {}),
+        ...(status ? { status } : {}),
+      }) + '\n',
     );
 };
 const write = (message) =>
@@ -60,12 +90,15 @@ const reply = (request, result) => write({ id: request.id, result });
 const fail = (request, code) => write({ id: request.id, error: { code: -32602, message: code } });
 const sessionFor = (id) => state.sessions.find((session) => session.sessionId === id);
 function update(session, value, record = true) {
-  if (record) {
-    session.updates.push(value);
-    session.updatedAt = new Date().toISOString();
-    save();
-  }
-  write({ method: 'session/update', params: { sessionId: session.sessionId, update: value } });
+  return withState(() => {
+    if (record) {
+      session = sessionFor(session.sessionId) || session;
+      session.updates.push(value);
+      session.updatedAt = new Date().toISOString();
+      save();
+    }
+    write({ method: 'session/update', params: { sessionId: session.sessionId, update: value } });
+  });
 }
 function finish(stopReason = 'end_turn') {
   if (!turn) return;
@@ -76,7 +109,7 @@ function finish(stopReason = 'end_turn') {
   reply(current.request, { stopReason });
   log('turn-end', null, stopReason);
 }
-function stream(session, parts) {
+function stream(session, parts, delay = 90) {
   const current = turn;
   parts.forEach((text, index) =>
     current.timers.push(
@@ -89,7 +122,7 @@ function stream(session, parts) {
           });
           if (index === parts.length - 1) finish();
         },
-        90 * (index + 1),
+        delay * (index + 1),
       ),
     ),
   );
@@ -123,7 +156,10 @@ function receive(request) {
     reply(request, {
       protocolVersion: 1,
       agentInfo: { name: 'mock-grok', version: '0.0.0-test' },
-      agentCapabilities: { loadSession: true, promptCapabilities: { embeddedContext: true } },
+      agentCapabilities: {
+        loadSession: true,
+        promptCapabilities: { embeddedContext: true, image: true },
+      },
       _meta: { modelState: models, availableCommands: commands },
     });
     return;
@@ -201,9 +237,21 @@ function receive(request) {
       .filter((item) => item.type === 'text')
       .map((item) => item.text)
       .join('\n');
+    log('prompt', null, text, { sessionId: session.sessionId, cwd: session.cwd });
+    const images = params.prompt.filter((item) => item.type === 'image');
+    if (images.length)
+      log('image-prompt', null, String(images.length), {
+        sessionId: session.sessionId,
+        mimeTypes: images.map((image) => image.mimeType),
+      });
     turn = { request, session, timers: [] };
     update(session, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } });
-    if (text.includes('MOCK_RENDER')) {
+    if (text.includes('MOCK_EDIT')) {
+      fs.writeFileSync(path.join(session.cwd, 'fixture.txt'), 'mock edited\n');
+      stream(session, ['模拟文件已修改。']);
+    } else if (text.includes('MOCK_SLOW')) {
+      stream(session, ['模拟流式响应：', '第一段。', '已完成。'], 500);
+    } else if (text.includes('MOCK_RENDER')) {
       update(session, {
         sessionUpdate: 'agent_message_chunk',
         content: {
@@ -236,7 +284,7 @@ function receive(request) {
         status: 'pending',
         rawInput: { path: 'fixture.txt' },
       });
-      const id = randomUUID();
+      const id = text.includes('MOCK_PERMISSION_COLLISION') ? 1 : randomUUID();
       permissions.set(id, { turn, session });
       write({
         id,
@@ -312,7 +360,7 @@ readline
   .on('line', (line) => {
     if (!line.trim()) return;
     try {
-      receive(JSON.parse(line));
+      withState(() => receive(JSON.parse(line)));
     } catch {
       log('error', null, 'protocol_error');
       process.stderr.write('[mock] protocol_error\n');

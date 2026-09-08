@@ -42,11 +42,22 @@ export function appendUpdate(rows, update, turnId = 'history') {
   if (kinds[type]) {
     const kind = kinds[type];
     const text = contentText(update.content);
-    if (!text) return rows;
+    const attachments = kind === 'user' ? update._desktopAttachments : undefined;
+    if (!text && !attachments?.length) return rows;
     const last = rows[rows.length - 1];
     if (last && last.kind === kind && last.turnId === turnId && last.streaming)
       return [...rows.slice(0, -1), { ...last, text: last.text + text }];
-    return [...rows, { id: `row-${++sequence}`, kind, text, turnId, streaming: true }];
+    return [
+      ...rows,
+      {
+        id: `row-${++sequence}`,
+        kind,
+        text,
+        turnId,
+        streaming: true,
+        ...(attachments?.length ? { attachments } : {}),
+      },
+    ];
   }
   if (type === 'tool_call' || type === 'tool_call_update') {
     const index = rows.findIndex(
@@ -96,19 +107,23 @@ export function finalizeTurn(rows, turnId, failed = false) {
   );
 }
 
-export function fromReplay(updates, sessionId) {
+export function fromReplay(updates, sessionId, runtime) {
   let rows = [];
   let turn = 0;
   let previousType = '';
-  for (const update of updates || []) {
+  for (const [index, update] of (updates || []).entries()) {
     if (update.sessionUpdate === 'user_message_chunk' && previousType !== 'user_message_chunk') {
       rows = finalizeTurn(rows, `${sessionId}:history:${turn}`);
       turn += 1;
     }
-    rows = appendUpdate(rows, update, `${sessionId}:history:${turn}`);
+    const live =
+      runtime?.turnId &&
+      runtime.activeTurnStartIndex != null &&
+      index >= runtime.activeTurnStartIndex;
+    rows = appendUpdate(rows, update, live ? runtime.turnId : `${sessionId}:history:${turn}`);
     previousType = update.sessionUpdate;
   }
-  return rows.map((row) => ({ ...row, streaming: false }));
+  return rows.map((row) => (row.turnId === runtime?.turnId ? row : { ...row, streaming: false }));
 }
 
 export function createFrameBuffer(
