@@ -44,17 +44,20 @@ async function preparePrompt(text, attachments = [], capabilities = {}) {
     const isImage =
       attachment.kind === 'image' || IMAGE_EXTENSIONS.has(path.extname(filename).toLowerCase());
     if (isImage) {
-      if (capabilities.image !== true)
-        throw new Error(
-          t('当前 Grok 版本不支持图片输入。请移除图片，或更新到支持图片的 Grok 版本。'),
-        );
       imageBytes += stat.size;
       if (stat.size > 10 * MB || imageBytes > 20 * MB)
         throw new Error(t('图片单个不得超过 10 MB，总计不得超过 20 MB。'));
       const bytes = await fs.readFile(filename);
       const mimeType = imageMime(bytes);
       if (!mimeType) throw new Error(t('图片格式无效，请选择 PNG、JPEG、WebP 或 GIF。'));
-      content.push({ type: 'image', mimeType, data: bytes.toString('base64') });
+      if (capabilities.image === true) {
+        content.push({ type: 'image', mimeType, data: bytes.toString('base64') });
+      } else {
+        content.push({
+          type: 'text',
+          text: `Attached local image (JSON-encoded absolute path): ${JSON.stringify(filename)}\nUse read_file to view this exact image before answering the user's request. Read the image visually, not as raw bytes or terminal text. If you cannot view it, explain the failure instead of guessing its contents.`,
+        });
+      }
     } else {
       if (!capabilities.embeddedContext) throw new Error(t('当前 Grok 版本不支持附件上下文'));
       textBytes += stat.size;

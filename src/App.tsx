@@ -76,6 +76,7 @@ import Inspector from './Inspector';
 import PermissionControl from './PermissionControl';
 import TaskCenter from './TaskCenter';
 import ProjectTools from './ProjectTools';
+import AttachmentThumbnail from './AttachmentThumbnail';
 import './workflows.css';
 import './enhancements.css';
 import { createDraftStore, sameDraft, type Draft } from './drafts.mjs';
@@ -828,7 +829,6 @@ export default function App() {
       loadingSession
     )
       return;
-    if (!validateImages(submitted.attachments)) return;
     const recovered = needsRestoreRef.current && (await restoreSession());
     if ((connection !== 'ready' && !recovered) || needsRestoreRef.current) {
       notify(t('Grok 尚未连接，请先重新连接或检查设置。'));
@@ -954,7 +954,6 @@ export default function App() {
     const submitted = currentDraft();
     const target = sessionRef.current;
     if (!target || (!submitted.text.trim() && !submitted.attachments.length) || pending) return;
-    if (!validateImages(submitted.attachments)) return;
     try {
       await request('session.enqueue', {
         cwd: target.cwd,
@@ -978,19 +977,6 @@ export default function App() {
   function addContext(file: Attachment) {
     setAttachments((previous) => [...previous, file]);
     notify(t('已加入上下文'));
-  }
-  function validateImages(files: Attachment[]) {
-    const supportsImages =
-      (sessionRef.current?.runtime?.capabilities || bootstrap?.cli.capabilities)?.promptCapabilities
-        ?.image === true;
-    if (
-      !supportsImages &&
-      files.some((file) => file.kind === 'image' || /\.(?:png|jpe?g|gif|webp)$/i.test(file.path))
-    ) {
-      notify(t('当前 Grok CLI 不支持图片输入。请移除图片后发送，草稿已保留。'));
-      return false;
-    }
-    return true;
   }
   async function inspectAttachment(file: Attachment) {
     setAttachmentPreview(file);
@@ -1658,8 +1644,8 @@ export default function App() {
             <div className="attachment-list">
               {attachments.map((file, index) => (
                 <span key={`${file.path}:${index}`} title={file.path}>
-                  <Paperclip size={13} />
                   <button className="attachment-name" onClick={() => void inspectAttachment(file)}>
+                    <AttachmentThumbnail file={file} />
                     {file.name}
                   </button>
                   <button
@@ -1673,6 +1659,16 @@ export default function App() {
                 </span>
               ))}
             </div>
+            {attachments.some(
+              (file) => file.kind === 'image' || /\.(png|jpe?g|gif|webp)$/i.test(file.path),
+            ) && (
+              <p className="attachment-hint">
+                {(session?.runtime?.capabilities || bootstrap?.cli.capabilities)?.promptCapabilities
+                  ?.image === true
+                  ? t('图片会随消息发送给 Grok。')
+                  : t('发送时会让 Grok 读取所附图片文件。')}
+              </p>
+            )}
             <textarea
               ref={draftRef}
               value={draft}

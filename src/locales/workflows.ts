@@ -16,8 +16,8 @@ export const workflows: Record<string, string> = {
   '打开 Grok 登录': 'Open Grok sign-in',
   查看额度: 'View usage',
   已加入上下文: 'Added to context',
-  '当前 Grok CLI 不支持图片输入。请移除图片后发送，草稿已保留。':
-    'This Grok CLI does not support images. Remove the image to send; your draft is preserved.',
+  '发送时会让 Grok 读取所附图片文件。': 'Grok will read the attached image files when you send.',
+  '图片会随消息发送给 Grok。': 'Images will be sent to Grok with your message.',
   任务中心: 'Task center',
   项目工具: 'Project tools',
   加入队列: 'Add to queue',

@@ -22,7 +22,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 - Project conversations, local drafts and restart recovery.
 - A task center for background conversations, pending approvals and queued messages. Different projects can run concurrently; tasks in the same folder run in sequence. Stopped or failed queues require manual continuation.
 - Per-turn file checkpoints with review, selective restore, undo and record deletion. Later file changes prevent overwriting.
-- Attach files, selected code or Git diffs with inspectable context. Paste screenshots or attach images when the connected CLI supports them.
+- Attach files, selected code or Git diffs. Pasted screenshots are saved automatically with clickable thumbnails; sending uses native image input or asks Grok to read the exact local image files.
 - Discover npm scripts and run, stop or restart them with buttons, live logs and local preview links.
 - English / Simplified Chinese UI, including approval choices, management forms, usage panels, native menus and notifications.
 - Switching languages preserves conversation text, code, file contents and command arguments. Per-conversation permissions remain available; pending approvals always keep their explicit decision.
@@ -56,6 +56,6 @@ Desktop settings, drafts, queued messages, pasted images, file checkpoints and r
 
 Each opened conversation has its own Grok connection. Different folders can run concurrently; turns and file restoration in the same folder are serialized. Reloading the interface reconnects to live tasks. Work interrupted by an application exit is never resent automatically; review and resume it in the task center. Account limits still apply to concurrent requests.
 
-Text attachments are limited to 1 MB each / 4 MB total, and images to 10 MB each / 20 MB total. Image input follows the CLI's negotiated capability. On 2026-09-08, stable Grok 1.0.13 did not provide ACP image input; the interface explains this and preserves your draft. Audio input is not implemented. Running npm scripts requires Node.js. macOS/Linux packaging and terminal integration are not implemented. The “Grok Build update” action updates the CLI only.
+Text attachments are limited to 1 MB each / 4 MB total, and images to 10 MB each / 20 MB total. Images use native ACP input when supported; otherwise each absolute file path is sent with a request to view it using read_file. On 2026-09-08, a real ACP session with Grok Build 1.0.13 correctly identified shapes, colors and text in a local test image. This route requires Grok's image-reading tool and file access permission. Pasted screenshots are stored under attachments in the application data directory; unrelated screenshots are never automatically scanned or sent. Audio input is not implemented. Running npm scripts requires Node.js. macOS/Linux packaging and terminal integration are not implemented. The “Grok Build update” action updates the CLI only.
 
 Builds are unsigned; desktop auto-update hosting and a source license remain unconfigured. The source remains UNLICENSED. The package's private field prevents accidental npm publication; this GitHub repository is public. See [architecture](docs/architecture.md), [changes](CHANGELOG.md), the [1.1.0 historical review](docs/review-response-1.1.0.md) and the [GitHub publishing guide](docs/github-publishing.md).

@@ -351,7 +351,7 @@ test('active task switching retains runtime and isolates background connection a
   }
 });
 
-test('explicit queue preserves inline context and unsupported image submission keeps draft', async () => {
+test('explicit queue preserves inline context and image submission reaches the main process without native capability', async () => {
   const f = await fixture();
   try {
     await f.view.loadConversation(summaries[0]);
@@ -391,7 +391,9 @@ test('explicit queue preserves inline context and unsupported image submission k
     await settle();
     assert.equal(f.view.draft, 'image request');
     assert.equal(f.view.attachments.length, 1);
-    assert.equal(f.requests.filter((item) => item.command === 'session.send').length, 0);
+    const sends = f.requests.filter((item) => item.command === 'session.send');
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0].payload.attachments[0].path, 'C:/shot.png');
   } finally {
     f.close();
   }

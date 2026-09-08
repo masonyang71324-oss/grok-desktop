@@ -76,9 +76,24 @@
   cursor: pointer;
 }
 .attachment-list .attachment-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: inherit;
   width: auto;
   padding: 0;
+}
+.attachment-thumbnail {
+  width: 40px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 3px;
+  background: var(--surface);
+}
+.attachment-hint {
+  margin: 8px 14px 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 .queue-send {
   margin-left: auto;

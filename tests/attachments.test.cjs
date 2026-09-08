@@ -37,14 +37,39 @@ test('image-only prompt carries actual image bytes when negotiated image capabil
   ]);
 });
 
-test('unsupported images are rejected explicitly without dropping the rest of the input', async (t) => {
-  const { directory, client } = await fixture(t, { image: false, embeddedContext: true });
-  const filename = path.join(directory, 'screenshot.png');
+test('without native image input the prompt asks Grok to read each exact local image path', async (t) => {
+  const { directory, client } = await fixture(t, { image: false, embeddedContext: false });
+  const filename = path.join(directory, '截图 one.png');
   await fs.writeFile(filename, png);
-  const attachments = [{ name: 'screenshot.png', path: filename }];
-  await assert.rejects(client._promptContent('Explain screenshot', attachments), /图片|image/i);
-  assert.equal(attachments.length, 1);
+  const second = path.join(directory, 'second.png');
+  await fs.writeFile(second, png);
+  const attachments = [
+    { name: 'screenshot.png', path: filename },
+    { name: 'second.png', path: second },
+  ];
+  const content = await client._promptContent('Compare screenshots', attachments);
+  assert.equal(content[0].text, 'Compare screenshots');
+  assert.equal(content.length, 3);
+  for (const [index, file] of [filename, second].entries()) {
+    assert.equal(content[index + 1].type, 'text');
+    assert.match(content[index + 1].text, /read_file/);
+    assert.ok(content[index + 1].text.includes(JSON.stringify(file)));
+    assert.ok(!content[index + 1].text.includes(png.toString('base64')));
+  }
+  assert.equal(attachments.length, 2);
   assert.deepEqual(await fs.readFile(filename), png);
+});
+
+test('image-only fallback works and refuses a deleted or fake image before submitting', async (t) => {
+  const { directory, client } = await fixture(t, { image: false });
+  const filename = path.join(directory, 'image.png');
+  const attachments = [{ name: 'image.png', path: filename }];
+  await fs.writeFile(filename, png);
+  assert.match((await client._promptContent('', attachments))[0].text, /read_file/);
+  await fs.writeFile(filename, 'not a PNG');
+  await assert.rejects(client._promptContent('', attachments), /图片格式|image format/i);
+  await fs.unlink(filename);
+  await assert.rejects(client._promptContent('', attachments), /ENOENT/);
 });
 
 test('invalid image content and oversized selected text cannot be submitted', async (t) => {

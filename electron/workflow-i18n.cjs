@@ -29,8 +29,6 @@ module.exports = {
     'This folder has a task running. Wait for it to finish before restoring files.',
   '重新载入界面后会恢复仍在运行的任务和待批准操作。':
     'Reloading the interface restores running tasks and pending approvals.',
-  '当前 Grok 版本不支持图片输入。请移除图片，或更新到支持图片的 Grok 版本。':
-    'This Grok version does not support images. Remove the image, or update to a Grok version that supports images.',
   '图片单个不得超过 10 MB，总计不得超过 20 MB。':
     'Images are limited to 10 MB each and 20 MB in total.',
   '图片格式无效，请选择 PNG、JPEG、WebP 或 GIF。':

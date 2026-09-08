@@ -11,7 +11,7 @@ The Windows app uses Electron, React, TypeScript and Vite. It starts installed G
 - electron/session-hub.cjs qualifies events and permissions by session, queues messages and reserves a normalized directory lock across turn/checkpoint lifetimes and file restoration. Queued and interrupted work is persisted; startup requires explicit continuation.
 - electron/checkpoints.cjs records bounded before/after file contents including dirty/untracked text. Restore checks all selected after-states before writing and creates an undo record. Dependencies, binaries, large files and unsupported entries are explicitly omitted.
 - electron/project-runner.cjs discovers npm scripts and owns child process trees, bounded logs and loopback preview links. Normal shutdown awaits owned process cleanup.
-- electron/attachments.cjs prepares inline context, file resources and capability-gated native ACP images. Clipboard images are persisted before being placed in a draft.
+- electron/attachments.cjs prepares inline context, file resources and native ACP images when advertised. Otherwise validated image attachments become exact absolute paths with read_file instructions. Clipboard images are persisted before being placed in a draft; thumbnails are transient UI state.
 - src/App.tsx manages the selected project/session, timeline, composer and recovery. The fast App state harness is supplemented by real Electron E2E coverage.
 
 ## Rendering and persistence
@@ -51,4 +51,4 @@ Background attention is opt-out and uses fixed notification text without task co
 
 ## Verification boundary
 
-Concurrent transports, approval isolation, cancellation and queue recovery are checked with separate mock ACP processes. These tests do not claim to measure real model speed or account concurrency limits. Actual installed Grok 1.0.13 was checked for initialization and update availability; its image capability was false. No billable model prompts are used during tests.
+Concurrent transports, approval isolation, cancellation and queue recovery are checked with separate mock ACP processes. Automated tests do not use billable model requests or claim to measure model speed or account limits. For 1.3.1, a separate live ACP probe on 2026-09-08 confirmed that Grok Build 1.0.13 (native image capability false) can use read_file to visually identify shapes, colors and a code in a generated local PNG. This is distinct from native image input support.

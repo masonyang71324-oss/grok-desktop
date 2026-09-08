@@ -158,7 +158,10 @@ function receive(request) {
       agentInfo: { name: 'mock-grok', version: '0.0.0-test' },
       agentCapabilities: {
         loadSession: true,
-        promptCapabilities: { embeddedContext: true, image: true },
+        promptCapabilities: {
+          embeddedContext: true,
+          image: process.env.GROK_DESKTOP_MOCK_IMAGE !== 'false',
+        },
       },
       _meta: { modelState: models, availableCommands: commands },
     });

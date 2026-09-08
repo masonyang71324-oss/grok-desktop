@@ -1,5 +1,11 @@
 # Changes
 
+## 1.3.1
+
+- Enable screenshot sending on Grok Build 1.0.13 through its local read_file image tool when native ACP image input is unavailable. Native image support remains in use when advertised.
+- Show clickable screenshot thumbnails and explain how images will be sent, in Chinese and English. Pasted images are saved automatically; missing or invalid files keep the draft intact.
+- Add real Electron coverage for screenshot paste, preview, both sending routes, draft reload and missing-file failures. Materialize clipboard backups before replacing them in E2E tests.
+
 ## 1.3.0
 
 - Add per-conversation background connections, a task center and persistent message queues. Serialize writes in the same project and pause queues on cancellation, interruption or error.

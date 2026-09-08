@@ -73,7 +73,7 @@ test('runs existing scripts in paths with spaces, bounds logs and stops its proc
 
 test('Electron main process can run npm using installed Node instead of its own executable', async (t) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'electron runner spaces '));
-  t.after(() => fs.rm(cwd, { recursive: true, force: true }));
+  t.after(() => fs.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }));
   await fs.writeFile(
     path.join(cwd, 'package.json'),
     JSON.stringify({ scripts: { verify: 'node -e "console.log(123456789)"' } }),

@@ -279,7 +279,17 @@ async function logs() {
 
     phase = 'clipboard-image-preview-and-native-acp-image';
     await app.evaluate(async ({ clipboard, ClipboardItem, nativeImage }) => {
-      globalThis.workflowClipboard = await clipboard.read();
+      const previous = await clipboard.read();
+      globalThis.workflowClipboard = await Promise.all(
+        previous.map(
+          async (item) =>
+            new ClipboardItem(
+              Object.fromEntries(
+                await Promise.all(item.types.map(async (type) => [type, await item.getType(type)])),
+              ),
+            ),
+        ),
+      );
       const image = nativeImage.createFromBitmap(Buffer.from([0, 0, 255, 255]), {
         width: 1,
         height: 1,
