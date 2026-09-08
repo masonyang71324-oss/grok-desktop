@@ -10,7 +10,7 @@ async function fixture(t) {
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const cwd = path.join(root, 'project');
   await fs.mkdir(cwd);
-  return { cwd, directory: path.join(root, 'store') };
+  return { cwd: await fs.realpath(cwd), directory: path.join(root, 'store') };
 }
 
 test('restores dirty text, additions and deletions byte-for-byte with an undo record', async (t) => {
@@ -142,4 +142,17 @@ test('an unfinished checkpoint from a previous process is labelled interrupted a
   await assert.rejects(restarted.restore({ id, paths: ['text.txt'] }));
   await restarted.remove({ id });
   assert.equal(await fs.readFile(path.join(cwd, 'text.txt'), 'utf8'), 'keep');
+});
+
+test('project path aliases list the same checkpoint records', async (t) => {
+  const { cwd, directory } = await fixture(t);
+  const alias = path.join(path.dirname(cwd), 'project alias');
+  await fs.symlink(cwd, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const store = createCheckpointStore({ directory });
+  const id = await store.begin({ cwd: alias, sessionId: 's', turnId: 't' });
+  await store.finish(id);
+  assert.deepEqual(
+    (await store.list({ cwd: alias, sessionId: 's' })).map((entry) => entry.id),
+    [id],
+  );
 });

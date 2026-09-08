@@ -43,4 +43,4 @@ Parent owns acp attachment preparation, preload command allowlist, reusable erro
 - [x] Source and packaged verification
 - [x] Final review and delivery
 
-Verification: 154 tests pass; production build and formatting pass. All four real Electron E2E scripts pass against source and the packaged 1.3.0 executable. Independent review findings were reproduced and fixed with targeted regressions: rejected sends, active timeline restoration, background directory locks and workflow controls, checkpoint shutdown, and session-scoped subagent cancellation.
+Verification: 155 tests pass; production build and formatting pass. All four real Electron E2E scripts pass against source and the packaged 1.3.0 executable. Independent review findings were reproduced and fixed with targeted regressions: rejected sends, active timeline restoration, background directory locks and workflow controls, checkpoint shutdown, and session-scoped subagent cancellation. Windows CI also exposed directory alias normalization; a focused alias regression now covers it.

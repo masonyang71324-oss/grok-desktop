@@ -26,7 +26,7 @@ async function send(text) {
 
 (async () => {
   try {
-    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-recovery-e2e-'));
+    directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'grok-recovery-e2e-')));
     const userData = path.join(directory, 'userdata'),
       project = path.join(directory, 'project');
     await fs.mkdir(userData);

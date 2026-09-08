@@ -56,7 +56,7 @@ async function logs() {
 
 (async () => {
   try {
-    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok workflows '));
+    directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'grok workflows ')));
     const userData = path.join(directory, 'userdata');
     const projectA = path.join(directory, 'project A');
     const projectB = path.join(directory, 'project B');

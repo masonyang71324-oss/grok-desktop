@@ -15,7 +15,7 @@
 
 - 更新 DOMPurify 3.4.15、marked 18.0.12；更新 GitHub Actions，合并关联依赖的更新建议。保留现有 Node/TypeScript/Vite 主版本。
 - 修复 Electron 44 剪贴板接口适配、准备失败重复排队、工具状态重复、后台任务目录锁、工作流控制和退出检查点收尾问题。
-- 154 项测试通过，生产构建、格式检查通过。
+- 155 项测试通过，生产构建、格式检查通过；统一 Windows 短路径和目录别名，确保检查点及项目任务指向同一目录。
 - 源码和打包程序均通过四组真实 Electron 流程测试：基础功能、退出保护、重载恢复、完整工作流；测试使用隔离的模拟 Grok，不消耗账号额度。
 - 生成 Windows x64 安装版 `Grok-Desktop-1.3.0-Setup.exe` 和免安装版 `Grok-Desktop-1.3.0-Windows.exe`。
 

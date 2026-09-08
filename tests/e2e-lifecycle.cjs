@@ -134,7 +134,9 @@ async function closeAndWait(discard) {
 
 (async () => {
   try {
-    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-desktop-lifecycle-'));
+    directory = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'grok-desktop-lifecycle-')),
+    );
     project = path.join(directory, 'project');
     const userData = path.join(directory, 'userdata');
     fixturePath = path.join(project, 'fixture.txt');

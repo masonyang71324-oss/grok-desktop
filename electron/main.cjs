@@ -135,7 +135,7 @@ async function validCwd(cwd) {
     throw new Error(t('请选择有效的项目目录。'));
   const stat = await fs.stat(cwd).catch(() => null);
   if (!stat?.isDirectory()) throw new Error(t('项目目录不存在或无法访问，请重新选择。'));
-  return path.resolve(cwd);
+  return fs.realpath(cwd);
 }
 
 async function bootstrap() {

@@ -222,7 +222,7 @@ function createCheckpointStore({ directory }) {
         if (error.code === 'ENOENT') return [];
         throw error;
       }
-      const resolved = path.resolve(cwd).toLowerCase();
+      const resolved = (await fs.realpath(cwd)).toLowerCase();
       const entries = await Promise.all(
         names.filter((name) => name.endsWith('.json')).map((name) => read(name.slice(0, -5))),
       );
