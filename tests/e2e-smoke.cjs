@@ -280,10 +280,18 @@ async function mockLog() {
       inspector: false,
       inspectorTab: 'changes',
     });
-    const normalBounds = await app.evaluate(({ BrowserWindow }) => {
+    const normalBounds = await app.evaluate(({ BrowserWindow, screen }) => {
       const win = BrowserWindow.getAllWindows()[0];
       if (win.isMaximized()) win.unmaximize();
-      win.setBounds({ x: 60, y: 60, width: 1160, height: 780 });
+      const area = screen.getDisplayMatching(win.getBounds()).workArea;
+      const width = Math.min(1160, area.width),
+        height = Math.min(780, area.height);
+      win.setBounds({
+        x: area.x + Math.floor((area.width - width) / 2),
+        y: area.y + Math.floor((area.height - height) / 2),
+        width,
+        height,
+      });
       return win.getNormalBounds();
     });
 
@@ -299,6 +307,7 @@ async function mockLog() {
       draft,
     );
     pass('draft-close-flush');
+    phase = 'settings-window-and-ui';
     const restoredSettings = (await request('bootstrap')).settings;
     assert.equal(restoredSettings.notifications, false);
     assert.deepEqual(restoredSettings.ui, {
