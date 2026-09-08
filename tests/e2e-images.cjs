@@ -51,14 +51,18 @@ async function run(native) {
     await app.evaluate(async ({ clipboard, ClipboardItem, nativeImage }) => {
       const previous = await clipboard.read();
       globalThis.imageTestClipboard = await Promise.all(
-        previous.map(
-          async (item) =>
-            new ClipboardItem(
-              Object.fromEntries(
-                await Promise.all(item.types.map(async (type) => [type, await item.getType(type)])),
+        previous
+          .filter((item) => item.types.length > 0)
+          .map(
+            async (item) =>
+              new ClipboardItem(
+                Object.fromEntries(
+                  await Promise.all(
+                    item.types.map(async (type) => [type, await item.getType(type)]),
+                  ),
+                ),
               ),
-            ),
-        ),
+          ),
       );
       const image = nativeImage.createFromBitmap(Buffer.from([0, 0, 255, 255]), {
         width: 1,
