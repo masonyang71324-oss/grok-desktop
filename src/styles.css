@@ -623,6 +623,39 @@ code {
   align-items: center;
   gap: 5px;
 }
+.home-update-status {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  color: var(--muted);
+  font-size: 10px;
+  gap: 4px;
+  white-space: nowrap;
+}
+.home-update-status:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+.home-update-status strong {
+  color: var(--text);
+  font-weight: 650;
+}
+.home-update-status.available,
+.home-update-status.downloaded {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+}
+.home-update-status.error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+}
+.home-update-status.checking .home-update-copy,
+.home-update-status.downloading .home-update-copy {
+  color: var(--accent);
+}
 .connection-pill {
   display: flex;
   align-items: center;

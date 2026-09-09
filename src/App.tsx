@@ -1200,6 +1200,22 @@ export default function App() {
       error: t('连接异常'),
       disconnected: t('已断开'),
     }[connection] || connection;
+  const homeUpdateStatus =
+    appUpdate.status === 'checking'
+      ? t('检查中')
+      : appUpdate.status === 'available'
+        ? t('可更新至 {version}', { version: appUpdate.availableVersion || '' })
+        : appUpdate.status === 'downloading'
+          ? t('下载中 {percent}%', { percent: Math.round(appUpdate.percent || 0) })
+          : appUpdate.status === 'downloaded'
+            ? t('更新已就绪')
+            : appUpdate.status === 'current'
+              ? t('已是最新')
+              : appUpdate.status === 'error'
+                ? t('检查失败')
+                : appUpdate.status === 'unsupported'
+                  ? t('开发模式')
+                  : t('检查更新');
   async function runUpdateAction(command: 'update.check' | 'update.download' | 'update.install') {
     const next = await request<AppUpdateState>(command);
     setAppUpdate(next);
@@ -1405,6 +1421,35 @@ export default function App() {
             <span title={currentTitle}>{currentTitle}</span>
           </div>
           <div className="topbar-actions">
+            {appUpdate.currentVersion && (
+              <button
+                type="button"
+                className={`home-update-status ${appUpdate.status}`}
+                title={t('点击检查 Grok Desktop 更新')}
+                disabled={appUpdate.status === 'checking'}
+                onClick={() => {
+                  if (
+                    appUpdate.status === 'available' ||
+                    appUpdate.status === 'downloading' ||
+                    appUpdate.status === 'downloaded' ||
+                    appUpdate.status === 'unsupported'
+                  ) {
+                    setDialog('settings');
+                    return;
+                  }
+                  void runUpdateAction('update.check').catch(() =>
+                    notify(t('更新操作失败，请稍后重试。')),
+                  );
+                }}
+              >
+                <span className="home-update-product">Grok Desktop</span>
+                <strong>v{appUpdate.currentVersion}</strong>
+                <span className="home-update-separator" aria-hidden="true">
+                  ·
+                </span>
+                <span className="home-update-copy">{homeUpdateStatus}</span>
+              </button>
+            )}
             <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
               <Workflow size={17} />
             </IconButton>

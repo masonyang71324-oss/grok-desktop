@@ -1,5 +1,11 @@
 # Changes
 
+## 1.4.2
+
+- Keep the installed Grok Desktop version and update state visible in the main toolbar.
+- Let users check again from the home screen; available, downloading and ready states open the existing update controls.
+- Preserve compact responsive layout and Chinese/English status labels.
+
 ## 1.4.1
 
 - Add stable GitHub release checks, explicit download progress and user-controlled restart/install for the Windows installer build.

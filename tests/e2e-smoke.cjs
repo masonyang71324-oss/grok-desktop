@@ -341,7 +341,7 @@ async function mockLog() {
     await page.screenshot({ path: path.join(screenshots, 'e2e-desktop.png') });
     await page.locator('.tool-diff').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(screenshots, 'e2e-diff.png') });
-    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('button', { name: /Grok Desktop v1\.4\.2/ }).click();
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: path.join(screenshots, 'e2e-settings.png') });
     pass('rendering-screenshots');
