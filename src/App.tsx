@@ -1506,41 +1506,56 @@ export default function App() {
             <button onClick={() => setDialog('settings')}>{t('连接设置')}</button>
           </div>
         )}
-        {(appUpdate.status === 'available' || appUpdate.status === 'downloaded') && (
+        {(['available', 'downloading', 'downloaded'] as string[]).includes(appUpdate.status) && (
           <div className="app-update-banner">
             <Download size={16} />
             <div>
               <strong>
                 {appUpdate.status === 'downloaded'
                   ? t('新版本已准备好')
-                  : t('Grok Desktop {version} 可以更新', {
-                      version: appUpdate.availableVersion || '',
-                    })}
+                  : appUpdate.status === 'downloading'
+                    ? t('正在下载 Grok Desktop {version}', {
+                        version: appUpdate.availableVersion || '',
+                      })
+                    : t('Grok Desktop {version} 可以更新', {
+                        version: appUpdate.availableVersion || '',
+                      })}
               </strong>
               <span>
                 {appUpdate.status === 'downloaded'
                   ? t('更新已下载，重启后自动完成安装。')
-                  : appUpdate.mode === 'portable'
-                    ? t('便携版需要从官方下载页获取新版本。')
-                    : t('可以继续使用，下载完成后再选择何时重启。')}
+                  : appUpdate.status === 'downloading'
+                    ? t('下载进度 {percent}%', { percent: Math.round(appUpdate.percent || 0) })
+                    : appUpdate.mode === 'portable'
+                      ? t('便携版需要从官方下载页获取新版本。')
+                      : t('可以继续使用，下载完成后再选择何时重启。')}
               </span>
+              {appUpdate.status === 'downloading' && (
+                <span className="app-update-progress" aria-hidden="true">
+                  <i style={{ width: `${Math.max(0, Math.min(100, appUpdate.percent || 0))}%` }} />
+                </span>
+              )}
             </div>
             <button
               className="primary-button"
-              disabled={appUpdate.status === 'downloaded' && busy}
+              disabled={
+                appUpdate.status === 'downloading' || (appUpdate.status === 'downloaded' && busy)
+              }
               onClick={() =>
                 void runUpdateAction(
                   appUpdate.status === 'downloaded' ? 'update.install' : 'update.download',
-                ).catch((error) => notify(errorText(error)))
+                ).catch(() => notify(t('更新操作失败，请稍后重试。')))
               }
             >
               {appUpdate.status === 'downloaded'
                 ? busy
                   ? t('等待任务结束')
                   : t('重启并安装')
-                : appUpdate.mode === 'portable'
-                  ? t('打开下载页')
-                  : t('下载更新')}
+                : appUpdate.status === 'downloading'
+                  ? t('正在下载…')
+                  : appUpdate.mode === 'portable'
+                    ? t('打开下载页')
+                    : t('下载更新')}
             </button>
             <button className="text-button" onClick={() => setDialog('settings')}>
               {t('查看详情')}

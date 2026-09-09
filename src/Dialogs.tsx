@@ -383,8 +383,14 @@ export function SettingsDialog({
     setError('');
     try {
       await onUpdateAction(command);
-    } catch (e) {
-      setError(errorText(e));
+    } catch {
+      setError(
+        command === 'update.check'
+          ? t('检查更新失败，请检查网络后重试。')
+          : command === 'update.download'
+            ? t('下载更新失败，请稍后重试。')
+            : t('无法开始安装，请重新下载更新后重试。'),
+      );
     } finally {
       setUpdateBusy(false);
     }

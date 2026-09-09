@@ -174,6 +174,8 @@ async function fixture(
       await client.ensure();
       return {
         settings: { ...settings, lastProject },
+        version: '1.4.1',
+        update: { mode: 'development', status: 'unsupported', currentVersion: '1.4.1' },
         cli: { connected: true },
         models: client.models,
         commands: [],
@@ -195,6 +197,8 @@ async function fixture(
     if (command === 'session.rename') return client.rename(payload);
     if (command === 'session.delete') return client.deleteSession(payload);
     if (command === 'settings.save') return { ...settings, ...payload };
+    if (command === 'update.download')
+      return { mode: 'installer', status: 'downloading', currentVersion: '1.4.1', percent: 42 };
     throw new Error('Unexpected bridge command: ' + command);
   };
   const modules = {
@@ -233,7 +237,7 @@ async function fixture(
   const returnStatement = appFunction.body.statements.find(ts.isReturnStatement);
   const source =
     original.slice(0, returnStatement.getStart(sourceFile)) +
-    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, permissions, tasks, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
+    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, permissions, tasks, appUpdate, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -285,6 +289,30 @@ async function fixture(
     },
   };
 }
+
+test('update download progress remains in application state after the banner action starts', async () => {
+  const f = await fixture();
+  try {
+    f.emit({
+      type: 'app-update',
+      state: {
+        mode: 'installer',
+        status: 'available',
+        currentVersion: '1.4.1',
+        availableVersion: '1.4.2',
+      },
+    });
+    await settle();
+    assert.equal(f.view.appUpdate.status, 'available');
+    await f.view.runUpdateAction('update.download');
+    await settle();
+    assert.equal(f.view.appUpdate.status, 'downloading');
+    assert.equal(f.view.appUpdate.percent, 42);
+    assert.equal(f.requests.at(-1).command, 'update.download');
+  } finally {
+    f.close();
+  }
+});
 
 test('active task switching retains runtime and isolates background connection and approvals', async () => {
   const f = await fixture();

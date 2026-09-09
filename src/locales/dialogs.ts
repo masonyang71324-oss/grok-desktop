@@ -144,6 +144,9 @@ export const dialogs: Record<string, string> = {
   '当前已是最新版本。': 'You are up to date.',
   '检查更新失败，请检查网络后重试。':
     'Could not check for updates. Check your connection and try again.',
+  '下载更新失败，请稍后重试。': 'Could not download the update. Try again shortly.',
+  '无法开始安装，请重新下载更新后重试。':
+    'Could not start installation. Download the update again and retry.',
   '开发环境不检查软件更新。': 'Software updates are disabled in development.',
   '自动检查稳定版本，也可以随时手动检查。':
     'Stable releases are checked automatically. You can also check at any time.',

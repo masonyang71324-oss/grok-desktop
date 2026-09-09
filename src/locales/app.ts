@@ -139,6 +139,10 @@ export const app: Record<string, string> = {
   '正在打开…': 'Opening…',
   设置已保存: 'Settings saved',
   新版本已准备好: 'Update ready',
+  '正在下载 Grok Desktop {version}': 'Downloading Grok Desktop {version}',
+  '下载进度 {percent}%': 'Download progress {percent}%',
+  '正在下载…': 'Downloading…',
+  '更新操作失败，请稍后重试。': 'The update action failed. Try again shortly.',
   'Grok Desktop {version} 可以更新': 'Grok Desktop {version} is available',
   '更新已下载，重启后自动完成安装。': 'The update is downloaded and will install after restart.',
   '便携版需要从官方下载页获取新版本。':

@@ -700,6 +700,21 @@ code {
 .app-update-banner span {
   display: block;
 }
+.app-update-banner .app-update-progress {
+  width: min(320px, 100%);
+  height: 4px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-hover);
+}
+.app-update-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
 .app-update-banner strong {
   font-size: 11px;
   font-weight: 600;
