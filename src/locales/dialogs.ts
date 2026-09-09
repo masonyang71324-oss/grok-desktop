@@ -135,6 +135,25 @@ export const dialogs: Record<string, string> = {
   'Grok 请求授权时，显示具体操作供你确认。':
     'Show the action for your approval when Grok requests permission.',
   提醒与诊断: 'Notifications and diagnostics',
+  软件更新: 'Software updates',
+  '当前版本 {version}': 'Current version {version}',
+  '正在检查更新…': 'Checking for updates…',
+  '发现新版本 {version}': 'Version {version} is available',
+  '正在下载更新… {percent}%': 'Downloading update… {percent}%',
+  '新版本已下载，可以重启安装。': 'The update is ready. Restart to install it.',
+  '当前已是最新版本。': 'You are up to date.',
+  '检查更新失败，请检查网络后重试。':
+    'Could not check for updates. Check your connection and try again.',
+  '开发环境不检查软件更新。': 'Software updates are disabled in development.',
+  '自动检查稳定版本，也可以随时手动检查。':
+    'Stable releases are checked automatically. You can also check at any time.',
+  更新下载进度: 'Update download progress',
+  打开下载页: 'Open download page',
+  下载更新: 'Download update',
+  重启并安装: 'Restart and install',
+  '便携版会打开官方下载页；安装版可以在应用内下载并安装。':
+    'The portable edition opens the official download page. The installed edition can update in the app.',
+  '当前任务结束后即可重启安装。': 'Restart and install after the current task finishes.',
   '窗口在后台时，提醒待批准操作与任务结果':
     'Notify me about approvals and task results while the window is in the background',
   '通过任务栏闪烁和系统通知提醒；通知不包含任务正文。':

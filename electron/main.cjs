@@ -1,4 +1,5 @@
 const { translate: t, setLocale } = require('./i18n.cjs');
+const { autoUpdater } = require('electron-updater');
 const {
   app,
   BrowserWindow,
@@ -30,6 +31,7 @@ const { createCheckpointStore } = require('./checkpoints.cjs');
 const { createProjectRunner } = require('./project-runner.cjs');
 const { storeClipboardImage, previewAttachment } = require('./attachments.cjs');
 const documentFormats = require('./document.cjs');
+const { createAppUpdater } = require('./updater.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -43,12 +45,30 @@ let settings = loadSettings(settingsFile),
 setLocale(settings.language);
 let win = null,
   quitting = false,
-  exitDialogOpen = false;
+  exitDialogOpen = false,
+  installUpdateRequested = false;
 const activity = new RuntimeActivity({
   isForegroundBusy: () => !!client.activeTurn,
 });
 const eventListeners = new Set();
 const logger = createLogger(path.join(app.getPath('userData'), 'logs'));
+const appUpdater = createAppUpdater({
+  currentVersion: app.getVersion(),
+  mode:
+    !app.isPackaged || process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
+      ? 'development'
+      : process.env.PORTABLE_EXECUTABLE_FILE
+        ? 'portable'
+        : 'installer',
+  autoUpdater,
+  emit,
+  openExternal: (url) => shell.openExternal(url),
+  requestInstall: () => {
+    installUpdateRequested = true;
+    app.quit();
+  },
+  logger,
+});
 const delivery = createEventDelivery((event) => {
   if (win && !win.isDestroyed()) win.webContents.send('desktop:event', event);
 });
@@ -156,6 +176,7 @@ async function bootstrap() {
   return {
     settings,
     version: app.getVersion(),
+    update: appUpdater.status(),
     cli: {
       path: cliPath,
       version,
@@ -458,6 +479,10 @@ const handlers = {
   'runner.state': async ({ cwd }) => runner.state({ cwd: await validCwd(cwd) }),
   'runner.start': async ({ cwd, script }) => runner.start({ cwd: await validCwd(cwd), script }),
   'runner.stop': async ({ cwd }) => runner.stop({ cwd: await validCwd(cwd) }),
+  'update.status': () => appUpdater.status(),
+  'update.check': () => appUpdater.check(),
+  'update.download': () => appUpdater.download(),
+  'update.install': () => appUpdater.install(),
   'system.open': openSystem,
   'system.run': management,
 };
@@ -539,7 +564,10 @@ function createWindow() {
       cancelId: 0,
     });
     if (response === 1) event.preventDefault();
-    else quitting = false;
+    else {
+      quitting = false;
+      installUpdateRequested = false;
+    }
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     logger.log('renderer-gone', { reason: details.reason });
@@ -581,7 +609,7 @@ function createWindow() {
         if (response === 1) {
           quitting = true;
           app.quit();
-        }
+        } else installUpdateRequested = false;
       });
   });
   if (process.env.GROK_DESKTOP_DEV_URL) win.loadURL(process.env.GROK_DESKTOP_DEV_URL);
@@ -634,6 +662,11 @@ else {
     );
     updateMenu();
     createWindow();
+    appUpdater.start();
+    if (appUpdater.status().mode !== 'development') {
+      const timer = setTimeout(() => void appUpdater.check().catch(() => {}), 10_000);
+      timer.unref?.();
+    }
   });
   app.on('window-all-closed', () => app.quit());
   let shutdownReady = false,
@@ -659,7 +692,14 @@ else {
     Promise.allSettled([settingsQueue, logger.flush(), runner.dispose(), agentShutdown]).then(
       () => {
         shutdownReady = true;
-        app.quit();
+        if (installUpdateRequested) {
+          try {
+            autoUpdater.quitAndInstall(false, true);
+          } catch (error) {
+            logger.log('update-install-failed', { code: error.code || error.name || 'Error' });
+            app.quit();
+          }
+        } else app.quit();
       },
     );
   });

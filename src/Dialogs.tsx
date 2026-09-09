@@ -21,6 +21,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import type {
+  AppUpdateState,
   Bootstrap,
   Command,
   ManagementResult,
@@ -331,6 +332,8 @@ export function SettingsDialog({
   onClose,
   onSave,
   busy,
+  update,
+  onUpdateAction,
 }: {
   settings: Settings;
   models: ModelsState;
@@ -338,6 +341,8 @@ export function SettingsDialog({
   onClose: () => void;
   onSave: (settings: Partial<Settings>) => Promise<void>;
   busy: boolean;
+  update: AppUpdateState;
+  onUpdateAction: (command: 'update.check' | 'update.download' | 'update.install') => Promise<void>;
 }) {
   useI18n();
   const [draft, setDraft] = useState(settings);
@@ -357,6 +362,7 @@ export function SettingsDialog({
     }
   }
   const [saving, setSaving] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
   const [error, setError] = useState('');
   async function save() {
     setSaving(true);
@@ -371,6 +377,34 @@ export function SettingsDialog({
       setSaving(false);
     }
   }
+  async function runUpdateAction(command: 'update.check' | 'update.download' | 'update.install') {
+    if (updateBusy) return;
+    setUpdateBusy(true);
+    setError('');
+    try {
+      await onUpdateAction(command);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+  const updateStatus =
+    update.status === 'checking'
+      ? t('正在检查更新…')
+      : update.status === 'available'
+        ? t('发现新版本 {version}', { version: update.availableVersion || '' })
+        : update.status === 'downloading'
+          ? t('正在下载更新… {percent}%', { percent: Math.round(update.percent || 0) })
+          : update.status === 'downloaded'
+            ? t('新版本已下载，可以重启安装。')
+            : update.status === 'current'
+              ? t('当前已是最新版本。')
+              : update.status === 'error'
+                ? t('检查更新失败，请检查网络后重试。')
+                : update.status === 'unsupported'
+                  ? t('开发环境不检查软件更新。')
+                  : t('自动检查稳定版本，也可以随时手动检查。');
   return (
     <Modal
       title={t('设置')}
@@ -541,6 +575,71 @@ export function SettingsDialog({
             '日志仅记录连接和操作状态，不记录对话、附件或命令内容。“Grok 管理”中的更新只更新官方 CLI。',
           )}
         </p>
+      </div>
+      <div className="settings-section update-settings">
+        <h3>{t('软件更新')}</h3>
+        <div className="update-status-row">
+          <div>
+            <strong>{t('当前版本 {version}', { version: update.currentVersion })}</strong>
+            <p className={update.status === 'error' ? 'inline-error' : 'muted'}>{updateStatus}</p>
+          </div>
+          {updateBusy && <Spinner />}
+        </div>
+        {update.status === 'downloading' && (
+          <div
+            className="update-progress"
+            role="progressbar"
+            aria-label={t('更新下载进度')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(update.percent || 0)}
+          >
+            <span style={{ width: `${Math.max(0, Math.min(100, update.percent || 0))}%` }} />
+          </div>
+        )}
+        <div className="update-actions">
+          {update.status === 'available' ? (
+            <button
+              type="button"
+              className="primary-button"
+              disabled={updateBusy}
+              onClick={() => void runUpdateAction('update.download')}
+            >
+              {update.mode === 'portable' ? <ExternalLink size={15} /> : <Package size={15} />}
+              {update.mode === 'portable' ? t('打开下载页') : t('下载更新')}
+            </button>
+          ) : update.status === 'downloaded' ? (
+            <button
+              type="button"
+              className="primary-button"
+              disabled={updateBusy || busy}
+              onClick={() => void runUpdateAction('update.install')}
+            >
+              <RefreshCw size={15} />
+              {t('重启并安装')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={
+                updateBusy || update.status === 'checking' || update.status === 'unsupported'
+              }
+              onClick={() => void runUpdateAction('update.check')}
+            >
+              <RefreshCw size={15} />
+              {t('检查更新')}
+            </button>
+          )}
+        </div>
+        {update.mode === 'portable' && (
+          <p className="muted helper-note">
+            {t('便携版会打开官方下载页；安装版可以在应用内下载并安装。')}
+          </p>
+        )}
+        {update.status === 'downloaded' && busy && (
+          <p className="muted helper-note">{t('当前任务结束后即可重启安装。')}</p>
+        )}
       </div>
       {error && <div className="inline-error">{error}</div>}
     </Modal>

@@ -8,9 +8,9 @@
 
 源码仓库包含 src、electron、tests、scripts、assets、docs、.github、项目配置和 package-lock.json。.gitignore 排除 node_modules、dist、release 和 test-results；这些目录不需要提交。
 
-Windows 安装包和便携包分别是 `Grok-Desktop-1.2.1-Setup.exe` 和 `Grok-Desktop-1.2.1-Windows.exe`。在 GitHub 创建 `v1.2.1` Release，把两个 exe 上传为附件，并使用 [发布说明](release-notes.md) 的内容。exe 超过普通 Git 文件的 100 MiB 限制，应通过 Releases 分发。[GitHub 文件大小与二进制分发说明](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
+Windows 安装包和便携包分别是 `Grok-Desktop-<version>-Setup.exe` 和 `Grok-Desktop-<version>-Windows.exe`。推送与 package.json 版本一致的 `v<version>` 标签后，`Publish Windows release` 工作流会运行测试、构建安装包，并创建公开稳定版 Release。发布附件包括两个 exe、安装包 blockmap 和 `latest.yml`；后三者供安装版自动更新使用。exe 超过普通 Git 文件的 100 MiB 限制，应通过 Releases 分发。[GitHub 文件大小与二进制分发说明](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
 
-第一次公开建议标为预发布，让其他 Windows 环境验证安装与使用体验。当前安装包未配置发布者签名或桌面自动更新；发布说明应保留这些实际限制。
+自动更新只读取公开稳定版 Release。1.4.1 是首个带桌面更新功能的版本，老版本用户需要手动安装一次；以后安装版可在“设置 → 软件更新”完成下载和重启安装。便携版只提示并打开下载页。当前安装包仍未配置发布者签名，发布说明应保留此限制。
 
 ## 发布者需要确定的信息
 
@@ -22,4 +22,4 @@ Windows 安装包和便携包分别是 `Grok-Desktop-1.2.1-Setup.exe` 和 `Grok-
 
 使用 Node.js 22.22 或更高版本，按照 README 运行 npm ci、安装 Playwright Chromium、npm test、npm run build 和 npm run test:e2e。E2E 使用本地 mock Grok，不需要真实账号。
 
-仓库包含 Windows CI，上传后查看 GitHub Actions 的实际结果。此前本机干净副本验证不能代替 GitHub 托管环境的第一次运行；保持默认只读 Actions 权限即可执行当前流程。
+仓库包含 Windows CI，上传后查看 GitHub Actions 的实际结果。普通检查使用只读权限；仅标签触发的发布工作流使用仓库自带的 `GITHUB_TOKEN` 写入 Release，不需要维护者另建 token 或向最终用户索取认证。此前本机干净副本验证不能代替 GitHub 托管环境的第一次运行。

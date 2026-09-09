@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import type {
   AcpUpdate,
+  AppUpdateState,
   Attachment,
   Bootstrap,
   Command,
@@ -103,6 +104,11 @@ export default function App() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<Settings>(defaults);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateState>({
+    mode: 'development',
+    status: 'unsupported',
+    currentVersion: '',
+  });
   const [initializing, setInitializing] = useState(true);
   const [connection, setConnection] = useState('connecting');
   const [connectionError, setConnectionError] = useState('');
@@ -410,6 +416,13 @@ export default function App() {
         })
         .catch(() => {});
       setBootstrap(data);
+      setAppUpdate(
+        data.update || {
+          mode: 'development',
+          status: 'unsupported',
+          currentVersion: data.version,
+        },
+      );
       setSettings(data.settings);
       setLocale(data.settings.language);
       settingsRef.current = data.settings;
@@ -495,6 +508,10 @@ export default function App() {
           setConnection(event.state);
           setConnectionError(event.message || '');
         }
+        return;
+      }
+      if (event.type === 'app-update') {
+        setAppUpdate(event.state);
         return;
       }
       if (event.type === 'tasks-changed') {
@@ -1183,6 +1200,10 @@ export default function App() {
       error: t('连接异常'),
       disconnected: t('已断开'),
     }[connection] || connection;
+  async function runUpdateAction(command: 'update.check' | 'update.download' | 'update.install') {
+    const next = await request<AppUpdateState>(command);
+    setAppUpdate(next);
+  }
   return (
     <div
       className={`app ${sidebar ? '' : 'sidebar-hidden'} ${inspector ? '' : 'inspector-hidden'}`}
@@ -1483,6 +1504,47 @@ export default function App() {
               {initializing ? <Spinner /> : recoveryLabel(connectionError)}
             </button>
             <button onClick={() => setDialog('settings')}>{t('连接设置')}</button>
+          </div>
+        )}
+        {(appUpdate.status === 'available' || appUpdate.status === 'downloaded') && (
+          <div className="app-update-banner">
+            <Download size={16} />
+            <div>
+              <strong>
+                {appUpdate.status === 'downloaded'
+                  ? t('新版本已准备好')
+                  : t('Grok Desktop {version} 可以更新', {
+                      version: appUpdate.availableVersion || '',
+                    })}
+              </strong>
+              <span>
+                {appUpdate.status === 'downloaded'
+                  ? t('更新已下载，重启后自动完成安装。')
+                  : appUpdate.mode === 'portable'
+                    ? t('便携版需要从官方下载页获取新版本。')
+                    : t('可以继续使用，下载完成后再选择何时重启。')}
+              </span>
+            </div>
+            <button
+              className="primary-button"
+              disabled={appUpdate.status === 'downloaded' && busy}
+              onClick={() =>
+                void runUpdateAction(
+                  appUpdate.status === 'downloaded' ? 'update.install' : 'update.download',
+                ).catch((error) => notify(errorText(error)))
+              }
+            >
+              {appUpdate.status === 'downloaded'
+                ? busy
+                  ? t('等待任务结束')
+                  : t('重启并安装')
+                : appUpdate.mode === 'portable'
+                  ? t('打开下载页')
+                  : t('下载更新')}
+            </button>
+            <button className="text-button" onClick={() => setDialog('settings')}>
+              {t('查看详情')}
+            </button>
           </div>
         )}
         <div
@@ -1964,6 +2026,8 @@ export default function App() {
             models={models}
             bootstrap={bootstrap}
             busy={busy}
+            update={appUpdate}
+            onUpdateAction={runUpdateAction}
             onClose={() => setDialog(null)}
             onSave={async (patch) => {
               await saveSettings(patch);

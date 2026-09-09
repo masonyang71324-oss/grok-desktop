@@ -14,6 +14,7 @@ const english = {
   任务已停止: 'Task stopped',
   任务已完成: 'Task completed',
   '任务遇到问题，请返回查看': 'A task needs attention. Open Grok Desktop to review it.',
+  'Grok Desktop {version} 可以更新': 'Grok Desktop {version} is available',
   '找不到指定的 Grok 程序，请在设置中检查路径。':
     'The selected Grok executable was not found. Check its path in Settings.',
   '没有找到 Grok Build。请先安装官方 CLI，并在设置中指定 grok.exe。':

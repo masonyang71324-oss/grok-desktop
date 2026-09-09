@@ -9,7 +9,7 @@ export async function request<T = any>(
   // Human dialogs and state-changing operations keep their main-process lifetime.
   // A renderer timeout does not cancel an IPC operation, so only safe reads use it by default.
   const safeRead =
-    /^(?:workspace\.(?:list|read|changes|diff)|sessions\.list|session\.usage|account\.usage|tasks\.list|checkpoints\.(?:list|detail)|runner\.(?:inspect|state))$/.test(
+    /^(?:workspace\.(?:list|read|changes|diff)|sessions\.list|session\.usage|account\.usage|tasks\.list|checkpoints\.(?:list|detail)|runner\.(?:inspect|state)|update\.(?:status|check))$/.test(
       command,
     );
   const timeoutMs = options.timeoutMs ?? (safeRead ? 60000 : 0);

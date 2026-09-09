@@ -40,6 +40,10 @@ const commands = new Set([
   'runner.state',
   'runner.start',
   'runner.stop',
+  'update.status',
+  'update.check',
+  'update.download',
+  'update.install',
   'system.open',
   'system.run',
 ]);

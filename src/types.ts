@@ -41,6 +41,25 @@ export interface Command {
   input?: { hint?: string } | null;
   _meta?: Record<string, unknown>;
 }
+export type AppUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'current'
+  | 'error'
+  | 'unsupported';
+export interface AppUpdateState {
+  mode: 'installer' | 'portable' | 'development';
+  status: AppUpdateStatus;
+  currentVersion: string;
+  availableVersion?: string;
+  releaseName?: string;
+  releaseUrl?: string;
+  percent?: number;
+  error?: string;
+}
 export interface AcpUpdate {
   sessionUpdate: string;
   content?: any;
@@ -97,6 +116,7 @@ export type DesktopEvent =
     }
   | { type: 'commands'; sessionId?: string; commands: Command[] }
   | { type: 'models'; sessionId?: string; models: ModelsState }
+  | { type: 'app-update'; state: AppUpdateState }
   | {
       type: 'permission';
       sessionId: string;
@@ -164,6 +184,7 @@ export interface Bootstrap {
   capabilities?: { image?: boolean };
   settings: Settings;
   version: string;
+  update: AppUpdateState;
   cli: {
     path: string;
     version: string;

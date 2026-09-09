@@ -683,6 +683,43 @@ code {
   white-space: nowrap;
   padding: 6px 9px;
 }
+.app-update-banner {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 22px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--accent);
+}
+.app-update-banner > div {
+  flex: 1;
+  min-width: 0;
+}
+.app-update-banner strong,
+.app-update-banner span {
+  display: block;
+}
+.app-update-banner strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.app-update-banner span {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.app-update-banner .primary-button {
+  min-height: 30px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.app-update-banner .text-button {
+  min-height: 30px;
+  padding: 4px;
+  white-space: nowrap;
+}
 .thread {
   flex: 1;
   min-height: 0;
@@ -1786,6 +1823,53 @@ code {
   font-size: 12px;
   margin-bottom: 17px;
   color: var(--text);
+}
+.update-settings {
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.update-settings h3 {
+  margin-bottom: 12px;
+}
+.update-status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.update-status-row strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+.update-status-row p {
+  margin: 5px 0 0;
+  font-size: 10px;
+}
+.update-progress {
+  height: 5px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-hover);
+}
+.update-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.update-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 .theme-options {
   display: grid;

@@ -138,6 +138,15 @@ export const app: Record<string, string> = {
   关闭提示: 'Dismiss notification',
   '正在打开…': 'Opening…',
   设置已保存: 'Settings saved',
+  新版本已准备好: 'Update ready',
+  'Grok Desktop {version} 可以更新': 'Grok Desktop {version} is available',
+  '更新已下载，重启后自动完成安装。': 'The update is downloaded and will install after restart.',
+  '便携版需要从官方下载页获取新版本。':
+    'Download the new portable edition from the official release page.',
+  '可以继续使用，下载完成后再选择何时重启。':
+    'Keep working while it downloads, then restart when convenient.',
+  等待任务结束: 'Wait for task',
+  查看详情: 'View details',
   '常用操作，触手可及。': 'Everyday actions, a keystroke away.',
   打开动作库: 'Open actions',
   打开设置: 'Open settings',

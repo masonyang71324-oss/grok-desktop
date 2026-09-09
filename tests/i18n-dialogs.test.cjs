@@ -17,7 +17,13 @@ before(async () => {
         window.setLocale=setLocale;
         function SettingsHarness() {
           const [settings,setSettings]=useState(window.initialSettings);
+          const [appUpdate,setAppUpdate]=useState(window.initialUpdate);
           return <SettingsDialog settings={settings} models={{availableModels:[]}} bootstrap={null} busy={false}
+            update={appUpdate} onUpdateAction={async command=>{
+              window.updateActions.push(command);
+              if(command==='update.check') setAppUpdate({...appUpdate,status:'available',availableVersion:'1.4.1'});
+              if(command==='update.download') setAppUpdate({...appUpdate,status:'downloading',percent:42});
+            }}
             onClose={()=>window.closes++} onSave={async patch=>{
               window.saves.push(patch);
               if(window.rejectSave) throw Error('save failed');
@@ -59,6 +65,7 @@ async function fixture(t) {
     window.calls = [];
     window.notices = [];
     window.applied = [];
+    window.updateActions = [];
     window.closes = 0;
     window.initialSettings = {
       language: 'zh-CN',
@@ -69,6 +76,7 @@ async function fixture(t) {
       permissionMode: 'ask',
       notifications: true,
     };
+    window.initialUpdate = { mode: 'installer', status: 'idle', currentVersion: '1.4.0' };
     window.desktop = {
       request: async (command, payload) => {
         window.calls.push({ command, payload });
@@ -97,6 +105,29 @@ async function fixture(t) {
   await page.addScriptTag({ content: bundle });
   return page;
 }
+
+test('software update controls remain simple and translate without changing update commands', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => window.showSettings());
+  await page.getByRole('heading', { name: '软件更新', exact: true }).waitFor();
+  await page.getByRole('button', { name: '检查更新', exact: true }).click();
+  await page.getByText('发现新版本 1.4.1', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '下载更新', exact: true }).click();
+  assert.equal(
+    await page
+      .getByRole('progressbar', { name: '更新下载进度', exact: true })
+      .getAttribute('aria-valuenow'),
+    '42',
+  );
+  assert.deepEqual(await page.evaluate(() => window.updateActions), [
+    'update.check',
+    'update.download',
+  ]);
+
+  await page.getByRole('combobox', { name: '界面语言', exact: true }).selectOption('en');
+  await page.getByRole('heading', { name: 'Software updates', exact: true }).waitFor();
+  await page.getByText('Downloading update… 42%', { exact: true }).waitFor();
+});
 
 test('language selection applies immediately without closing settings or saving other pending edits', async (t) => {
   const page = await fixture(t);

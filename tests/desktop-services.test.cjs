@@ -94,6 +94,11 @@ test('notifications only alert in the background and clear on focus without task
   enabled = true;
   notifications.receive({ type: 'turn-error', message: 'SECRET' });
   assert.equal(shown[1].options.body, '任务遇到问题，请返回查看');
+  notifications.receive({
+    type: 'app-update',
+    state: { status: 'available', availableVersion: '1.4.1' },
+  });
+  assert.equal(shown[2].options.body, 'Grok Desktop 1.4.1 可以更新');
   notifications.clear();
 });
 

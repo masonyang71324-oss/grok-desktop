@@ -1,5 +1,13 @@
 # Changes
 
+## 1.4.1
+
+- Add stable GitHub release checks, explicit download progress and user-controlled restart/install for the Windows installer build.
+- Let portable builds detect a newer stable release and open the official download page without attempting self-replacement.
+- Preserve running-task and unsaved-editor exit protection during update installation, with Chinese and English controls and notifications.
+- Add tag-driven Windows release publishing with updater metadata and blockmaps.
+- Apply patch updates for Electron, JSZip, RTF extraction and electron-updater; dependency audit reports no known vulnerabilities.
+
 ## 1.4.0
 
 - Native Grok PDF/PPTX/IPYNB attachment routes verified with Grok Build 1.0.13.

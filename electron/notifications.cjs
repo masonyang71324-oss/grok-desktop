@@ -15,6 +15,10 @@ function createNotifications({ getWindow, enabled, Notification, onFailure = () 
     else if (event.type === 'turn-end')
       body = event.result?.stopReason === 'cancelled' ? t('任务已停止') : t('任务已完成');
     else if (event.type === 'turn-error') body = t('任务遇到问题，请返回查看');
+    else if (event.type === 'app-update' && event.state?.status === 'available')
+      body = t('Grok Desktop {version} 可以更新', {
+        version: event.state.availableVersion || '',
+      });
     if (!body) return;
     win.flashFrame(true);
     if (!Notification.isSupported()) return;
