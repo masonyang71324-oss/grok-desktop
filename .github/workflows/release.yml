@@ -22,7 +22,23 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:e2e
-      - name: Build and publish installers
-        run: npx electron-builder --win nsis portable --x64 --publish always
+      - name: Build installers
+        run: npx electron-builder --win nsis portable --x64 --publish never
+      - name: Publish release
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $assets = @(
+            "release/Grok-Desktop-$version-Setup.exe",
+            "release/Grok-Desktop-$version-Setup.exe.blockmap",
+            "release/Grok-Desktop-$version-Windows.exe",
+            "release/latest.yml"
+          )
+          if (gh release view $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY 2>$null) {
+            gh release upload $env:GITHUB_REF_NAME $assets --clobber --repo $env:GITHUB_REPOSITORY
+            gh release edit $env:GITHUB_REF_NAME --latest --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $env:GITHUB_REF_NAME $assets --title "Grok Desktop $version" --generate-notes --latest --repo $env:GITHUB_REPOSITORY
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

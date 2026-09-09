@@ -8,7 +8,7 @@
 
 源码仓库包含 src、electron、tests、scripts、assets、docs、.github、项目配置和 package-lock.json。.gitignore 排除 node_modules、dist、release 和 test-results；这些目录不需要提交。
 
-Windows 安装包和便携包分别是 `Grok-Desktop-<version>-Setup.exe` 和 `Grok-Desktop-<version>-Windows.exe`。推送与 package.json 版本一致的 `v<version>` 标签后，`Publish Windows release` 工作流会运行测试、构建安装包，并创建公开稳定版 Release。发布附件包括两个 exe、安装包 blockmap 和 `latest.yml`；后三者供安装版自动更新使用。exe 超过普通 Git 文件的 100 MiB 限制，应通过 Releases 分发。[GitHub 文件大小与二进制分发说明](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
+Windows 安装包和便携包分别是 `Grok-Desktop-<version>-Setup.exe` 和 `Grok-Desktop-<version>-Windows.exe`。推送与 package.json 版本一致的 `v<version>` 标签后，`Publish Windows release` 工作流会运行测试、构建全部安装包，再通过一次 GitHub CLI 操作创建公开稳定版 Release。发布附件包括两个 exe、安装包 blockmap 和 `latest.yml`；后三者供安装版自动更新使用。exe 超过普通 Git 文件的 100 MiB 限制，应通过 Releases 分发。[GitHub 文件大小与二进制分发说明](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
 
 自动更新只读取公开稳定版 Release。1.4.1 是首个带桌面更新功能的版本，老版本用户需要手动安装一次；以后安装版可在“设置 → 软件更新”完成下载和重启安装。便携版只提示并打开下载页。当前安装包仍未配置发布者签名，发布说明应保留此限制。
 
