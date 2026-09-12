@@ -46,14 +46,14 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react": "^4.5.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "electron": "44.3.0",
     "electron-builder": "^26.0.12",
     "esbuild": "^0.28.2",
     "playwright": "^1.55.0",
     "prettier": "^3.9.6",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^8.2.2"
   },
   "build": {
     "appId": "local.grok.desktop",
