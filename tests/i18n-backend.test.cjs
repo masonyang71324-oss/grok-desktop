@@ -42,10 +42,10 @@ test('native notifications use the current language without translating task con
     setLocale('en');
     notifications.receive({ type: 'permission', params: { content: '用户原文' } });
     assert.equal(shown.at(-1).body, 'Grok needs your approval');
-    notifications.receive({ type: 'turn-end' });
+    notifications.receive({ type: 'task-finished', status: 'completed' });
     assert.equal(shown.at(-1).body, 'Task completed');
     setLocale('zh-CN');
-    notifications.receive({ type: 'turn-end', result: { stopReason: 'cancelled' } });
+    notifications.receive({ type: 'task-finished', status: 'cancelled' });
     assert.equal(shown.at(-1).body, '任务已停止');
     assert.doesNotMatch(JSON.stringify(shown), /用户原文/);
   } finally {

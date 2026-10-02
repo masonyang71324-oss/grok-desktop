@@ -1282,7 +1282,7 @@ export default function App() {
   const effortOptions = selectedModel?._meta?.reasoningEfforts || [];
   const selectedEffort = session
     ? selectedModel?._meta?.reasoningEffort || ''
-    : settings.effort || selectedModel?._meta?.reasoningEffort || '';
+    : settings.effort || '';
   const defaultEffort = effortOptions.find((option) => option.default);
   const currentEffort = effortOptions.some(
     (option) => (option.value || option.id) === selectedEffort,

@@ -706,12 +706,14 @@ class GrokClient {
     );
   }
 
-  async send(payload) {
+  async send(payload, isCancelled = () => false) {
     return this._exclusive('send', async () => {
       this._session(payload.sessionId);
       if (payload.permissionMode !== undefined) this.setPermissionMode(payload);
       const prompt = await this._promptContent(payload.text, payload.attachments);
+      if (isCancelled()) throw new Error(t('已取消发送。'));
       await this._configure(payload);
+      if (isCancelled()) throw new Error(t('已取消发送。'));
       let finish;
       const done = new Promise((resolve) => {
         finish = resolve;

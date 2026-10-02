@@ -12,9 +12,13 @@ function createNotifications({ getWindow, enabled, Notification, onFailure = () 
     if (!enabled() || !win || win.isDestroyed() || win.isFocused()) return;
     let body;
     if (event.type === 'permission') body = t('Grok 需要你批准一项操作');
-    else if (event.type === 'turn-end')
-      body = event.result?.stopReason === 'cancelled' ? t('任务已停止') : t('任务已完成');
-    else if (event.type === 'turn-error') body = t('任务遇到问题，请返回查看');
+    else if (event.type === 'task-finished')
+      body =
+        event.status === 'completed'
+          ? t('任务已完成')
+          : event.status === 'cancelled'
+            ? t('任务已停止')
+            : t('任务遇到问题，请返回查看');
     else if (event.type === 'app-update' && event.state?.status === 'available')
       body = t('Grok Desktop {version} 可以更新', {
         version: event.state.availableVersion || '',

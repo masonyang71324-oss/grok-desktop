@@ -50,7 +50,7 @@ const storageFixture = () => {
 
 async function fixture(
   storage = storageFixture(),
-  { filterEmptySessions = false, lastProject = cwd } = {},
+  { filterEmptySessions = false, lastProject = cwd, modelState = models } = {},
 ) {
   let listener,
     index = 0,
@@ -134,7 +134,7 @@ async function fixture(
               child.reply(req, {
                 protocolVersion: 1,
                 agentCapabilities: { promptCapabilities: { embeddedContext: true } },
-                _meta: { modelState: models },
+                _meta: { modelState },
               });
             else if (req.method === '_x.ai/commands/list') child.reply(req, { commands: [] });
             else if (req.method === 'session/list')
@@ -147,10 +147,10 @@ async function fixture(
               currentFakeSession = filterEmptySessions
                 ? summaries[createdSessions++].sessionId
                 : 'session-a';
-              child.reply(req, { sessionId: currentFakeSession, models });
+              child.reply(req, { sessionId: currentFakeSession, models: modelState });
             } else if (req.method === 'session/load') {
               currentFakeSession = req.params.sessionId;
-              child.reply(req, { models });
+              child.reply(req, { models: modelState });
             } else if (req.method === '_x.ai/session/rename') {
               fakeSummaries.find((item) => item.sessionId === req.params.sessionId).title =
                 req.params.title;
@@ -206,6 +206,7 @@ async function fixture(
     if (command === 'session.load')
       return loadOverride ? loadOverride(payload) : client.loadSession(payload);
     if (command === 'session.new') return client.newSession(payload);
+    if (command === 'session.configure') return client.configure(payload);
     if (command === 'session.send') {
       if (sendFailure) return sendFailure();
       return client.send(payload);
@@ -258,7 +259,7 @@ async function fixture(
   const returnStatement = appFunction.body.statements.find(ts.isReturnStatement);
   const source =
     original.slice(0, returnStatement.getStart(sourceFile)) +
-    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, permissions, tasks, appUpdate, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
+    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, permissions, tasks, appUpdate, currentEffort, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -310,6 +311,49 @@ async function fixture(
     },
   };
 }
+
+test('default effort in a new project does not inherit the previous session applied effort', async () => {
+  const modelState = {
+    currentModelId: 'grok',
+    availableModels: [
+      {
+        modelId: 'grok',
+        name: 'Grok',
+        _meta: {
+          reasoningEffort: 'medium',
+          reasoningEfforts: [
+            { id: 'low', label: 'Low' },
+            { id: 'medium', label: 'Medium', default: true },
+            { id: 'high', label: 'High' },
+          ],
+        },
+      },
+    ],
+  };
+  const f = await fixture(undefined, { modelState });
+  try {
+    await f.view.newConversation();
+    await settle();
+    await f.view.configureSelection({ effort: 'low' });
+    await settle();
+    assert.equal(f.view.currentEffort, 'low');
+    await f.view.openProject('C:\\new-project');
+    await settle();
+    assert.equal(f.view.session, null);
+    assert.equal(f.view.currentEffort, 'low');
+    await f.view.configureSelection({ effort: '' });
+    await settle();
+    assert.equal(f.view.currentEffort, 'medium');
+    await f.view.newConversation();
+    await settle();
+    const creation = f.requests.filter((item) => item.command === 'session.new').at(-1);
+    assert.equal(creation.payload.effort, undefined);
+    assert.equal(f.view.currentEffort, 'medium');
+    assert.equal(f.view.session.models.availableModels[0]._meta.reasoningEffort, 'medium');
+  } finally {
+    f.close();
+  }
+});
 
 test('update download progress remains in application state after the banner action starts', async () => {
   const f = await fixture();

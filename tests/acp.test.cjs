@@ -1076,6 +1076,58 @@ test('after reconnect a loaded session defaults to ask and its prior mode can be
   );
 });
 
+for (const phase of ['attachments', 'configuration']) {
+  test(`cancellation during ${phase} preparation prevents the prompt from being sent`, async (t) => {
+    let release,
+      cancelled = false;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    let configureRequest;
+    const f = fixture(t, (req) => {
+      if (phase !== 'configuration' || req.method !== 'session/set_model') return false;
+      configureRequest = req;
+      return true;
+    });
+    await f.client.newSession({ cwd: 'C:\\project' });
+    if (phase === 'attachments') {
+      const prepare = f.client._promptContent.bind(f.client);
+      t.mock.method(f.client, '_promptContent', async (...args) => {
+        await gate;
+        return prepare(...args);
+      });
+    }
+    const sending = f.client.send(
+      {
+        sessionId: 'session-a',
+        text: 'work',
+        ...(phase === 'configuration' ? { effort: 'high' } : {}),
+      },
+      () => cancelled,
+    );
+    await tick();
+    assert.equal(f.client.activeTurn, null);
+    cancelled = true;
+    const rejected = assert.rejects(sending, /已取消发送/);
+    if (phase === 'configuration') {
+      assert.ok(configureRequest);
+      f.child().reply(configureRequest, { _meta: { model: { Ok: 'grok' } } });
+    } else release();
+    await rejected;
+    assert.equal(
+      f.received.some((req) => req.method === 'session/prompt'),
+      false,
+    );
+    assert.equal(
+      f.events.some((event) => event.type === 'turn-start'),
+      false,
+    );
+    assert.equal(f.client.activeTurn, null);
+    await f.client.send({ sessionId: 'session-a', text: 'retry' });
+    assert.equal(f.received.filter((req) => req.method === 'session/prompt').length, 1);
+  });
+}
+
 test('a permission switch while preparing a prompt supersedes the mode captured when Send was clicked', async (t) => {
   let configureRequest;
   const f = fixture(t, (req) => {

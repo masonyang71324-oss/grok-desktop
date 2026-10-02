@@ -69,6 +69,49 @@ test('file preview rejects binary content rather than showing corrupted text', a
   await assert.rejects(readFile({ cwd, path: 'binary.dat' }), /二进制/);
 });
 
+test('non-UTF8 text is rejected with localized system-app guidance and original bytes intact', async (t) => {
+  const cwd = await fixture(t);
+  const filename = path.join(cwd, 'gbk-note.txt');
+  const original = Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0a]);
+  await fs.writeFile(filename, original);
+  await assert.rejects(readFile({ cwd, path: 'gbk-note.txt' }), /UTF-8.*系统应用/);
+  assert.deepEqual(await fs.readFile(filename), original);
+  const { setLocale } = require('../electron/i18n.cjs');
+  try {
+    setLocale('en');
+    await assert.rejects(readFile({ cwd, path: 'gbk-note.txt' }), /UTF-8.*system app/);
+  } finally {
+    setLocale('zh-CN');
+  }
+});
+
+test('UTF8 BOM and Chinese text remain intact after editing and saving', async (t) => {
+  const cwd = await fixture(t);
+  const filename = path.join(cwd, 'bom-note.txt');
+  await fs.writeFile(filename, '\uFEFF中文笔记\n', 'utf8');
+  const workspace = await workspaceWith({});
+  const opened = await workspace.readFile({ cwd, path: 'bom-note.txt' });
+  assert.equal(opened.text, '\uFEFF中文笔记\n');
+  await saveFile({
+    cwd,
+    path: 'bom-note.txt',
+    text: opened.text + '新增\n',
+    expectedMtimeMs: opened.mtimeMs,
+  });
+  assert.equal(await fs.readFile(filename, 'utf8'), '\uFEFF中文笔记\n新增\n');
+  assert.deepEqual((await fs.readFile(filename)).subarray(0, 3), Buffer.from([0xef, 0xbb, 0xbf]));
+});
+
+test('a truncated preview safely ignores an incomplete valid Chinese character at the byte limit', async (t) => {
+  const cwd = await fixture(t);
+  const filename = path.join(cwd, 'large-note.txt');
+  await fs.writeFile(filename, 'a'.repeat(512 * 1024 - 1) + '中文', 'utf8');
+  const opened = await readFile({ cwd, path: 'large-note.txt' });
+  assert.equal(opened.truncated, true);
+  assert.equal(opened.text.length, 512 * 1024 - 1);
+  assert.doesNotMatch(opened.text, /\uFFFD/);
+});
+
 test('saving normalized editor text preserves the original CRLF convention', async (t) => {
   const cwd = await fixture(t);
   const filename = path.join(cwd, 'windows.txt');
@@ -208,6 +251,41 @@ test('Git inspector lists staged and unstaged changes and renders untracked cont
     (await gitDiff({ cwd, path: 'new folder/nested/new file.txt' })).text,
     /\+nested content/,
   );
+});
+
+test('Git diffs use literal bracket filenames for tracked and untracked files', async (t) => {
+  const cwd = await fixture(t);
+  const git = (args) => execFileSync('git', ['-C', cwd, ...args], { windowsHide: true });
+  git(['init', '-q']);
+  git(['config', 'core.autocrlf', 'false']);
+  for (const filename of ['[id].txt', 'i.txt', 'n.txt'])
+    await fs.writeFile(path.join(cwd, filename), 'baseline\n');
+  git(['add', '.']);
+  git([
+    '-c',
+    'user.name=Desktop test',
+    '-c',
+    'user.email=test@localhost',
+    'commit',
+    '-qm',
+    'fixture',
+  ]);
+  await fs.writeFile(path.join(cwd, '[id].txt'), 'literal route change\n');
+  await fs.writeFile(path.join(cwd, 'i.txt'), 'ordinary file change\n');
+  await fs.writeFile(path.join(cwd, '[note].txt'), 'new bracket file\n');
+
+  const unstaged = (await gitDiff({ cwd, path: '[id].txt' })).text;
+  assert.match(unstaged, /\+literal route change/);
+  assert.doesNotMatch(unstaged, /ordinary file change/);
+  const ordinary = (await gitDiff({ cwd, path: 'i.txt' })).text;
+  assert.match(ordinary, /\+ordinary file change/);
+  assert.doesNotMatch(ordinary, /literal route change/);
+  assert.match((await gitDiff({ cwd, path: '[note].txt' })).text, /\+new bracket file/);
+
+  git(['--literal-pathspecs', 'add', '[id].txt']);
+  const staged = (await gitDiff({ cwd, path: '[id].txt', staged: true })).text;
+  assert.match(staged, /\+literal route change/);
+  assert.doesNotMatch(staged, /ordinary file change/);
 });
 
 test('a project inside a Git repository uses project paths and retains moves across its boundary', async (t) => {

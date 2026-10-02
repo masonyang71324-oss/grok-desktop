@@ -1,5 +1,13 @@
 # Changes
 
+## 1.5.1
+
+- Honor Stop during attachment preparation and model configuration before a prompt reaches Grok.
+- Notify task completion only after background work and checkpoint finalization settle, with distinct stopped/failed outcomes.
+- Use literal Git filenames so bracketed paths show and attach only their own changes.
+- Reject non-UTF-8 files in the built-in editor before lossy decoding can corrupt saved text; preserve UTF-8 BOM and truncated multibyte previews.
+- Show the advertised default effort for a new conversation instead of inheriting a previous conversation's applied effort.
+
 ## 1.5.0
 
 - Show actual allowance/context statistics with timestamps, bounded refresh and explicit unknown/stale states.

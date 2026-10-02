@@ -352,6 +352,7 @@ class SessionHub {
     const control = {
       turnId: randomUUID(),
       startedAt: new Date().toISOString(),
+      cancelling: false,
       tools: new Map(),
       item: this._item(payload),
       activeTurnStartIndex: entry.snapshot.updates.length,
@@ -370,7 +371,7 @@ class SessionHub {
     entry.snapshot.updates.push(update);
     this._changed();
     try {
-      await entry.client.send(payload);
+      await entry.client.send(payload, () => control.cancelling || this.closed);
       return { turnId: control.turnId };
     } catch (error) {
       if (!control.accepted)
@@ -497,7 +498,7 @@ class SessionHub {
       running.activeTurnStartIndex = entry.snapshot?.updates.length;
       entry.snapshot?.updates.push(update);
       try {
-        await entry.client.send(item.payload);
+        await entry.client.send(item.payload, () => running.cancelling || this.closed);
       } catch (error) {
         if (entry.snapshot)
           entry.snapshot.updates = entry.snapshot.updates.filter((item) => item !== update);
@@ -584,6 +585,12 @@ class SessionHub {
           : 'idle';
     this.locks.delete(this._key(entry.cwd));
     this._changed();
+    this.emit({
+      type: 'task-finished',
+      sessionId: entry.sessionId,
+      turnId: running.turnId,
+      status,
+    });
     this._drain();
   }
 
@@ -592,6 +599,7 @@ class SessionHub {
     entry.paused = true;
     if (entry.running) entry.running.cancelling = true;
     else entry.status = 'paused';
+    if (entry.control) entry.control.cancelling = true;
     this._changed();
     if (!entry.client.activeTurn) return;
     return entry.client.cancel(payload);

@@ -29,7 +29,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 - Switching languages preserves conversation text, code, file contents and command arguments. Per-conversation permissions remain available; pending approvals always keep their explicit decision.
 - Notifications and taskbar attention for approvals, completion and failures while the app is in the background.
 - Syntax highlighting, code copying and file links in tool changes.
-- File previews and editing that preserve CRLF/LF, detect external changes and replace files through a temporary file.
+- UTF-8 editing preserves CRLF/LF and BOM, detects external changes and replaces files through a temporary file. Other encodings are directed to system applications to avoid lossy saves.
 - Git changes, diff line numbers, live project refresh and opening files in external editors.
 - Drag-and-drop text/code attachments, restored window geometry and panel preferences.
 - Account allowance and conversation context, plus structured Grok management actions.

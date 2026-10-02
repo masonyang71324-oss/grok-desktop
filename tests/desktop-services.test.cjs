@@ -105,13 +105,22 @@ test('notifications only alert in the background and clear on focus without task
   notifications.receive({ type: 'turn-end' });
   assert.equal(shown.length, 1);
   enabled = true;
+  notifications.receive({ type: 'turn-end', result: { stopReason: 'end_turn' } });
   notifications.receive({ type: 'turn-error', message: 'SECRET' });
+  assert.equal(shown.length, 1);
+  notifications.receive({ type: 'task-finished', status: 'failed', message: 'SECRET' });
   assert.equal(shown[1].options.body, '任务遇到问题，请返回查看');
   notifications.receive({
     type: 'app-update',
     state: { status: 'available', availableVersion: '1.4.1' },
   });
   assert.equal(shown[2].options.body, 'Grok Desktop 1.4.1 可以更新');
+  notifications.receive({ type: 'task-finished', status: 'completed' });
+  assert.equal(shown[3].options.body, '任务已完成');
+  notifications.receive({ type: 'task-finished', status: 'cancelled' });
+  assert.equal(shown[4].options.body, '任务已停止');
+  notifications.receive({ type: 'task-finished', status: 'interrupted' });
+  assert.equal(shown[5].options.body, '任务遇到问题，请返回查看');
   notifications.clear();
 });
 

@@ -268,6 +268,62 @@ test('same directory serializes turns and completion hooks, queues are FIFO and 
   assert.deepEqual(clients[2].sent, ['two', 'three']);
 });
 
+test('stopping ACP preparation prevents submission and keeps queued work paused until resume', async () => {
+  const { GrokClient } = require('../electron/acp.cjs');
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const prompts = [];
+  const hub = new SessionHub({
+    emit: () => {},
+    createClient: (emit) => {
+      const client = new GrokClient({ emit, getExecutable: () => assert.fail('must not spawn') });
+      client.connected = true;
+      client.newSession = async ({ cwd }) => structuredClone(client._snapshot('prepared', cwd, {}));
+      const prepare = client._promptContent.bind(client);
+      client._promptContent = async (...args) => {
+        await gate;
+        return prepare(...args);
+      };
+      client._request = (method, params) => {
+        assert.equal(method, 'session/prompt');
+        prompts.push(params.prompt[0].text);
+        return new Promise(() => {});
+      };
+      return client;
+    },
+  });
+  try {
+    const session = await hub.newSession({ cwd: '/preparing' });
+    hub.enqueue({ ...session, text: 'first' });
+    hub.enqueue({ ...session, text: 'later' });
+    await tick();
+    assert.equal(hub.listTasks()[0].status, 'running');
+    await hub.cancel(session);
+    release();
+    await Promise.allSettled([...hub.pending]);
+    assert.deepEqual(prompts, []);
+    const stopped = hub.listTasks()[0];
+    assert.equal(stopped.lastTurn.status, 'cancelled');
+    assert.equal(stopped.turnId, undefined);
+    assert.deepEqual(
+      stopped.queued.map((item) => item.text),
+      ['first', 'later'],
+    );
+    hub.resume(session);
+    await Promise.allSettled([...hub.pending]);
+    assert.deepEqual(prompts, ['first']);
+    assert.deepEqual(
+      hub.listTasks()[0].queued.map((item) => item.text),
+      ['later'],
+    );
+  } finally {
+    release();
+    await hub.dispose();
+  }
+});
+
 test('failed and cancelled turns pause queued inputs until explicit resume', async () => {
   const { hub, clients } = fixture();
   const a = await hub.newSession({ cwd: '/a' });
@@ -523,7 +579,7 @@ test('owned start time survives live session reloads and permission waits', asyn
 
 test('completion summary is published once after the final checkpoint hook settles', async () => {
   let release;
-  const { hub, clients } = fixture({
+  const { hub, clients, events } = fixture({
     afterTurn: () =>
       new Promise((resolve) => {
         release = resolve;
@@ -540,6 +596,7 @@ test('completion summary is published once after the final checkpoint hook settl
   assert.equal(finishing.lastTurn, undefined);
   assert.equal(finishing.turnId, undefined);
   assert.equal(finishing.finishing, true);
+  assert.equal(events.filter((event) => event.type === 'task-finished').length, 0);
   clients[1].finish();
   release({ checkpointId: 'checkpoint-1' });
   await tick();
@@ -564,11 +621,22 @@ test('completion summary is published once after the final checkpoint hook settl
   clients[1].finish('late duplicate');
   await tick();
   assert.deepEqual(hub.listTasks()[0].lastTurn, lastTurn);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'task-finished'),
+    [
+      {
+        type: 'task-finished',
+        sessionId: a.sessionId,
+        turnId: sent.turnId,
+        status: 'completed',
+      },
+    ],
+  );
   await hub.dispose();
 });
 
 test('foreground completion keeps the parent clock and waits for background work', async () => {
-  const { hub, clients } = fixture({
+  const { hub, clients, events } = fixture({
     afterTurn: async () => ({ checkpointId: 'background-checkpoint' }),
   });
   const a = await hub.newSession({ cwd: '/a' });
@@ -581,11 +649,13 @@ test('foreground completion keeps the parent clock and waits for background work
   assert.equal(hub.listTasks()[0].status, 'background');
   assert.equal((await hub.loadSession(a)).runtime.startedAt, startedAt);
   assert.equal(hub.listTasks()[0].lastTurn, undefined);
+  assert.equal(events.filter((event) => event.type === 'task-finished').length, 0);
   clients[1].background(false);
   await tick();
   assert.equal(hub.listTasks()[0].lastTurn.turnId, sent.turnId);
   assert.equal(hub.listTasks()[0].lastTurn.startedAt, startedAt);
   assert.equal(hub.listTasks()[0].lastTurn.checkpointId, 'background-checkpoint');
+  assert.equal(events.filter((event) => event.type === 'task-finished').length, 1);
   await hub.dispose();
 });
 

@@ -147,6 +147,8 @@ const english = {
   '请先选择项目目录。': 'Select a project folder first.',
   '文件必须位于当前项目目录内。': 'The file must be inside the current project folder.',
   '请选择一个文件。': 'Select a file.',
+  '此文件不是有效的 UTF-8 文本，请使用系统应用打开。':
+    'This file is not valid UTF-8 text. Please open it in a system app.',
   '此文件为二进制内容，请使用系统应用打开。':
     'This is a binary file. Open it with a system application.',
   '保存内容必须为文本。': 'Only text content can be saved.',

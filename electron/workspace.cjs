@@ -2,6 +2,7 @@ const { translate: t } = require('./i18n.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { TextDecoder } = require('node:util');
 const { runProcess, runChecked } = require('./process.cjs');
 const HIDDEN = new Set([
   '.git',
@@ -52,12 +53,23 @@ async function readFile({ cwd, path: relative }) {
     const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
     const data = buffer.subarray(0, bytesRead);
     if (data.includes(0)) throw new Error(t('此文件为二进制内容，请使用系统应用打开。'));
-    const text = data.toString('utf8');
+    const truncated = stat.size > PREVIEW_BYTES;
+    let text;
+    try {
+      // Preserve a UTF-8 BOM. A read-only truncated preview may end within a
+      // valid multi-byte character, so leave that incomplete tail buffered.
+      text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data, {
+        stream: truncated,
+      });
+    } catch (error) {
+      if (error.code !== 'ERR_ENCODING_INVALID_ENCODED_DATA') throw error;
+      throw new Error(t('此文件不是有效的 UTF-8 文本，请使用系统应用打开。'));
+    }
     return {
       path: relative,
       text,
       eol: text.includes('\r\n') ? 'crlf' : 'lf',
-      truncated: stat.size > PREVIEW_BYTES,
+      truncated,
       mtimeMs: stat.mtimeMs,
     };
   } finally {
@@ -141,6 +153,7 @@ async function gitChanges({ cwd }) {
 async function gitDiff({ cwd, path: relative, staged = false }) {
   resolveWorkspacePath(cwd, relative);
   const result = await runChecked('git', [
+    '--literal-pathspecs',
     '-C',
     cwd,
     'diff',
@@ -152,6 +165,7 @@ async function gitDiff({ cwd, path: relative, staged = false }) {
   ]);
   if (result.stdout.trim()) return { text: result.stdout };
   const tracked = await runProcess('git', [
+    '--literal-pathspecs',
     '-C',
     cwd,
     'ls-files',
