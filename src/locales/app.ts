@@ -1,4 +1,15 @@
 export const app: Record<string, string> = {
+  常用任务: 'Saved tasks',
+  推理快捷设置: 'Quick reasoning settings',
+  处理方式: 'Task effort',
+  快速处理: 'Quick',
+  标准处理: 'Standard',
+  深入处理: 'Deep',
+  '使用较低推理档位，适合简单任务。': 'Use lower reasoning effort for simple tasks.',
+  '使用模型推荐的推理档位。': 'Use the model’s recommended reasoning effort.',
+  '使用标准推理档位。': 'Use a standard reasoning effort.',
+  '使用更高推理档位，适合复杂任务，可能等待更久。':
+    'Use higher effort for complex tasks. This can take longer.',
   '草稿暂时无法保存到本机，请保留重要内容后再关闭应用。':
     'Your draft could not be saved locally. Keep a copy of important content before closing the app.',
   '无法恢复当前会话：{value0}': 'Could not restore this conversation: {value0}',

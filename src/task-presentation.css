@@ -1,0 +1,305 @@
+.task-activity,
+.task-outcome {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+.task-activity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.task-activity-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.task-activity-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.task-activity-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.task-activity-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.task-activity-detail {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-activity-meta,
+.task-outcome-tool-counts,
+.task-outcome-file-counts,
+.task-outcome-validation-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-activity-meta {
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+.task-activity-timer,
+.task-outcome-duration {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.task-activity-waiting .task-activity-icon {
+  color: var(--text);
+}
+.task-activity-spin {
+  animation: task-activity-rotate 1.1s linear infinite;
+}
+@keyframes task-activity-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.task-outcome {
+  padding: 12px;
+}
+.task-outcome-summary {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+.task-outcome-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 17px;
+}
+.task-outcome-summary-row .task-outcome-error {
+  margin: 0;
+  line-height: inherit;
+}
+.task-outcome-summary-passed {
+  color: var(--accent);
+}
+.task-outcome-details {
+  margin-top: 5px;
+}
+.task-outcome-details > summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 17px;
+  cursor: pointer;
+}
+.task-outcome-details > summary:hover {
+  color: var(--text);
+}
+.task-outcome-details[open] > summary {
+  color: var(--text);
+}
+.task-outcome-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-outcome-heading > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.task-outcome-failed .task-outcome-heading > svg,
+.task-outcome-interrupted .task-outcome-heading > svg {
+  color: var(--danger);
+}
+.task-outcome-cancelled .task-outcome-heading > svg {
+  color: var(--muted);
+}
+.task-outcome-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.task-outcome-duration {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-outcome-tool-counts {
+  margin-top: 10px;
+}
+.task-outcome-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.task-outcome-section h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-outcome-file-count {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.task-outcome-note,
+.task-outcome-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.task-outcome-note {
+  color: var(--muted);
+}
+.task-outcome-error {
+  color: var(--danger);
+}
+.task-outcome-tool-counts .task-outcome-error,
+.task-outcome-validation-counts .task-outcome-error {
+  margin: 0;
+}
+.task-outcome-location {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 9px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.task-outcome-location > svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.task-outcome-location > span {
+  flex-shrink: 0;
+}
+.task-outcome-location code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.task-outcome-files,
+.task-outcome-verifications {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  margin: 8px 0 0;
+  list-style: none;
+}
+.task-outcome-file,
+.task-outcome-verification {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.task-outcome-file-status,
+.task-outcome-verification-status {
+  flex-shrink: 0;
+  min-width: 28px;
+  color: var(--muted);
+}
+.task-outcome-file-created .task-outcome-file-status,
+.task-outcome-verification-passed .task-outcome-verification-status {
+  color: var(--accent);
+}
+.task-outcome-file-deleted .task-outcome-file-status,
+.task-outcome-verification-failed .task-outcome-verification-status {
+  color: var(--danger);
+}
+.task-outcome-file-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.task-outcome-file-open:hover {
+  background: var(--surface-hover);
+}
+.task-outcome-file-open span,
+.task-outcome-deleted-path,
+.task-outcome-verification code {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.task-outcome-file-open svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.task-outcome-deleted-path {
+  padding: 3px 5px;
+  color: var(--muted);
+}
+.task-outcome-verification code {
+  flex: 1;
+}
+.task-outcome-exit {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.task-outcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.task-outcome-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+@media (max-width: 560px) {
+  .task-activity {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .task-activity-meta {
+    margin-left: 27px;
+    justify-content: flex-start;
+  }
+  .task-outcome-heading {
+    flex-wrap: wrap;
+  }
+  .task-outcome-duration {
+    font-size: 11px;
+  }
+  .task-outcome-actions button {
+    flex: 1 1 auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-activity-spin {
+    animation: none;
+  }
+}

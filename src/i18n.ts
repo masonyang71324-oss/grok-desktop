@@ -3,10 +3,21 @@ import { app } from './locales/app';
 import { dialogs } from './locales/dialogs';
 import { workspace } from './locales/workspace';
 import { workflows } from './locales/workflows';
+import { usageStatus } from './locales/usage-status';
+import { taskPresentation } from './locales/task-presentation';
+import { promptTemplates } from './locales/prompt-templates';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
-const english: Record<string, string> = { ...app, ...dialogs, ...workspace, ...workflows };
+const english: Record<string, string> = {
+  ...app,
+  ...dialogs,
+  ...workspace,
+  ...workflows,
+  ...usageStatus,
+  ...taskPresentation,
+  ...promptTemplates,
+};
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';
 try {

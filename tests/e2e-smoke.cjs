@@ -363,7 +363,53 @@ async function mockLog() {
     await request('cli.refresh');
     assert.equal(await contextControl.inputValue(), '500000');
     pass('context-selection-default-effort-and-catalog-refresh');
-    await page.locator('.tool-row summary').click();
+    phase = 'ux-actions-and-summary';
+    await page.locator('.usage-status').filter({ hasText: '62.5%' }).waitFor();
+    await page.getByRole('button', { name: '快速处理', exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.effort-control select').value === 'low' &&
+        !document.querySelector('.effort-control select').disabled,
+    );
+    await page.getByRole('button', { name: '标准处理', exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.effort-control select').value === 'medium' &&
+        !document.querySelector('.effort-control select').disabled,
+    );
+    const promptCountBefore = (await mockLog()).filter((item) => item.type === 'prompt').length;
+    const templateText = '\n  Reusable exact prompt\n';
+    await page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true }).fill(templateText);
+    await page.getByRole('button', { name: '常用任务', exact: true }).click();
+    await page.getByRole('button', { name: '保存当前草稿', exact: true }).click();
+    await page.getByLabel('收藏名称', { exact: true }).fill('Reusable task');
+    await page.getByRole('button', { name: '保存收藏', exact: true }).click();
+    await page.getByRole('button', { name: '使用“Reusable task”', exact: true }).waitFor();
+    await page.getByRole('button', { name: '关闭 · Esc', exact: true }).click();
+    await page
+      .getByRole('textbox', { name: '发送给 Grok 的消息', exact: true })
+      .fill('Existing draft');
+    await page.getByRole('button', { name: '常用任务', exact: true }).click();
+    await page.getByRole('button', { name: '使用“Reusable task”', exact: true }).click();
+    assert.equal(
+      await page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true }).inputValue(),
+      'Existing draft\n\n' + templateText,
+    );
+    assert.equal(
+      (await mockLog()).filter((item) => item.type === 'prompt').length,
+      promptCountBefore,
+    );
+    assert.equal((await request('bootstrap')).settings.promptTemplates[0].text, templateText);
+    await resetEvents();
+    await send('MOCK_VERIFY');
+    await waitEnd();
+    await page.locator('.task-outcome').filter({ hasText: '通过 1' }).waitFor();
+    const runtimeSummary = (await request('tasks.list')).find(
+      (item) => item.lastTurn?.facts?.verification?.passed === 1,
+    );
+    assert.ok(runtimeSummary.lastTurn.checkpointId);
+    pass('usage-presets-favorites-and-authoritative-task-outcome');
+    await page.locator('.tool-row summary').first().click();
     assert.equal(
       await page.locator('.tool-diff-new pre').textContent(),
       'theme = "dark"\nnotifications = true',

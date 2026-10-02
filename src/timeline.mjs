@@ -69,6 +69,8 @@ export function appendUpdate(rows, update, turnId = 'history') {
       kind: 'tool',
       turnId,
       toolCallId: update.toolCallId,
+      toolKind: update.kind || old.toolKind,
+      rawOutput: update.rawOutput != null ? update.rawOutput : old.rawOutput,
       title: update.title || old.title || '',
       status: update.status || old.status || 'pending',
       text:
@@ -111,16 +113,20 @@ export function fromReplay(updates, sessionId, runtime) {
   let rows = [];
   let turn = 0;
   let previousType = '';
+  let currentTurnId = `${sessionId}:history:0`;
   for (const [index, update] of (updates || []).entries()) {
     if (update.sessionUpdate === 'user_message_chunk' && previousType !== 'user_message_chunk') {
-      rows = finalizeTurn(rows, `${sessionId}:history:${turn}`);
+      rows = finalizeTurn(rows, currentTurnId);
       turn += 1;
+      currentTurnId = `${sessionId}:history:${turn}`;
     }
     const live =
       runtime?.turnId &&
       runtime.activeTurnStartIndex != null &&
       index >= runtime.activeTurnStartIndex;
-    rows = appendUpdate(rows, update, live ? runtime.turnId : `${sessionId}:history:${turn}`);
+    const tagged = typeof update._desktopTurnId === 'string' ? update._desktopTurnId : null;
+    if (tagged) currentTurnId = tagged;
+    rows = appendUpdate(rows, update, live ? runtime.turnId : currentTurnId);
     previousType = update.sessionUpdate;
   }
   return rows.map((row) => (row.turnId === runtime?.turnId ? row : { ...row, streaming: false }));

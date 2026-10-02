@@ -112,6 +112,7 @@ const client = new SessionHub({
     try {
       await checkpoints.finish(id);
       emit({ type: 'checkpoints-changed', cwd, sessionId });
+      return { checkpointId: id };
     } finally {
       activeCheckpoints.delete(turnId);
     }

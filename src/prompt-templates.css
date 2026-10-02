@@ -1,0 +1,72 @@
+.prompt-template-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.prompt-template-actions > span {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: auto;
+}
+.prompt-template-editor {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.prompt-template-editor textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 110px;
+  max-height: 280px;
+}
+.prompt-template-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.prompt-template-item {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.prompt-template-item > strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.prompt-template-item > p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.prompt-template-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.prompt-template-empty span {
+  color: var(--faint);
+}
+.prompt-template-delete {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.prompt-template-delete p {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.prompt-template-delete button {
+  margin-right: 8px;
+}

@@ -1,0 +1,125 @@
+.usage-status {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border, #d8e0e1);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  box-sizing: border-box;
+  text-align: left;
+}
+.usage-status-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  min-width: 0;
+  padding: 12px 4px 12px 14px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text, #202b31);
+  text-align: left;
+  cursor: pointer;
+}
+.usage-status-detail:hover {
+  background: var(--surface-hover, #e9eeee);
+}
+.usage-status-metric {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.usage-status-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted, #62717b);
+}
+.usage-status-heading > svg {
+  flex-shrink: 0;
+}
+.usage-status-heading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-status-metric > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.usage-status-caption {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--faint, #929da9);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.usage-status-caption.is-stale {
+  color: var(--muted, #62717b);
+}
+.usage-status-refresh {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #62717b);
+  cursor: pointer;
+}
+.usage-status-refresh:hover:not(:disabled) {
+  background: var(--surface-hover, #e9eeee);
+  color: var(--text, #202b31);
+}
+.usage-status-refresh:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.usage-status-detail:focus-visible,
+.usage-status-refresh:focus-visible {
+  outline: 2px solid var(--accent, #167b60);
+  outline-offset: 2px;
+}
+.usage-status-spinning {
+  animation: usage-status-spin 1s linear infinite;
+}
+@keyframes usage-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@container (max-width: 360px) {
+  .usage-status-detail {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+  .usage-status-metric {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+  }
+  .usage-status-metric > strong {
+    max-width: 150px;
+    text-align: right;
+  }
+  .usage-status-caption {
+    grid-column: 1 / -1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .usage-status-spinning {
+    animation: none;
+  }
+}

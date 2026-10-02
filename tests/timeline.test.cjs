@@ -2,6 +2,61 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const load = () => import('../src/timeline.mjs');
 
+test('cached completed replay preserves authoritative desktop turn ownership for result details', async () => {
+  const { fromReplay } = await load();
+  const rows = fromReplay(
+    [
+      {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: 'verify' },
+        _desktopTurnId: 'completed',
+      },
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 't',
+        kind: 'execute',
+        rawInput: { command: 'npm test' },
+        status: 'completed',
+        rawOutput: { exit_code: 0 },
+        _desktopTurnId: 'completed',
+      },
+    ],
+    's1',
+  );
+  assert.equal(rows.at(-1).turnId, 'completed');
+});
+
+test('tool rows retain their actual kind and structured exit result across later updates', async () => {
+  const { appendUpdate } = await load();
+  let rows = appendUpdate(
+    [],
+    {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'verify',
+      kind: 'execute',
+      rawInput: { command: 'npm test' },
+    },
+    'turn',
+  );
+  rows = appendUpdate(
+    rows,
+    {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'verify',
+      status: 'completed',
+      rawOutput: { exit_code: 1, stdout: 'failed' },
+    },
+    'turn',
+  );
+  rows = appendUpdate(
+    rows,
+    { sessionUpdate: 'tool_call_update', toolCallId: 'verify', title: 'Run checks' },
+    'turn',
+  );
+  assert.equal(rows[0].toolKind, 'execute');
+  assert.deepEqual(rows[0].rawOutput, { exit_code: 1, stdout: 'failed' });
+});
+
 test('active snapshot resumes existing tool and message rows with the live turn id', async () => {
   const { fromReplay, appendUpdate } = await load();
   const updates = [

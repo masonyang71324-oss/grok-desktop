@@ -4,9 +4,9 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { buildSync } = require('esbuild');
 const { launchBrowser } = require('../scripts/browser-launch.cjs');
-let browser, bundle;
+let browser, bundle, componentCss;
 before(async () => {
-  bundle = buildSync({
+  const outputs = buildSync({
     stdin: {
       contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import App from './src/App'; createRoot(document.getElementById('root')).render(<App/>);`,
       loader: 'tsx',
@@ -19,10 +19,84 @@ before(async () => {
     platform: 'browser',
     jsx: 'automatic',
     define: { 'process.env.NODE_ENV': '"development"' },
-  }).outputFiles.find((file) => !file.path.endsWith('.css')).text;
+  }).outputFiles;
+  bundle = outputs.find((file) => !file.path.endsWith('.css')).text;
+  componentCss = outputs.find((file) => file.path.endsWith('.css'))?.text || '';
   browser = await launchBrowser();
 });
 after(async () => browser?.close());
+
+test('expanded task results stay in the thread scroll while the send control remains visible with a long draft', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.setViewportSize({ width: 980, height: 680 });
+  await page.getByRole('button', { name: '打开项目文件夹', exact: true }).click();
+  await page.evaluate(() => {
+    const lastTurn = {
+      turnId: 'done',
+      status: 'completed',
+      startedAt: '2026-10-02T01:00:00Z',
+      finishedAt: '2026-10-02T01:00:02Z',
+      checkpointId: 'cp',
+      facts: {
+        toolCount: 1,
+        completedToolCount: 1,
+        failedToolCount: 0,
+        unfinishedToolCount: 0,
+        verification: { count: 1, passed: 1, failed: 0, unknown: 0 },
+      },
+    };
+    window.checkpoint = {
+      id: 'cp',
+      turnId: 'done',
+      cwd: 'C:/project',
+      sessionId: 'existing',
+      status: 'ready',
+      files: Array.from({ length: 6 }, (_, i) => ({
+        path: `file-${i}.ts`,
+        status: 'created',
+        before: null,
+        after: 'new',
+      })),
+      skipped: [],
+    };
+    window.snapshot.runtime = { ...window.snapshot.runtime, lastTurn };
+    window.snapshot.updates = [
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Task' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } },
+    ];
+  });
+  await page.getByRole('button', { name: 'My existing session', exact: true }).click();
+  await page.getByText('变更与验证明细', { exact: true }).click();
+  await page
+    .getByRole('textbox', { name: '发送给 Grok 的消息', exact: true })
+    .fill(Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n'));
+  const box = await page.getByRole('button', { name: '发送消息', exact: true }).boundingBox();
+  assert.ok(box && box.y + box.height <= 680);
+  assert.equal(
+    await page.evaluate(() => !!document.querySelector('.thread .task-result-container')),
+    true,
+  );
+  await page.evaluate(() =>
+    window.emit({
+      type: 'tasks-changed',
+      tasks: [
+        {
+          sessionId: 'existing',
+          cwd: 'C:/project',
+          title: 'existing',
+          status: 'running',
+          finishing: true,
+          startedAt: '2026-10-02T01:00:00Z',
+          lastTurn: window.snapshot.runtime.lastTurn,
+          permissions: [],
+          queued: [],
+        },
+      ],
+    }),
+  );
+  await page.getByText('正在整理结果', { exact: true }).waitFor();
+  assert.equal(await page.locator('.task-outcome').count(), 0);
+});
 
 async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedModel = '' } = {}) {
   const page = await browser.newPage({ viewport: { width: 1120, height: 820 } });
@@ -35,6 +109,7 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
   await page.addStyleTag({
     content: fs.readFileSync(path.join(__dirname, '../src/styles.css'), 'utf8'),
   });
+  await page.addStyleTag({ content: componentCss });
   await page.evaluate(
     ({ language, authStatus, savedModel }) => {
       window.calls = [];
@@ -117,6 +192,7 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
               ...(payload?.checkUpdate ? { latestVersion: '1.0.47', updateAvailable: true } : {}),
             };
           else if (command === 'tasks.list') data = [];
+          else if (command === 'checkpoints.detail') data = window.checkpoint;
           else if (command === 'dialog.project') data = 'C:/project';
           else if (command === 'project.open')
             data = {

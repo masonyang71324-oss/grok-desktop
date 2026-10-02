@@ -193,6 +193,21 @@ function receive(request) {
     reply(request, { commands });
     return;
   }
+  if (request.method === '_x.ai/billing') {
+    reply(request, {
+      subscription_tier: 'heavy',
+      config: {
+        creditUsagePercent: 37.5,
+        isUnifiedBillingUser: true,
+        currentPeriod: {
+          type: 'USAGE_PERIOD_TYPE_MONTHLY',
+          start: '2026-10-01T00:00:00Z',
+          end: '2026-11-01T00:00:00Z',
+        },
+      },
+    });
+    return;
+  }
   if (request.method === 'session/new') {
     const session = {
       sessionId: randomUUID(),
@@ -271,7 +286,23 @@ function receive(request) {
       });
     turn = { request, session, timers: [] };
     update(session, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } });
-    if (text.includes('MOCK_EDIT')) {
+    if (text.includes('MOCK_VERIFY')) {
+      update(session, {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'mock-verify',
+        title: 'Run npm test',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { command: 'npm test' },
+      });
+      update(session, {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'mock-verify',
+        status: 'completed',
+        rawOutput: { exit_code: 0, stdout: 'fixture checks passed' },
+      });
+      stream(session, ['模拟验证完成。']);
+    } else if (text.includes('MOCK_EDIT')) {
       fs.writeFileSync(path.join(session.cwd, 'fixture.txt'), 'mock edited\n');
       stream(session, ['模拟文件已修改。']);
     } else if (text.includes('MOCK_SLOW')) {
@@ -389,6 +420,12 @@ function receive(request) {
         cwd: session.cwd,
         model: 'mock-grok',
         messages: session.updates.length,
+        context: {
+          used: 2000,
+          total:
+            models.availableModels.find((model) => model.modelId === models.currentModelId)?._meta
+              ?.contextWindow || 256000,
+        },
       },
     });
     return;

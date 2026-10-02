@@ -96,6 +96,10 @@ async function fixture(
       index++;
       return callback;
     },
+    useMemo(factory) {
+      index++;
+      return factory();
+    },
     useEffect(callback, deps) {
       const slot = index++;
       const prior = effectSlots[slot];
@@ -230,6 +234,9 @@ async function fixture(
       readableDate: (value) => value,
     },
     './drafts.mjs': await import(pathToFileURL(path.join(root, 'src/drafts.mjs')).href),
+    './effort-presets.mjs': await import(
+      pathToFileURL(path.join(root, 'src/effort-presets.mjs')).href
+    ),
     './timeline.mjs': {
       fromReplay: () => [],
       finalizeTurn: (rows) => rows,

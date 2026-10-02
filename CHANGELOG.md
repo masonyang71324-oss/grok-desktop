@@ -1,5 +1,14 @@
 # Changes
 
+## 1.5.0
+
+- Show actual allowance/context statistics with timestamps, bounded refresh and explicit unknown/stale states.
+- Display actual task phases and elapsed time, including approvals, background work and checkpoint finalization.
+- Add compact outcome cards with checkpoint changes, reliable exit-code verification and direct review/recovery access.
+- Keep timing/count facts across conversation switches and restarts without persisting command or prompt content in outcome metadata.
+- Add supported Quick/Standard/Deep effort buttons and saved prompt favorites that append to drafts without sending.
+- Preserve bilingual controls, minimum-window send access, background tasks, drafts and editor recovery protection.
+
 ## 1.4.3
 
 - Show Grok Build version and authenticated/needs-login/unknown status on the home screen, with native login, catalog refresh and separate engine update controls.

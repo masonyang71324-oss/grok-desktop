@@ -27,8 +27,14 @@ class SessionHub {
           const entry = this._entry(saved.sessionId, saved.cwd);
           entry.title = saved.title || '';
           entry.queue = saved.queue || [];
-          entry.paused = true;
-          entry.status = saved.active || saved.status === 'interrupted' ? 'interrupted' : 'paused';
+          entry.lastTurn = saved.lastTurn;
+          entry.paused = !!(saved.active || entry.queue.length || saved.status === 'interrupted');
+          entry.status =
+            saved.active || saved.status === 'interrupted'
+              ? 'interrupted'
+              : entry.paused
+                ? 'paused'
+                : 'idle';
           if (saved.active) entry.queue.unshift(saved.active);
         }
       } catch (error) {
@@ -99,7 +105,7 @@ class SessionHub {
   _persist() {
     if (!this.storageFile || this.closed) return;
     const records = [...this.sessions.values()]
-      .filter((entry) => entry.queue.length || entry.running)
+      .filter((entry) => entry.queue.length || entry.running || entry.lastTurn)
       .map((entry) => ({
         sessionId: entry.sessionId,
         cwd: entry.cwd,
@@ -107,6 +113,7 @@ class SessionHub {
         status: entry.status,
         queue: entry.queue,
         active: entry.running?.item,
+        lastTurn: entry.lastTurn,
       }));
     fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
     fs.writeFileSync(`${this.storageFile}.tmp`, JSON.stringify(records));
@@ -132,6 +139,9 @@ class SessionHub {
       status: entry.status,
       connection: entry.connection,
       turnId: foreground?.finishing ? undefined : foreground?.turnId,
+      finishing: !!entry.running?.finishing,
+      startedAt: entry.running?.startedAt || foreground?.startedAt,
+      lastTurn: entry.lastTurn,
       activeTurnStartIndex: foreground?.activeTurnStartIndex,
       queued: entry.queue.map(({ id, payload, createdAt }) => ({
         id,
@@ -176,6 +186,7 @@ class SessionHub {
     }
     if (event.type === 'turn-start' && foreground) {
       foreground.accepted = true;
+      event.startedAt = foreground.startedAt;
       event.text = foreground.item.payload.text || '';
       event.attachments = copy(foreground.item.payload.attachments || []);
       if (foreground.item.queued) event.queueId = foreground.item.id;
@@ -207,6 +218,25 @@ class SessionHub {
     if (event.type === 'permission-resolved') {
       entry.permissions.delete(event.requestId);
       if (entry.running && !entry.permissions.size) entry.status = 'running';
+    }
+    if (event.type === 'update' && foreground) {
+      event.update = { ...event.update, _desktopTurnId: foreground.turnId };
+      const update = event.update;
+      if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate) && update.toolCallId) {
+        const previous = foreground.tools.get(update.toolCallId) || {};
+        foreground.tools.set(update.toolCallId, {
+          kind: 'tool',
+          toolKind: update.kind || previous.toolKind,
+          status: update.status || previous.status || 'pending',
+          input:
+            update.rawInput != null
+              ? typeof update.rawInput === 'string'
+                ? update.rawInput
+                : JSON.stringify(update.rawInput)
+              : previous.input || '',
+          rawOutput: update.rawOutput != null ? copy(update.rawOutput) : previous.rawOutput,
+        });
+      }
     }
     if (event.type === 'update' && entry.snapshot) entry.snapshot.updates.push(copy(event.update));
     const update =
@@ -321,6 +351,8 @@ class SessionHub {
     let resolve;
     const control = {
       turnId: randomUUID(),
+      startedAt: new Date().toISOString(),
+      tools: new Map(),
       item: this._item(payload),
       activeTurnStartIndex: entry.snapshot.updates.length,
       done: new Promise((done) => {
@@ -332,6 +364,7 @@ class SessionHub {
     entry.status = 'running';
     const update = {
       sessionUpdate: 'user_message_chunk',
+      _desktopTurnId: control.turnId,
       content: { type: 'text', text: payload.text },
     };
     entry.snapshot.updates.push(update);
@@ -429,7 +462,13 @@ class SessionHub {
 
   async _startTurn(entry, item) {
     const turnId = randomUUID();
-    const running = { turnId, item, cancelling: false };
+    const running = {
+      turnId,
+      startedAt: new Date().toISOString(),
+      item,
+      cancelling: false,
+      tools: new Map(),
+    };
     entry.running = running;
     entry.status = 'running';
     entry.interrupted = false;
@@ -451,6 +490,7 @@ class SessionHub {
       // Save user content here because ACP intentionally suppresses its live echo.
       const update = {
         sessionUpdate: 'user_message_chunk',
+        _desktopTurnId: turnId,
         content: { type: 'text', text: item.payload.text || '' },
         _desktopAttachments: copy(item.payload.attachments || []),
       };
@@ -484,6 +524,7 @@ class SessionHub {
   async _finishTurn(entry, event) {
     const running = entry.running;
     const failed = event.type === 'turn-error';
+    let checkpoint, finishError;
     entry.paused ||= failed || running.cancelling || event.result?.stopReason === 'cancelled';
     entry.error = failed ? event.message : entry.error;
     try {
@@ -497,7 +538,7 @@ class SessionHub {
           });
         if (entry.control) await entry.control.done;
       }
-      await this.afterTurn?.({
+      checkpoint = await this.afterTurn?.({
         cwd: entry.cwd,
         sessionId: entry.sessionId,
         turnId: running.turnId,
@@ -507,7 +548,31 @@ class SessionHub {
     } catch (error) {
       entry.paused = true;
       entry.error = error.message;
+      finishError = error.message;
     }
+    const { collectToolFacts } = await import('./task-facts.mjs');
+    const stopReason = event.result?.stopReason;
+    const status = entry.interrupted
+      ? 'interrupted'
+      : running.cancelling || stopReason === 'cancelled'
+        ? 'cancelled'
+        : failed || finishError
+          ? 'failed'
+          : stopReason && stopReason !== 'end_turn'
+            ? 'interrupted'
+            : 'completed';
+    const error =
+      finishError || (failed ? event.message : entry.interrupted ? entry.error : undefined);
+    entry.lastTurn = {
+      turnId: running.turnId,
+      startedAt: running.startedAt,
+      finishedAt: new Date().toISOString(),
+      status,
+      facts: collectToolFacts([...running.tools.values()]),
+      ...(stopReason ? { stopReason } : {}),
+      ...(error ? { error } : {}),
+      ...(checkpoint?.checkpointId ? { checkpointId: checkpoint.checkpointId } : {}),
+    };
     entry.running = null;
     entry.permissions.clear();
     entry.status = entry.interrupted

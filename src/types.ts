@@ -10,6 +10,7 @@ export interface Settings {
   recentProjects: string[];
   lastProject: string;
   notifications?: boolean;
+  promptTemplates?: { id: string; name: string; text: string }[];
   ui?: { sidebar: boolean; inspector: boolean; inspectorTab: 'files' | 'changes' | 'plan' };
   window?: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
 }
@@ -160,6 +161,7 @@ export type DesktopEvent =
       type: 'turn-start';
       sessionId: string;
       turnId: string;
+      startedAt?: string;
       queueId?: string;
       text?: string;
       attachments?: Attachment[];
@@ -178,6 +180,9 @@ export interface TaskPermission {
   params: PermissionRequest;
 }
 export interface TaskRuntime {
+  finishing?: boolean;
+  startedAt?: string;
+  lastTurn?: TaskTurnResult;
   capabilities?: { promptCapabilities?: { image?: boolean } };
   status?: string;
   turnId?: string;
@@ -189,6 +194,22 @@ export interface TaskRuntime {
 }
 export interface TaskSummary extends TaskRuntime, SessionSummary {
   status: string;
+}
+export interface TaskTurnResult {
+  facts?: {
+    toolCount: number;
+    completedToolCount: number;
+    failedToolCount: number;
+    unfinishedToolCount: number;
+    verification: { count: number; passed: number; failed: number; unknown: number };
+  };
+  turnId: string;
+  startedAt?: string;
+  finishedAt?: string;
+  status: 'completed' | 'cancelled' | 'failed' | 'interrupted';
+  stopReason?: string;
+  error?: string;
+  checkpointId?: string;
 }
 export interface RunnerState {
   status: string;

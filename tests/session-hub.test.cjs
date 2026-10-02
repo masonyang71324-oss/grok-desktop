@@ -497,3 +497,384 @@ test('unadvertised, ordinary and attached workflow prompts cannot bypass a backg
   assert.deepEqual(clients[1].sent, ['start']);
   await hub.dispose();
 });
+
+test('owned start time survives live session reloads and permission waits', async () => {
+  const { hub, clients, events } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  const sent = await hub.send({ ...a, text: 'work' });
+  const started = events.find((event) => event.type === 'turn-start');
+  assert.match(started.startedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(started.turnId, sent.turnId);
+  clients[1].permission();
+  const reopened = await hub.loadSession(a);
+  assert.equal(reopened.runtime.status, 'waiting');
+  assert.equal(reopened.runtime.startedAt, started.startedAt);
+  assert.equal(hub.listTasks()[0].startedAt, started.startedAt);
+  hub.respondPermission({ ...a, requestId: 1, optionId: 'yes' });
+  clients[1].finish();
+  await tick();
+  const completed = (await hub.loadSession(a)).runtime;
+  assert.equal(completed.startedAt, undefined);
+  assert.equal(completed.lastTurn.startedAt, started.startedAt);
+  assert.equal(completed.lastTurn.status, 'completed');
+  assert.ok(Date.parse(completed.lastTurn.finishedAt) >= Date.parse(started.startedAt));
+  await hub.dispose();
+});
+
+test('completion summary is published once after the final checkpoint hook settles', async () => {
+  let release;
+  const { hub, clients } = fixture({
+    afterTurn: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  });
+  const a = await hub.newSession({ cwd: '/a' });
+  const sent = await hub.send({ ...a, text: 'work' });
+  const startedAt = hub.listTasks()[0].startedAt;
+  assert.ok(startedAt);
+  clients[1].publish({ type: 'turn-end', result: { stopReason: 'end_turn' } });
+  await tick();
+  const finishing = hub.listTasks()[0];
+  assert.equal(finishing.startedAt, startedAt);
+  assert.equal(finishing.lastTurn, undefined);
+  assert.equal(finishing.turnId, undefined);
+  assert.equal(finishing.finishing, true);
+  clients[1].finish();
+  release({ checkpointId: 'checkpoint-1' });
+  await tick();
+  const completed = hub.listTasks()[0];
+  assert.equal(completed.finishing, false);
+  assert.deepEqual(completed.lastTurn, {
+    turnId: sent.turnId,
+    startedAt,
+    finishedAt: completed.lastTurn.finishedAt,
+    status: 'completed',
+    facts: {
+      toolCount: 0,
+      completedToolCount: 0,
+      failedToolCount: 0,
+      unfinishedToolCount: 0,
+      verification: { count: 0, passed: 0, failed: 0, unknown: 0 },
+    },
+    stopReason: 'end_turn',
+    checkpointId: 'checkpoint-1',
+  });
+  const lastTurn = completed.lastTurn;
+  clients[1].finish('late duplicate');
+  await tick();
+  assert.deepEqual(hub.listTasks()[0].lastTurn, lastTurn);
+  await hub.dispose();
+});
+
+test('foreground completion keeps the parent clock and waits for background work', async () => {
+  const { hub, clients } = fixture({
+    afterTurn: async () => ({ checkpointId: 'background-checkpoint' }),
+  });
+  const a = await hub.newSession({ cwd: '/a' });
+  const sent = await hub.send({ ...a, text: 'background work' });
+  const startedAt = hub.listTasks()[0].startedAt;
+  assert.ok(startedAt);
+  clients[1].background(true);
+  clients[1].finish();
+  await tick();
+  assert.equal(hub.listTasks()[0].status, 'background');
+  assert.equal((await hub.loadSession(a)).runtime.startedAt, startedAt);
+  assert.equal(hub.listTasks()[0].lastTurn, undefined);
+  clients[1].background(false);
+  await tick();
+  assert.equal(hub.listTasks()[0].lastTurn.turnId, sent.turnId);
+  assert.equal(hub.listTasks()[0].lastTurn.startedAt, startedAt);
+  assert.equal(hub.listTasks()[0].lastTurn.checkpointId, 'background-checkpoint');
+  await hub.dispose();
+});
+
+test('final summaries distinguish cancellation, failure, interruption and checkpoint failure', async () => {
+  for (const [outcome, finish] of [
+    ['cancelled', (hub, client, session) => hub.cancel(session)],
+    ['failed', (_hub, client) => client.finish('network error')],
+    ['interrupted', (_hub, client) => client.disconnect()],
+  ]) {
+    const { hub, clients } = fixture();
+    const a = await hub.newSession({ cwd: '/a' });
+    const sent = await hub.send({ ...a, text: 'work' });
+    await finish(hub, clients[1], a);
+    await tick();
+    const task = hub.listTasks()[0];
+    assert.equal(task.lastTurn?.status, outcome);
+    assert.equal(task.lastTurn.turnId, sent.turnId);
+    if (outcome === 'failed') assert.equal(task.lastTurn.error, 'network error');
+    if (outcome === 'interrupted') assert.equal(task.lastTurn.error, 'process exited');
+    await hub.dispose();
+  }
+  const { hub, clients } = fixture({
+    afterTurn: async () => {
+      throw new Error('capture failed');
+    },
+  });
+  const a = await hub.newSession({ cwd: '/a' });
+  await hub.send({ ...a, text: 'work' });
+  clients[1].finish();
+  await tick();
+  assert.equal(hub.listTasks()[0].lastTurn?.status, 'failed');
+  assert.equal(hub.listTasks()[0].lastTurn.error, 'capture failed');
+  await hub.dispose();
+});
+
+test('ACP stop reasons distinguish normal completion from cancelled or interrupted results', async () => {
+  for (const [stopReason, status] of [
+    ['end_turn', 'completed'],
+    ['cancelled', 'cancelled'],
+    ['max_tokens', 'interrupted'],
+    ['refusal', 'interrupted'],
+  ]) {
+    const { hub, clients } = fixture();
+    const a = await hub.newSession({ cwd: '/a' });
+    await hub.send({ ...a, text: 'work' });
+    clients[1].publish({ type: 'turn-end', result: { stopReason } });
+    await tick();
+    assert.equal(hub.listTasks()[0].lastTurn?.status, status);
+    assert.equal(hub.listTasks()[0].lastTurn.stopReason, stopReason);
+    await hub.dispose();
+  }
+});
+
+test('idle completion summaries survive storage reload without pausing or storing conversation content', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-hub-summary-'));
+  try {
+    const storageFile = path.join(directory, 'queues.json');
+    const first = fixture({
+      storageFile,
+      afterTurn: async () => ({ checkpointId: 'saved-checkpoint' }),
+    });
+    const a = await first.hub.newSession({ cwd: directory });
+    await first.hub.send({ ...a, text: 'private prompt' });
+    first.clients[1].update('private tool output');
+    first.clients[1].finish();
+    await tick();
+    const lastTurn = first.hub.listTasks()[0].lastTurn;
+    assert.ok(lastTurn);
+    const stored = fs.readFileSync(storageFile, 'utf8');
+    assert.equal(stored.includes('private prompt'), false);
+    assert.equal(stored.includes('private tool output'), false);
+    assert.equal(JSON.parse(stored).length, 1);
+    await first.hub.dispose();
+    const second = fixture({ storageFile });
+    const reopened = await second.hub.loadSession(a);
+    assert.equal(reopened.runtime.status, 'idle');
+    assert.equal(reopened.runtime.startedAt, undefined);
+    assert.deepEqual(reopened.runtime.lastTurn, lastTurn);
+    assert.deepEqual(second.hub.listTasks()[0].lastTurn, lastTurn);
+    assert.equal(second.hub.sessions.get(a.sessionId).paused, false);
+    await second.hub.dispose();
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('stored summaries preserve paused and interrupted queue recovery', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-hub-recovery-'));
+  try {
+    for (const [outcome, status, finish] of [
+      ['cancelled', 'paused', (hub, client, session) => hub.cancel(session)],
+      ['failed', 'paused', (_hub, client) => client.finish('network error')],
+      ['interrupted', 'interrupted', (_hub, client) => client.disconnect()],
+    ]) {
+      const storageFile = path.join(directory, `${outcome}.json`);
+      const first = fixture({ storageFile });
+      const a = await first.hub.newSession({ cwd: directory });
+      await first.hub.send({ ...a, text: 'work' });
+      first.hub.enqueue({ ...a, text: 'next' });
+      await finish(first.hub, first.clients[1], a);
+      await tick();
+      const previous = first.hub.listTasks()[0];
+      assert.equal(previous.lastTurn.status, outcome);
+      await first.hub.dispose();
+      const second = fixture({ storageFile });
+      const restored = (await second.hub.loadSession(a)).runtime;
+      assert.equal(restored.status, status);
+      assert.deepEqual(restored.lastTurn, previous.lastTurn);
+      assert.deepEqual(restored.queued, previous.queued);
+      assert.deepEqual(second.clients[1].sent, []);
+      await second.hub.dispose();
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('two sessions retain independent clocks and completion summaries', async () => {
+  const { hub, clients } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  const b = await hub.newSession({ cwd: '/b' });
+  const first = await hub.send({ ...a, text: 'first' });
+  const second = await hub.send({ ...b, text: 'second' });
+  const before = hub.listTasks();
+  assert.ok(before[0].startedAt);
+  assert.ok(before[1].startedAt);
+  clients[1].finish();
+  await tick();
+  const tasks = hub.listTasks();
+  assert.equal(tasks[0].lastTurn.turnId, first.turnId);
+  assert.equal(tasks[0].lastTurn.startedAt, before[0].startedAt);
+  assert.equal(tasks[1].turnId, second.turnId);
+  assert.equal(tasks[1].startedAt, before[1].startedAt);
+  assert.equal(tasks[1].lastTurn, undefined);
+  clients[2].finish('second failed');
+  await tick();
+  assert.equal(hub.listTasks()[1].lastTurn.turnId, second.turnId);
+  assert.equal(hub.listTasks()[1].lastTurn.status, 'failed');
+  assert.equal(hub.listTasks()[0].lastTurn.status, 'completed');
+  await hub.dispose();
+});
+
+test('workflow control timestamps preserve the owning task clock and result', async () => {
+  const { hub, clients, events } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  hub.sessions.get(a.sessionId).snapshot.commands = [{ name: 'workflow' }];
+  const owner = await hub.send({ ...a, text: 'start workflow' });
+  const startedAt = hub.listTasks()[0].startedAt;
+  assert.ok(startedAt);
+  clients[1].workflow('active');
+  clients[1].finish();
+  await tick();
+  const control = await hub.send({ ...a, text: '/workflow pause example' });
+  const controlStart = events.filter((event) => event.type === 'turn-start').at(-1);
+  assert.equal(controlStart.turnId, control.turnId);
+  assert.match(controlStart.startedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(hub.listTasks()[0].startedAt, startedAt);
+  clients[1].finish();
+  await tick();
+  assert.equal(hub.listTasks()[0].lastTurn, undefined);
+  assert.equal(hub.listTasks()[0].startedAt, startedAt);
+  clients[1].workflow('complete');
+  await tick();
+  assert.equal(hub.listTasks()[0].lastTurn.turnId, owner.turnId);
+  assert.equal(hub.listTasks()[0].lastTurn.startedAt, startedAt);
+  assert.equal(hub.listTasks()[0].lastTurn.status, 'completed');
+  await hub.dispose();
+});
+
+test('owned tool facts merge partial updates and survive cold reload as counts without command output', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-hub-facts-'));
+  try {
+    const storageFile = path.join(directory, 'queues.json');
+    const first = fixture({ storageFile });
+    const a = await first.hub.newSession({ cwd: directory });
+    await first.hub.send({ ...a, text: 'private prompt' });
+    const publish = (update) => first.clients[1].publish({ type: 'update', turnId: 'raw', update });
+    publish({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'verify',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { command: 'npm test' },
+    });
+    publish({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'verify',
+      status: 'completed',
+      rawOutput: { exitCode: 1, stdout: 'PRIVATE OUTPUT' },
+    });
+    publish({ sessionUpdate: 'tool_call_update', toolCallId: 'verify', title: 'Finished checks' });
+    publish({ sessionUpdate: 'tool_call', toolCallId: 'read', kind: 'read', status: 'completed' });
+    publish({ sessionUpdate: 'tool_call', toolCallId: 'edit', kind: 'edit', status: 'failed' });
+    publish({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'masked',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { command: 'npm test || true' },
+      rawOutput: { exitCode: 0 },
+    });
+    publish({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'semicolon',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { command: 'npm test; echo done' },
+      rawOutput: { exitCode: 0 },
+    });
+    publish({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'unfinished',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { command: 'npm run build' },
+    });
+    first.clients[1].finish();
+    await tick();
+    const expected = {
+      toolCount: 6,
+      completedToolCount: 4,
+      failedToolCount: 1,
+      unfinishedToolCount: 1,
+      verification: { count: 4, passed: 0, failed: 1, unknown: 3 },
+    };
+    assert.deepEqual(first.hub.listTasks()[0].lastTurn.facts, expected);
+    await first.hub.dispose();
+    const stored = fs.readFileSync(storageFile, 'utf8');
+    assert.equal(stored.includes('npm test'), false);
+    assert.equal(stored.includes('PRIVATE OUTPUT'), false);
+    assert.equal(stored.includes('private prompt'), false);
+    const second = fixture({ storageFile });
+    const reopened = await second.hub.loadSession(a);
+    assert.deepEqual(reopened.runtime.lastTurn.facts, expected);
+    assert.equal(reopened.runtime.finishing, false);
+    assert.deepEqual(reopened.updates, []);
+    await second.hub.dispose();
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('cached live rows retain authoritative owner IDs and workflow control tools do not replace parent facts', async () => {
+  const { hub, clients } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  hub.sessions.get(a.sessionId).snapshot.commands = [{ name: 'workflow' }];
+  const owner = await hub.send({ ...a, text: 'start workflow' });
+  clients[1].update('owner answer');
+  clients[1].publish({
+    type: 'update',
+    turnId: 'raw',
+    update: {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'shared-id',
+      kind: 'read',
+      status: 'completed',
+    },
+  });
+  clients[1].workflow('active');
+  clients[1].finish();
+  await tick();
+  const control = await hub.send({ ...a, text: '/workflow stop example' });
+  clients[1].publish({
+    type: 'update',
+    turnId: 'raw',
+    update: {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'shared-id',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { command: 'npm test' },
+      rawOutput: { exitCode: 0 },
+    },
+  });
+  const reopened = await hub.loadSession(a);
+  assert.deepEqual(
+    reopened.updates.map((update) => update._desktopTurnId),
+    [owner.turnId, owner.turnId, owner.turnId, control.turnId, control.turnId],
+  );
+  clients[1].workflow('cancelled');
+  clients[1].finish();
+  await tick();
+  assert.equal(hub.listTasks()[0].lastTurn.turnId, owner.turnId);
+  assert.deepEqual(hub.listTasks()[0].lastTurn.facts, {
+    toolCount: 1,
+    completedToolCount: 1,
+    failedToolCount: 0,
+    unfinishedToolCount: 0,
+    verification: { count: 0, passed: 0, failed: 0, unknown: 0 },
+  });
+  await hub.dispose();
+});

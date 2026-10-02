@@ -1,5 +1,5 @@
 import { useI18n, setLocale } from './i18n';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowRight,
@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  Star,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -52,6 +53,7 @@ import type {
   SessionSummary,
   Settings,
   TaskSummary,
+  Checkpoint,
 } from './types';
 import {
   appendUpdate,
@@ -77,6 +79,11 @@ const SettingsDialog = lazy(() =>
 const UsageDialog = lazy(() =>
   import('./Dialogs').then((module) => ({ default: module.UsageDialog })),
 );
+const PromptTemplates = lazy(() => import('./PromptTemplates'));
+import UsageStatus from './UsageStatus';
+import TaskActivity from './TaskActivity';
+import TaskOutcome from './TaskOutcome';
+import { effortPresets } from './effort-presets.mjs';
 import Inspector from './Inspector';
 import PermissionControl from './PermissionControl';
 import TaskCenter from './TaskCenter';
@@ -96,7 +103,7 @@ const defaults: Settings = {
   recentProjects: [],
   lastProject: '',
 };
-type Run = { sessionId: string; turnId: string };
+type Run = { sessionId: string; turnId: string; startedAt?: string };
 type Permission = {
   requestId: string | number;
   params: PermissionRequest;
@@ -111,6 +118,7 @@ type Dialog =
   | 'tasks'
   | 'project-tools'
   | 'engine'
+  | 'templates'
   | null;
 export default function App() {
   const { t } = useI18n();
@@ -178,6 +186,13 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [turnError, setTurnError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [resultRevision, setResultRevision] = useState(0);
+  const [resultCheckpoint, setResultCheckpoint] = useState<Checkpoint | null>(null);
+  const [resultLoading, setResultLoading] = useState(false);
+  const [projectCheckpointTarget, setProjectCheckpointTarget] = useState<{
+    id: string;
+    restore: boolean;
+  } | null>(null);
   const [background, setBackground] = useState('');
   const [rename, setRename] = useState<SessionSummary | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
@@ -290,7 +305,11 @@ export default function App() {
     cwdRef.current = snapshot.cwd;
     setCwd(snapshot.cwd);
     const active = snapshot.runtime?.turnId
-      ? { sessionId: snapshot.sessionId, turnId: snapshot.runtime.turnId }
+      ? {
+          sessionId: snapshot.sessionId,
+          turnId: snapshot.runtime.turnId,
+          startedAt: snapshot.runtime.startedAt,
+        }
       : null;
     runRef.current = active;
     busyRef.current = !!active;
@@ -544,6 +563,14 @@ export default function App() {
         return;
       }
       if (event.type === 'runner-changed') return;
+      if (event.type === 'checkpoints-changed') {
+        if (
+          event.cwd === cwdRef.current &&
+          (!event.sessionId || event.sessionId === sessionRef.current?.sessionId)
+        )
+          setResultRevision((value) => value + 1);
+        return;
+      }
       if (event.type === 'workspace-changed') {
         if (event.cwd === cwdRef.current) setRevision((value) => value + 1);
         return;
@@ -644,7 +671,11 @@ export default function App() {
               streaming: false,
             },
           ]);
-        const next = { sessionId: event.sessionId, turnId: event.turnId };
+        const next = {
+          sessionId: event.sessionId,
+          turnId: event.turnId,
+          startedAt: event.startedAt,
+        };
         runRef.current = next;
         busyRef.current = true;
         setRun(next);
@@ -1269,6 +1300,57 @@ export default function App() {
   const currentTitle =
     sessions.find((item) => item.sessionId === session?.sessionId)?.title || t('新会话');
   const busy = !!run || pending;
+  const currentTask = tasks.find((task) => task.sessionId === session?.sessionId);
+  const currentRuntime = currentTask || session?.runtime;
+  const backgroundTask = currentRuntime?.status === 'background';
+  const taskActive =
+    busy ||
+    !!currentRuntime?.finishing ||
+    ['running', 'starting', 'waiting', 'cancelling', 'background'].includes(
+      currentRuntime?.status || '',
+    );
+  const latestResult = currentRuntime?.lastTurn;
+  const showOutcome =
+    !taskActive &&
+    latestResult &&
+    !(currentRuntime?.status === 'interrupted' && latestResult.status === 'completed');
+  const presets = effortPresets(selectedModel);
+  const outcomeRows = useMemo(
+    () => (latestResult ? rows.filter((row) => row.turnId === latestResult.turnId) : []),
+    [rows, latestResult?.turnId],
+  );
+  const openUsage = useCallback(() => setDialog('usage'), []);
+  useEffect(() => {
+    if (stickToBottom.current && threadRef.current)
+      threadRef.current.scrollTop = threadRef.current.scrollHeight;
+  }, [latestResult?.turnId, latestResult?.finishedAt, resultLoading]);
+  useEffect(() => {
+    let active = true;
+    setResultCheckpoint(null);
+    setResultLoading(false);
+    if (!latestResult?.checkpointId) return;
+    setResultLoading(true);
+    void request<Checkpoint>('checkpoints.detail', { id: latestResult.checkpointId })
+      .then((value) => {
+        if (active) setResultCheckpoint(value);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setResultLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session?.sessionId, cwd, latestResult?.turnId, latestResult?.checkpointId, resultRevision]);
+  function openOutcome(restore = false) {
+    if (!latestResult?.checkpointId) return;
+    if (restore && editorOpen) {
+      notify(t('请先保存并关闭文件编辑器，再恢复文件。'));
+      return;
+    }
+    setProjectCheckpointTarget({ id: latestResult.checkpointId, restore });
+    setDialog('project-tools');
+  }
   const engineBusy =
     busy ||
     tasks.some(
@@ -1539,6 +1621,11 @@ export default function App() {
               {t('动作库')}
               <kbd>Ctrl K</kbd>
             </button>
+            <button onClick={() => setDialog('templates')}>
+              <Star size={17} />
+              {t('常用任务')}
+              <ChevronRight size={14} />
+            </button>
             <button onClick={() => setDialog('management')}>
               <Workflow size={17} />
               {t('Grok 管理')}
@@ -1717,6 +1804,17 @@ export default function App() {
             <RefreshCw size={14} />
           </IconButton>
         </div>
+        <div className="home-resource-bar">
+          <UsageStatus
+            cwd={cwd || undefined}
+            sessionId={session?.sessionId}
+            revision={revision}
+            connected={connection === 'ready' && cliStatus?.authStatus !== 'required'}
+            active={taskActive}
+            contextWindow={session?.contextWindow}
+            onOpen={openUsage}
+          />
+        </div>
         {(connection === 'error' || connection === 'disconnected') && (
           <div className="connection-banner">
             <TriangleAlert size={16} />
@@ -1876,17 +1974,6 @@ export default function App() {
                   notify={notify}
                 />
               ))}
-              {busy && (!rows.length || !rows[rows.length - 1].streaming) && (
-                <div className="waiting-line">
-                  <Brand small />
-                  <Spinner />
-                  {pending
-                    ? t('正在开始任务…')
-                    : cancelling
-                      ? t('正在停止，请等待当前操作结束…')
-                      : t('Grok 正在处理…')}
-                </div>
-              )}
               {turnError && (
                 <div className="turn-error">
                   <TriangleAlert size={18} />
@@ -1919,6 +2006,23 @@ export default function App() {
               )}
             </div>
           )}
+          {showOutcome && latestResult && (
+            <div className="task-result-container">
+              <TaskOutcome
+                result={latestResult}
+                rows={outcomeRows}
+                checkpoint={resultCheckpoint}
+                loading={resultLoading}
+                onReview={() => openOutcome()}
+                onRestore={() => openOutcome(true)}
+                onOpenFile={(path) => {
+                  setInspector(true);
+                  setInspectorTab('files');
+                  setFileToOpen({ path, requestId: Date.now() });
+                }}
+              />
+            </div>
+          )}
         </div>
         {showScroll && (
           <button
@@ -1936,6 +2040,18 @@ export default function App() {
           </button>
         )}
         <div className="composer-area">
+          {taskActive && (
+            <TaskActivity
+              rows={rows}
+              turnId={run?.turnId || currentRuntime?.turnId}
+              startedAt={currentRuntime?.startedAt || run?.startedAt}
+              pending={pending}
+              cancelling={cancelling}
+              background={backgroundTask}
+              finishing={currentRuntime?.finishing && !backgroundTask}
+              waitingApproval={permissions.some((item) => item.sessionId === session?.sessionId)}
+            />
+          )}
           {background && (
             <button className="background-status" onClick={() => setDialog('management')}>
               <Workflow size={14} />
@@ -2012,6 +2128,26 @@ export default function App() {
               rows={2}
               spellCheck={false}
             />
+            {!!presets.length && (
+              <div className="effort-presets" role="group" aria-label={t('推理快捷设置')}>
+                <span>{t('处理方式')}</span>
+                {presets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    title={t(preset.description)}
+                    aria-pressed={currentEffort === preset.value}
+                    disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
+                    onClick={() => void configureSelection({ effort: preset.value })}
+                  >
+                    {t(
+                      { quick: '快速处理', standard: '标准处理', deep: '深入处理' }[preset.id] ||
+                        preset.label,
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="composer-toolbar">
               <div className="composer-tools">
                 <IconButton label={t('添加文件或图片')} onClick={() => void attach()}>
@@ -2196,6 +2332,20 @@ export default function App() {
           </div>
         }
       >
+        {dialog === 'templates' && (
+          <PromptTemplates
+            items={settings.promptTemplates || []}
+            draft={draft}
+            onClose={() => setDialog(null)}
+            onSave={async (items) => {
+              await saveSettings({ promptTemplates: items });
+            }}
+            onUse={(text) => {
+              setDraft((previous) => (previous ? previous + '\n\n' + text : text));
+              window.setTimeout(() => draftRef.current?.focus(), 0);
+            }}
+          />
+        )}
         {dialog === 'engine' && (
           <Modal
             title={t('Grok Build 引擎')}
@@ -2288,8 +2438,17 @@ export default function App() {
             cwd={cwd}
             sessionId={session?.sessionId}
             editorOpen={editorOpen}
-            onRestored={() => setRevision((value) => value + 1)}
-            onClose={() => setDialog(null)}
+            initialCheckpointId={projectCheckpointTarget?.id}
+            initialRestore={projectCheckpointTarget?.restore}
+            onRestored={() => {
+              setRevision((value) => value + 1);
+              setResultRevision((value) => value + 1);
+            }}
+            onRecordsChanged={() => setResultRevision((value) => value + 1)}
+            onClose={() => {
+              setDialog(null);
+              setProjectCheckpointTarget(null);
+            }}
             notify={notify}
           />
         )}

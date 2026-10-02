@@ -9,6 +9,19 @@ const { createNotifications } = require('../electron/notifications.cjs');
 const { createLogger } = require('../electron/logger.cjs');
 const { normalizeSettings, resolveGrok } = require('../electron/settings.cjs');
 
+test('saved task templates retain exact text through settings writes and later preference changes', async (t) => {
+  const { writeSettings, loadSettings } = require('../electron/settings.cjs');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-templates-test-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const filename = path.join(directory, 'settings.json');
+  const templates = [
+    { id: 'review', name: '检查项目', text: '  请检查项目\n\t保留缩进与原文。  ' },
+  ];
+  const saved = await writeSettings(filename, { promptTemplates: templates });
+  await writeSettings(filename, { ...saved, theme: 'light' });
+  assert.deepEqual(loadSettings(filename).promptTemplates, templates);
+});
+
 test('stream batches preserve chunk order and flush before permission/completion', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const received = [];

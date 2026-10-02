@@ -13,6 +13,8 @@ export interface TimelineRow {
   turnId: string;
   streaming: boolean;
   toolCallId?: string;
+  toolKind?: string;
+  rawOutput?: unknown;
   title?: string;
   status?: string;
   input?: string;

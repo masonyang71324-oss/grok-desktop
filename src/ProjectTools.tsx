@@ -11,6 +11,9 @@ export default function ProjectTools({
   onRestored,
   onClose,
   notify,
+  initialCheckpointId,
+  initialRestore,
+  onRecordsChanged,
 }: {
   cwd: string;
   sessionId?: string;
@@ -18,6 +21,9 @@ export default function ProjectTools({
   onRestored: () => void;
   onClose: () => void;
   notify: (text: string) => void;
+  initialCheckpointId?: string;
+  initialRestore?: boolean;
+  onRecordsChanged?: () => void;
 }) {
   const { t } = useI18n();
   const [scripts, setScripts] = useState<{ name: string; command: string }[]>([]);
@@ -29,6 +35,25 @@ export default function ProjectTools({
   const [confirm, setConfirm] = useState(false);
   const [deleteRecord, setDeleteRecord] = useState<Checkpoint | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!initialCheckpointId) return;
+    let active = true;
+    void request<Checkpoint>('checkpoints.detail', { id: initialCheckpointId })
+      .then((entry) => {
+        if (!active) return;
+        setDetail(entry);
+        setPaths(entry.files.map((file) => file.path));
+        setConfirm(
+          !!initialRestore && !editorOpen && entry.status === 'ready' && entry.files.length > 0,
+        );
+      })
+      .catch((error) => {
+        if (active) notify(errorText(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialCheckpointId, initialRestore, cwd]);
   async function refresh() {
     setCheckpoints(await request<Checkpoint[]>('checkpoints.list', { cwd, sessionId }));
   }
@@ -116,6 +141,7 @@ export default function ProjectTools({
       if (detail?.id === deleteRecord.id) setDetail(null);
       setDeleteRecord(null);
       await refresh();
+      onRecordsChanged?.();
     } catch (e) {
       notify(errorText(e));
     } finally {

@@ -14,6 +14,7 @@ const defaults = {
   recentProjects: [],
   lastProject: '',
   notifications: true,
+  promptTemplates: [],
   ui: { sidebar: true, inspector: true, inspectorTab: 'files' },
   window: null,
 };
@@ -35,6 +36,20 @@ function normalizeSettings(input = {}) {
     ].slice(0, 12),
     lastProject: typeof input.lastProject === 'string' ? input.lastProject : '',
     notifications: input.notifications !== false,
+    promptTemplates: (Array.isArray(input.promptTemplates) ? input.promptTemplates : [])
+      .filter(
+        (item) =>
+          item &&
+          typeof item.id === 'string' &&
+          typeof item.name === 'string' &&
+          item.name.trim() &&
+          item.name.length <= 80 &&
+          typeof item.text === 'string' &&
+          item.text.trim() &&
+          item.text.length <= 20000,
+      )
+      .slice(0, 20)
+      .map(({ id, name, text }) => ({ id, name, text })),
     ui: {
       sidebar: input.ui?.sidebar !== false,
       inspector: input.ui?.inspector !== false,
