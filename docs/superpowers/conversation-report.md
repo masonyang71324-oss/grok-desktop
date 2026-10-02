@@ -8,7 +8,7 @@ Implemented task A for items 1, 2, 3, 11 and 14. Root integration and complete r
 - Question outline derives user rows from the same loaded timeline, using attachment names when user text is empty. It shares search row anchors.
 - Every message/thought/tool root has `data-row-id`. User and assistant message actions distinguish exact original source from formatted content. Formatted copy clones visible Markdown content, removes code/UI controls and sends `{text, html}`; HTML retains headings, lists, tables and code. Plain text inserts block separators and tab-separated table cells. Original Markdown and code-only copy retain exact source.
 - Math supports `$...$`, `\(...\)`, `$$...$$` (one line or block), and multiline `\[...\]`. Code spans/fences are handled by Marked and excluded. Bare numeric dollar amounts are currency. Unmatched delimiters and KaTeX-invalid formulas remain readable source. KaTeX renders lazily with `trust:false` and `throwOnError:true`; root must include local KaTeX CSS/fonts.
-- Full-document lexing preserves appended Markdown reference definitions. The renderer caches the rendered HTML and retained nodes for each top-level block, sanitizes only changed HTML and retains existing DOM for unchanged blocks. It does not introduce virtualization or a second parse/history framework.
+- Full-document lexing preserves appended Markdown reference definitions. The renderer caches the rendered HTML and retained nodes for each top-level block, sanitizes only changed HTML and retains existing DOM for unchanged blocks. Documents with top-level raw HTML remain sanitized as a whole so containers spanning Markdown blocks keep their nesting. It does not introduce virtualization or a second parse/history framework.
 
 ## Root integration contracts
 
@@ -20,13 +20,13 @@ Implemented task A for items 1, 2, 3, 11 and 14. Root integration and complete r
 
 ## Verification
 
-Observed missing-feature failures before implementation for navigation module, formula rendering and formatted-copy controls. After implementation, the focused command passed **27 tests**:
+Observed missing-feature failures before implementation for navigation module, formula rendering and formatted-copy controls; a raw-HTML nesting regression was also reproduced before its repair. The final conversation-focused command passed **24 tests**:
 
 ```powershell
-node --test tests/conversation-navigation.test.cjs tests/conversation-navigation-ui.test.cjs tests/conversation-rendering.test.cjs tests/rendering.test.cjs tests/i18n-components.test.cjs tests/timeline.test.cjs
+node --test tests/conversation-navigation.test.cjs tests/conversation-navigation-ui.test.cjs tests/conversation-rendering.test.cjs tests/rendering.test.cjs tests/timeline.test.cjs
 ```
 
-Includes Chinese/tool/error occurrence counts, attachment outline, search wrap/session reset/IME, source and formatted payloads, code/currency/invalid/incomplete formula boundaries, formula/table DOM selection retention, completed code selection/scroll, appended reference/list/table correctness and live-language labels. `tsc --noEmit` passed at module handoff. Full suite/build/Electron integration are intentionally left to root to run once against all modules.
+Includes Chinese/tool/error occurrence counts, attachment outline, search wrap/session reset/IME, source and formatted payloads, code/currency/invalid/incomplete formula boundaries, formula/table/raw-HTML DOM retention, completed code selection/scroll and appended reference/list/table correctness. The earlier run including `tests/i18n-components.test.cjs` passed 27 tests before concurrent workspace changes. Its latest expanded 28-test run passed 27 and failed `an already-open new-file diff updates generated labels without translating file content`: new Inspector diff rendering changed the old `.diff-line` expectations and labels. Root and workspace agent were notified; that test remains workspace-owned. Live-language message/code tests still passed in that run. `tsc --noEmit` passed at module handoff. Full suite/build/Electron integration are intentionally left to root to run once against all modules.
 
 ## Reproducible measured scope
 

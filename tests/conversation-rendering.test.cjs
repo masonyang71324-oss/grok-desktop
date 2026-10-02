@@ -135,3 +135,24 @@ test('changing a formula updates it while completed formula and table selection 
   await page.waitForFunction(() => document.querySelector('[data-math-source="y^3"] .katex'));
   assert.equal(await page.locator('[data-math-source="x^2"]').count(), 0);
 });
+
+test('Markdown inside an open raw HTML block stays nested across blank lines and streamed appends', async (t) => {
+  const page = await fixture(t);
+  const result = await page.evaluate(() => {
+    const { React, createRoot, flushSync, Markdown } = window.ui;
+    const root = createRoot(document.getElementById('root'));
+    const prefix = '<details><summary>Details</summary>\n\n**nested**\n\n</details>\n\n';
+    const render = (text) => flushSync(() => root.render(React.createElement(Markdown, { text })));
+    render(prefix);
+    const details = document.querySelector('.markdown details');
+    details.open = true;
+    render(prefix + 'Outside');
+    return {
+      nested: details.querySelector('strong')?.textContent,
+      open: details.open,
+      retained: details === document.querySelector('.markdown details'),
+      outside: document.querySelector('.markdown > p')?.textContent,
+    };
+  });
+  assert.deepEqual(result, { nested: 'nested', open: true, retained: true, outside: 'Outside' });
+});
