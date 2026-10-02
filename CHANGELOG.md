@@ -1,6 +1,11 @@
 # Changes
 
-## 1.7.2
+## 1.7.3
+
+- Publish the display fixes and completed audit evidence from the 1.7.2 candidate.
+- Correct native test timing: allow bounded cold shell startup, then independently require owned-host exit within5seconds after issuing exit. Production timeouts and stop behavior are unchanged.
+
+## 1.7.2 (unreleased candidate)
 
 - Fix duplicated context lines after repeated diff layout/folding changes and preserve Unicode character boundaries in retained terminal logs.
 - Add scoped Office/Markdown/web isolation checks, real CLI metadata/configuration and localhost model lifecycle verification, and disposable Windows official installation/cancellation coverage.

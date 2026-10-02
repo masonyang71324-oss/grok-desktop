@@ -1,6 +1,4 @@
-# Grok Desktop 1.7.2
-
-此候选被云端原生终端探针的计时问题阻止发布。最终正式版为1.7.3，见[发布说明](release-1.7.3.md)。
+# Grok Desktop 1.7.3
 
 补齐竞品问题对照自查，并修复两处经过复现的显示问题：
 
@@ -18,6 +16,6 @@
 - Fix duplicated diff context rows after switching layouts and folding states.
 - Preserve Unicode character boundaries when retaining the tail of long terminal output.
 - Reconcile all49 competitor findings with current protections and applicability; add scoped official-CLI, disposable-Windows installer and content-isolation evidence.
-- Keep native terminal deadlines unchanged, improve failure diagnostics, and wait for the shell prompt before the lifecycle probe types its command, matching the real terminal E2E flow.
+- Keep production timeouts unchanged. The native test separates bounded cold-shell startup from the5-second shutdown assertion, matching its actual lifecycle contract instead of counting startup as shutdown time.
 
 The official CLI/local-model fixture is not a production-model or model-quality test. Interactive OAuth, actual microphone recognition and every Windows variant remain outside these checks. Windows packages remain unsigned.
