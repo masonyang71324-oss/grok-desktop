@@ -371,11 +371,15 @@ class SessionHub {
     entry.lastUsed = Date.now();
     if (entry.snapshot && entry.client.connected) return this._snapshot(entry);
     const sleeping = entry.connection === 'sleeping';
+    // Capture before load events change the connection state.
+    // Desktop attachments/turn ownership are absent from official CLI history.
+    const retainedUpdates = sleeping ? copy(entry.snapshot?.updates || []) : null;
     const permissionMode = sleeping ? entry.snapshot?.permissionMode : undefined;
     if (!entry.loading)
       entry.loading = entry.client
         .loadSession(payload)
         .then((snapshot) => {
+          if (retainedUpdates) snapshot.updates = retainedUpdates;
           if (permissionMode) {
             entry.client.setPermissionMode({ sessionId: entry.sessionId, permissionMode });
             snapshot.permissionMode = permissionMode;

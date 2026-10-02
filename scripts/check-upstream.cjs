@@ -31,16 +31,21 @@ function schemaMetadata(text) {
     throw new Error('Official ACP schema metadata could not be parsed. Review the source page.');
   const types = [
     ...new Set(
-      [...normalized.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)]
+      [...normalized.matchAll(/<h([2-4])\b(?=[^>]*\bid=)[^>]*>([\s\S]*?)<\/h\1>/g)]
         .map((match) =>
-          match[1]
+          match[2]
             .replace(/<[^>]*>/g, '')
             .replace(/&[^;]+;/g, '')
+            .replace(/[\u200B\uFEFF]/g, '')
             .trim(),
         )
         .filter((value) => /^[A-Z][A-Za-z0-9]+$/.test(value)),
     ),
   ].sort();
+  if (!types.includes('InitializeRequest'))
+    throw new Error(
+      'Official ACP schema definition headings could not be parsed. Review the source page.',
+    );
   return { protocolVersion: 1, protocolMethods: [...methods].sort(), protocolTypes: types };
 }
 async function checkUpstream({

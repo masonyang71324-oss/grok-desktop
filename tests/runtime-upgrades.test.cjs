@@ -486,10 +486,37 @@ test('upstream fixture comparison reports metadata changes with no rewrite', asy
   const fetchText = async (url) =>
     url.endsWith('/stable')
       ? '1.0.47\n'
-      : '<h1>Schema</h1> initialize session/load session/new session/prompt session/new_extension';
+      : '<h1>Schema</h1><h4 id="initialize-request">InitializeRequest</h4> initialize session/load session/new session/prompt session/new_extension';
   const report = await checkUpstream({ baseline, fetchText });
   assert.equal(report.cliVersion, '1.0.47');
   assert.equal(report.changed, true);
   assert.ok(report.changes.some((change) => change.includes('1.0.46')));
   assert.equal(baseline.cliVersion, '1.0.46');
+});
+
+test('official h4 schema definition headings contribute to type-change comparison', async () => {
+  const { checkUpstream } = require('../scripts/check-upstream.cjs');
+  const baseline = {
+    cliVersion: '1.0.46',
+    protocolVersion: 1,
+    protocolMethods: ['initialize', 'session/new', 'session/prompt'],
+    protocolTypes: ['InitializeRequest'],
+  };
+  const report = await checkUpstream({
+    baseline,
+    fetchText: async (url) =>
+      url.endsWith('/stable')
+        ? '1.0.46'
+        : '<h3 class="sidebar-title">Libraries</h3><h2 id="agent">Agent</h2><h4 id="initialize-request"><a>\u200b</a><span>InitializeRequest</span></h4><h4 id="new-type"><span>AddedRequest</span></h4> initialize session/new session/prompt',
+  });
+  assert.deepEqual(report.protocolTypes, ['AddedRequest', 'Agent', 'InitializeRequest']);
+  assert.ok(report.changes.some((change) => change === 'protocolTypes added: AddedRequest, Agent'));
+});
+
+test('schema checks explicitly fail when expected definition headings are missing', () => {
+  const { schemaMetadata } = require('../scripts/check-upstream.cjs');
+  assert.throws(
+    () => schemaMetadata('<h2>Agent</h2> initialize session/new session/prompt'),
+    /schema definition/i,
+  );
 });
