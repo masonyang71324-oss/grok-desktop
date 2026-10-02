@@ -1,0 +1,38 @@
+# Grok Desktop: sixteen practical upgrades
+
+User brief: implement all sixteen candidates from the competitor audit, while keeping stable, simple, bilingual operation and all existing capabilities. The baseline is 1.6.1 (`d78cf6e`). Extend the existing Electron/React/ACP product; independently implement behavior without copying restricted competitor code.
+
+## Product design
+
+Keep the unified Chats/Files/Tasks left navigation. Conversation navigation is a compact search/outline panel opened from the conversation toolbar. File reference, dictation, terminal and browser have explicit buttons with labels/tooltips, and advanced forms live in dialogs. Lazy-load heavy preview, terminal and math code. Existing send, stop, approval, draft recovery, native images, document extraction, checkpoints, external terminal/browser and update controls remain usable.
+
+| # | Deliverable and acceptance |
+|---|---|
+| 1 | Search the current loaded conversation's message, thought, tool and retained error content. Show snippets/count and previous/next hit, expand collapsed content and jump to a stable row; session changes reset selection. Do not claim searchable history the CLI did not return. |
+| 2 | Question outline derived from user rows (attachment names if text is empty), sharing search anchors; no second history database. |
+| 3 | Separate formatted-copy and original-copy actions. Clipboard HTML includes tables/lists/headings/code and matching plain text; no UI controls. Original Markdown and code copy stay exact. |
+| 4 | First-run wizard: detect or choose CLI, install official stable Windows CLI, cancel/retry with real progress, verify executable version, open official login and recheck, choose project. Existing installations skip installation. |
+| 5 | Diff unified/split display with independently numbered sides, paired changed lines, word marks and expandable context. Raw diff used as context remains unchanged; no new write-back behavior. |
+| 6 | Search project files by name/path, exclude existing generated/hidden folders, select multiple attachments with a button and optional explicit @ shortcut. Truncation is visible, asynchronous results are scoped to original project/draft. |
+| 7 | Read-only layout preview: DOCX paragraphs/tables/images, sheet tabs/cell coordinates/merges/formatting, PPTX positioned static text/images. State preview limitations; legacy DOC/PPT and unsupported structure keep text preview and external open. Sending retains the original extraction path. |
+| 8 | Visible isolated HTTP(S) web preview with refresh/navigation and explicit screenshot-to-draft action. Capture records originating session/project; screenshot never auto-sends. Remote pages have no desktop bridge, Node access or host permission grants. |
+| 9 | Interactive in-app PowerShell terminal using ConPTY/xterm, explicit open/close/restart, project-bound cwd and persistent output while hidden. Resize/input/exit/stop are real; closing app cleans owned processes and warns about active terminal sessions. Keep external terminal. |
+| 10 | Form for official Grok custom model tables. Read/write public supported fields only; env_key names reference environment secrets, actual secrets never reach renderer. Preserve unrelated TOML/comments/unknown keys and reject unsafe ambiguous edits/external conflicts. Explicit enable/disable UI maps to model availability truthfully without inventing CLI schema. |
+| 11 | Reproducible 100/500-row streaming benchmark. Apply measured retained-DOM/parse optimization while preserving selection, code scrolling, folded state, search jump and scroll position. Report measured scope rather than blanket speed claims. |
+| 12 | Evict excess fully idle CLI connections, preserving session snapshots and reloading same session on next use. Exclude active/preparing/control/loading/permissions/queue/background/finalizing/pending work. Expose sleeping as a normal resource state, not task failure. |
+| 13 | Keyboard and pointer resizing with remembered session/task sidebar width, files sidebar width and composer height. Clamp rendered sizes for small windows; reset to automatic sizing available. |
+| 14 | Inline/block math rendering with local KaTeX assets. Code spans/fences, raw copy, currency and incomplete/invalid expressions remain safe and readable. |
+| 15 | Reproducible upstream CLI/protocol maintenance check and workflow/report. Fetch official public version/schema metadata; compare committed baseline; do not automatically rewrite app code, enlarge permission or run paid prompts. |
+| 16 | Composer microphone button focuses text input and starts Windows voice typing (Win+H). Explain that Windows controls microphone/language/service availability; do not falsely show an app-owned recording/transcription state. Text still requires explicit Send. |
+
+## Boundaries and failure handling
+
+Use `docs/reliability.md` throughout. Immutable session/cwd capture for asynchronous attachment and preview actions; cancellation covers setup as well as running processes. Do not write user configuration or request model/voice services as a development test. Test isolated configuration/home directories and mock ACP. Prefer explicit failures over success-looking fallbacks. DOCX layout is HTML-based, not guaranteed identical pagination; PPTX complex charts/animation are declared limitations. Terminal and web content do not gain agent approval capabilities.
+
+## Implementation ownership
+
+Conversation: navigation/index, Markdown/math/copy, benchmark. Workspace: diff, search, Office models/components and resize control. Runtime: installer/provider modules, session eviction, onboarding/provider UI, upstream script. Root: App/main/preload/type/settings/i18n integration, terminal and browser services/components, native dictation, dependency changes, full release validation. Each module has a dedicated locale map merged by root; no concurrent edits to shared integration files.
+
+## Validation and release
+
+Focused failing behavior tests before implementation for data/cancellation/ownership and parser behavior. One integrated suite after changes, then production build, source and packaged mock Electron E2E, native PTY smoke, English/Chinese screenshots and small-window inspection. No real prompts, paid requests, secret reads or user document writes. Review the complete change, then publish a versioned installer only with verified production behavior. Track all sixteen individually; do not mark a placeholder, disabled button or unsupported fallback as completion.
