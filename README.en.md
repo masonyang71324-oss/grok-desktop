@@ -19,7 +19,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 
 ## Features
 
-Latest audit: [1.7.2 findings and validation](docs/audit-followup-summary.md), with per-finding evidence, official CLI checks and a disposable Windows installation run.
+Latest audit: [1.7.3 findings and validation](docs/audit-followup-summary.md), with per-finding evidence, official CLI checks and a disposable Windows installation run.
 
 - Current-conversation full-text search, question outline, formatted copying, math and measured long-conversation rendering improvements.
 - Search project files from the composer, launch Windows voice typing, and resize/remember navigation and composer dimensions.
