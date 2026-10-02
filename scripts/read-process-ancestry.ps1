@@ -1,6 +1,7 @@
 param([Parameter(Mandatory=$true)][uint32]$ChildProcessId,[Parameter(Mandatory=$true)][uint32]$RootProcessId)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
+[Console]::Error.WriteLine('ANCESTRY_SCRIPT_STARTED')
 # Read-only kernel snapshot; does not depend on the WMI service or its providers.
 Add-Type -TypeDefinition @'
 using System;
@@ -44,5 +45,6 @@ public static class GrokAuditProcessSnapshot {
   }
 }
 '@
+[Console]::Error.WriteLine('ANCESTRY_INTEROP_READY')
 $chain=@([GrokAuditProcessSnapshot]::Read($ChildProcessId,$RootProcessId))
 ConvertTo-Json -InputObject $chain -Compress

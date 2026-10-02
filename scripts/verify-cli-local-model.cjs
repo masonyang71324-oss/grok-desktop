@@ -438,7 +438,17 @@ if (process.argv[2] === '--child') {
           String(pid),
           String(rootPid),
         ],
-        { env, cwd: dirs.cwd, windowsHide: true, timeout: 10000 },
+        {
+          // This read-only observer needs inbox PowerShell commands, not the
+          // hosted runner's third-party module catalog in a fresh user profile.
+          env: {
+            ...env,
+            PSModulePath: path.join(systemRoot, 'System32/WindowsPowerShell/v1.0/Modules'),
+          },
+          cwd: dirs.cwd,
+          windowsHide: true,
+          timeout: 10000,
+        },
       );
       // This observer has no interactive input. Unlike the CLI tool under test,
       // Windows PowerShell must see EOF on its redirected input immediately.
