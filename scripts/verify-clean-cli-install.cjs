@@ -24,11 +24,13 @@ function isAlive(pid) {
 }
 
 async function waitForExit(children) {
+  const stillOwned = (child) =>
+    child.exitCode == null && child.signalCode == null && child.pid && isAlive(child.pid);
   const deadline = Date.now() + 5000;
-  while (children.some((child) => isAlive(child.pid)) && Date.now() < deadline)
+  while (children.some(stillOwned) && Date.now() < deadline)
     await new Promise((resolve) => setTimeout(resolve, 50));
   check(
-    children.every((child) => !isAlive(child.pid)),
+    children.every((child) => !stillOwned(child)),
     'OWNED_PROCESS_STILL_RUNNING',
   );
 }
@@ -286,7 +288,8 @@ async function main() {
     await Promise.allSettled([cancelInstaller?.dispose(), installInstaller?.dispose()]);
     const children = [...cancelled.children, ...installed.children];
     for (const child of children)
-      if (child.pid && child.exitCode === null && isAlive(child.pid)) await killOwnedTree(child);
+      if (child.pid && child.exitCode === null && child.signalCode == null && isAlive(child.pid))
+        await killOwnedTree(child);
     try {
       await waitForExit(children.filter((child) => child.pid));
       report.cleanupOwnedProcessesExited = true;
@@ -301,7 +304,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error.auditCode || 'CLEAN_INSTALL_PROBE_SETUP_FAILED'}\n`);
-  process.exitCode = 1;
-});
+module.exports = { waitForExit };
+if (require.main === module)
+  main().catch((error) => {
+    process.stderr.write(`${error.auditCode || 'CLEAN_INSTALL_PROBE_SETUP_FAILED'}\n`);
+    process.exitCode = 1;
+  });

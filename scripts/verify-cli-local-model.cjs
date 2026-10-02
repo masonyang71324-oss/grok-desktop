@@ -510,6 +510,8 @@ if (process.argv[2] === '--child') {
       const descendants = ancestry.slice(0, -1).map((p) => p.ProcessId);
       while (descendants.some(alive) && Date.now() - started < 8000) await delay(50);
       const remainingPids = descendants.filter(alive);
+      // Retire confirmed exited IDs immediately: the OS may reuse them later.
+      for (const pid of descendants) if (!remainingPids.includes(pid)) ownedHelperPids.delete(pid);
       report.lifecycle[action] = {
         passed: remainingPids.length === 0,
         readiness: ready,
