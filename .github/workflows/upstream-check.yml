@@ -9,12 +9,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
       - name: Compare official public metadata
-        run: node scripts/check-upstream.cjs --output upstream-report.json
+        run: node --use-env-proxy --use-system-ca scripts/check-upstream.cjs --output upstream-report.json
       - name: Preserve maintenance report
         if: always()
         uses: actions/upload-artifact@v4

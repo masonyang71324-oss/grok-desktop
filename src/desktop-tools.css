@@ -1,0 +1,53 @@
+.desktop-tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.desktop-tool-actions > .muted {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+}
+.interactive-terminal {
+  height: min(52vh, 580px);
+  min-height: 250px;
+  padding: 12px;
+  background: #111517;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.interactive-terminal .xterm {
+  height: 100%;
+}
+.conversation-jump {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+  border-radius: 8px;
+}
+.field-label > input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.unified-layout .sidebar {
+  position: relative;
+}
+.unified-layout .sidebar > .resize-horizontal {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+}
+.composer > .resize-vertical {
+  margin: -10px 0 4px;
+  opacity: 0.6;
+}
+.composer > textarea {
+  max-height: 360px !important;
+}
+.conversation-navigation {
+  flex-shrink: 0;
+}

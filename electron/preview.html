@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
+    <title>Grok Preview</title>
+    <link rel="stylesheet" href="preview.css" />
+  </head>
+  <body>
+    <form id="navigation">
+      <button type="button" data-action="back">←</button
+      ><button type="button" data-action="forward">→</button
+      ><button type="button" data-action="reload">↻</button
+      ><input id="address" type="url" required spellcheck="false" /><button id="open" type="submit">
+        打开</button
+      ><button type="button" data-action="capture">截图加入原会话草稿</button
+      ><button type="button" data-action="external">用浏览器打开</button>
+    </form>
+    <div id="status" role="status"></div>
+    <script src="preview-ui.js"></script>
+  </body>
+</html>

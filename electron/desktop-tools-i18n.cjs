@@ -1,0 +1,31 @@
+module.exports = {
+  '终端尺寸无效。': 'Invalid terminal dimensions.',
+  '终端已关闭，请重新打开。': 'The terminal was closed. Open it again.',
+  '终端已退出，请重新启动。': 'The terminal exited. Restart it to continue.',
+  '终端仍在退出，请稍后再试。': 'The terminal is still stopping. Try again shortly.',
+  '终端输入无效。': 'Invalid terminal input.',
+  '请输入完整的 HTTP 或 HTTPS 网页地址。': 'Enter a complete HTTP or HTTPS web address.',
+  '网页预览只支持 HTTP 和 HTTPS 地址。': 'Web preview supports HTTP and HTTPS addresses only.',
+  '预览窗口已关闭。': 'The preview window was closed.',
+  '截图正在进行，请稍候。': 'A screenshot is being captured. Please wait.',
+  '网页在截图时发生变化，请重新截图。':
+    'The page changed while capturing. Please capture it again.',
+  后退: 'Back',
+  前进: 'Forward',
+  刷新: 'Reload',
+  打开: 'Open',
+  网页预览: 'Web preview',
+  网页地址: 'Web address',
+  截图加入原会话草稿: 'Capture to original draft',
+  用浏览器打开: 'Open in browser',
+  截图已加入原会话草稿: 'Screenshot added to original draft',
+  预览未完成: 'Preview failed',
+  '网页仍在加载，请稍后截图。': 'The page is loading. Capture it after loading finishes.',
+  '未能获取网页截图，请重新加载后重试。': 'Could not capture the page. Reload it and try again.',
+  '请选择会话后再打开预览。': 'Select a conversation before opening a preview.',
+  '此语音入口需要 Windows 语音输入。': 'This dictation option requires Windows voice typing.',
+  '无法打开 Windows 语音输入，请在输入框中按 Win + H。':
+    'Could not open Windows voice typing. Focus the message box and press Win + H.',
+  '包括此应用启动的本地代理、后台任务、项目脚本和交互终端。会话记录会保留。':
+    'This includes local agents, background tasks, project scripts and interactive terminals started by this app. Conversation history is retained.',
+};

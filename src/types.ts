@@ -16,6 +16,9 @@ export interface Settings {
     inspector: boolean;
     inspectorTab: 'files' | 'changes' | 'plan';
     navigationTab?: 'sessions' | 'files' | 'tasks';
+    sidebarWidth?: number;
+    inspectorWidth?: number;
+    composerHeight?: number;
   };
   window?: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
 }
@@ -135,9 +138,37 @@ export interface PermissionRequest {
 }
 export type DesktopEvent =
   | {
+      type: 'cli-install-state';
+      state: {
+        status: 'idle' | 'installing' | 'verifying' | 'installed' | 'cancelled' | 'error';
+        log: string;
+        path?: string;
+        version?: string;
+        error?: string;
+      };
+    }
+  | { type: 'terminal-data'; id: string; cwd: string; sequence: number; data: string }
+  | {
+      type: 'terminal-exit';
+      state: {
+        id: string;
+        cwd: string;
+        status: string;
+        log: string;
+        sequence: number;
+        exitCode?: number;
+      };
+    }
+  | {
+      type: 'preview-captured';
+      owner: { cwd: string; sessionId?: string; draftKey: string };
+      attachment: Attachment;
+      url: string;
+    }
+  | {
       type: 'connection';
       sessionId?: string;
-      state: 'connecting' | 'ready' | 'error' | 'disconnected';
+      state: 'connecting' | 'ready' | 'error' | 'disconnected' | 'sleeping';
       message?: string;
     }
   | {

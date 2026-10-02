@@ -50,18 +50,16 @@ test('search buttons wrap, IME Enter stays local, outline shares targets and swi
   await page.getByRole('searchbox', { name: '搜索会话' }).fill('测试');
   await page.getByRole('button', { name: '下一处', exact: true }).click();
   await page.getByRole('button', { name: '上一处', exact: true }).click();
-  await page
-    .getByRole('searchbox')
-    .evaluate((input) =>
-      input.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'Enter',
-          isComposing: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      ),
-    );
+  await page.getByRole('searchbox').evaluate((input) =>
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
   assert.deepEqual(await page.evaluate(() => window.targets), [
     { kind: 'row', rowId: 'u' },
     { kind: 'error' },

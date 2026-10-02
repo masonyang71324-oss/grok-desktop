@@ -1,0 +1,54 @@
+html,
+body {
+  margin: 0;
+  background: #15191d;
+  color: #e4e8ed;
+  font:
+    13px system-ui,
+    sans-serif;
+}
+form {
+  display: flex;
+  gap: 7px;
+  padding: 12px 12px 6px;
+  align-items: center;
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+  background: #252c33;
+  border: 1px solid #3b454f;
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+button {
+  cursor: pointer;
+  white-space: nowrap;
+}
+button:hover {
+  background: #34414a;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+input {
+  flex: 1;
+  min-width: 100px;
+}
+button[data-action='capture'] {
+  background: #83d6bd;
+  color: #112a22;
+}
+#status {
+  padding: 0 14px;
+  color: #a8b6c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 20px;
+}
+#status.error {
+  color: #ffada5;
+}

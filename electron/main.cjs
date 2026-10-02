@@ -3,6 +3,7 @@ const { autoUpdater } = require('electron-updater');
 const {
   app,
   BrowserWindow,
+  WebContentsView,
   ipcMain,
   dialog,
   shell,
@@ -33,6 +34,13 @@ const { storeClipboardImage, previewAttachment } = require('./attachments.cjs');
 const documentFormats = require('./document.cjs');
 const { createAppUpdater } = require('./updater.cjs');
 const { readCliStatus, selectUpdatedCli } = require('./cli-status.cjs');
+const { CliInstaller } = require('./cli-installer.cjs');
+const { ProviderStore } = require('./providers.cjs');
+const { previewOffice } = require('./office-preview.cjs');
+const { createTerminalManager } = require('./terminal.cjs');
+const { spawnHostedPty } = require('./terminal-host-client.cjs');
+const { createWebPreviewManager } = require('./web-preview.cjs');
+const { launchDictation } = require('./dictation.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -86,6 +94,18 @@ const checkpoints = createCheckpointStore({
 });
 const activeCheckpoints = new Map();
 const runner = createProjectRunner({ emit: (type, data) => emit({ type, ...data }) });
+const terminals = createTerminalManager({ spawnPty: spawnHostedPty, emit });
+const cliInstaller = new CliInstaller({ emit });
+const providers = new ProviderStore();
+const previews = createWebPreviewManager({
+  BrowserWindow,
+  WebContentsView,
+  ipcMain,
+  getParent: () => win,
+  emit,
+  attachmentsDirectory: path.join(app.getPath('userData'), 'attachments'),
+  openExternal: (url) => shell.openExternal(url),
+});
 logger.log('app-start', { version: app.getVersion() });
 
 function emit(event) {
@@ -379,12 +399,71 @@ async function management({ action, cwd, values = {} }) {
 
 const handlers = {
   bootstrap,
-  'cli.status': engineStatus,
+  'cli.status': async (payload) => {
+    try {
+      return await engineStatus(payload);
+    } catch (error) {
+      return {
+        path: '',
+        version: '',
+        authStatus: 'unknown',
+        models: client.models,
+        error: error.message,
+      };
+    }
+  },
   'cli.refresh': refreshEngine,
+  'cli.install.state': () => cliInstaller.state(),
+  'cli.install.start': async () => {
+    const result = await activity.runMutation(() => cliInstaller.start());
+    if (result.status === 'installed') await saveSettings({ grokPath: result.path });
+    return result;
+  },
+  'cli.install.cancel': () => cliInstaller.cancel(),
+  'cli.login': () => openSystem({ target: 'grok-login', cwd: settings.lastProject }),
+  'providers.list': () => providers.list(),
+  'providers.save': (payload) =>
+    activity.runMutation(async () => {
+      const result = providers.save(payload);
+      await client.restart();
+      return result;
+    }),
+  'providers.remove': (payload) =>
+    activity.runMutation(async () => {
+      const result = providers.remove(payload);
+      await client.restart();
+      return result;
+    }),
+  'providers.enable': (payload) =>
+    activity.runMutation(async () => {
+      const result = providers.setEnabled(payload);
+      await client.restart();
+      return result;
+    }),
+  'office.preview': previewOffice,
+  'workspace.search': async (payload) =>
+    workspace.searchFiles({ ...payload, cwd: await validCwd(payload.cwd) }),
+  'terminal.open': async (payload) =>
+    terminals.open({ ...payload, cwd: await validCwd(payload.cwd) }),
+  'terminal.state': (payload) => terminals.state(payload),
+  'terminal.input': (payload) => terminals.write(payload),
+  'terminal.resize': (payload) => terminals.resize(payload),
+  'terminal.close': (payload) => terminals.close(payload),
+  'preview.open': async (payload) =>
+    previews.open({
+      ...payload,
+      owner: { ...payload.owner, cwd: await validCwd(payload.owner?.cwd) },
+    }),
+  'preview.capture': (payload) => previews.capture(payload),
+  'preview.close': (payload) => previews.close(payload),
+  'dictation.start': () => {
+    win?.focus();
+    return launchDictation();
+  },
   'settings.save': saveSettings,
-  'clipboard.write': ({ text }) => {
+  'clipboard.write': ({ text, html }) => {
     if (typeof text !== 'string') throw new Error(t('复制内容无效。'));
-    return clipboard.writeText(text);
+    return typeof html === 'string' ? clipboard.write({ text, html }) : clipboard.writeText(text);
   },
   'clipboard.image': async () => {
     const items = await clipboard.read();
@@ -481,17 +560,21 @@ const handlers = {
   },
   'sessions.list': async ({ cwd }) => client.listSessions({ cwd: await validCwd(cwd) }),
   'session.new': (payload) =>
-    activity.runSession(async () =>
-      client.newSession({
+    activity.runSession(async () => {
+      const snapshot = await client.newSession({
         ...payload,
         cwd: await validCwd(payload.cwd),
         permissionMode: payload.permissionMode || settings.permissionMode,
-      }),
-    ),
+      });
+      client.setActiveSession(snapshot.sessionId);
+      return snapshot;
+    }),
   'session.load': (payload) =>
-    activity.runSession(async () =>
-      client.loadSession({ ...payload, cwd: await validCwd(payload.cwd) }),
-    ),
+    activity.runSession(async () => {
+      const snapshot = await client.loadSession({ ...payload, cwd: await validCwd(payload.cwd) });
+      client.setActiveSession(snapshot.sessionId);
+      return snapshot;
+    }),
   'session.send': (payload) =>
     activity.runSession(async () => client.send({ ...payload, cwd: await validCwd(payload.cwd) })),
   'session.enqueue': (payload) =>
@@ -598,6 +681,7 @@ function createWindow() {
     win.show();
   });
   win.on('focus', () => notifications.clear());
+  win.on('closed', () => previews.dispose());
   for (const name of ['resize', 'move', 'maximize', 'unmaximize'])
     win.on(name, () => {
       clearTimeout(windowSaveTimer);
@@ -644,7 +728,7 @@ function createWindow() {
   });
   win.on('close', (event) => {
     saveWindowState();
-    if (quitting || (!activity.busy && !runner.busy)) return;
+    if (quitting || (!activity.busy && !runner.busy && !terminals.busy)) return;
     event.preventDefault();
     if (exitDialogOpen) return;
     exitDialogOpen = true;
@@ -653,7 +737,7 @@ function createWindow() {
         type: 'question',
         title: t('任务仍在运行'),
         message: t('退出会中断 Grok 正在执行的任务。'),
-        detail: t('包括此应用启动的本地代理、后台任务和项目脚本。会话记录会保留。'),
+        detail: t('包括此应用启动的本地代理、后台任务、项目脚本和交互终端。会话记录会保留。'),
         buttons: [t('继续运行'), t('停止并退出')],
         defaultId: 0,
         cancelId: 0,
@@ -716,6 +800,10 @@ else {
     );
     updateMenu();
     createWindow();
+    const idleTimer = setInterval(() => {
+      if (!quitting && !activity.mutating) client.collectIdle();
+    }, 30000);
+    idleTimer.unref();
     appUpdater.start();
     if (appUpdater.status().mode !== 'development') {
       const timer = setTimeout(() => void appUpdater.check().catch(() => {}), 10_000);
@@ -739,22 +827,28 @@ else {
     quitting = true;
     saveWindowState();
     workspaceWatcher.close();
+    previews.dispose();
     const agentShutdown = client.dispose();
     delivery.dispose();
     notifications.clear();
     logger.log('app-stop');
-    Promise.allSettled([settingsQueue, logger.flush(), runner.dispose(), agentShutdown]).then(
-      () => {
-        shutdownReady = true;
-        if (installUpdateRequested) {
-          try {
-            autoUpdater.quitAndInstall(false, true);
-          } catch (error) {
-            logger.log('update-install-failed', { code: error.code || error.name || 'Error' });
-            app.quit();
-          }
-        } else app.quit();
-      },
-    );
+    Promise.allSettled([
+      settingsQueue,
+      logger.flush(),
+      runner.dispose(),
+      agentShutdown,
+      terminals.dispose(),
+      cliInstaller.dispose(),
+    ]).then(() => {
+      shutdownReady = true;
+      if (installUpdateRequested) {
+        try {
+          autoUpdater.quitAndInstall(false, true);
+        } catch (error) {
+          logger.log('update-install-failed', { code: error.code || error.name || 'Error' });
+          app.quit();
+        }
+      } else app.quit();
+    });
   });
 }

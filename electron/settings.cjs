@@ -61,6 +61,15 @@ function normalizeSettings(input = {}) {
       inspectorTab: ['files', 'changes', 'plan'].includes(input.ui?.inspectorTab)
         ? input.ui.inspectorTab
         : 'files',
+      ...(Number.isFinite(input.ui?.sidebarWidth)
+        ? { sidebarWidth: Math.round(Math.max(200, Math.min(480, input.ui.sidebarWidth))) }
+        : {}),
+      ...(Number.isFinite(input.ui?.inspectorWidth)
+        ? { inspectorWidth: Math.round(Math.max(200, Math.min(480, input.ui.inspectorWidth))) }
+        : {}),
+      ...(Number.isFinite(input.ui?.composerHeight) && input.ui.composerHeight > 0
+        ? { composerHeight: Math.round(Math.max(90, Math.min(360, input.ui.composerHeight))) }
+        : {}),
     },
     window:
       input.window &&

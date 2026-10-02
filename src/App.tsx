@@ -14,6 +14,8 @@ import {
   Ellipsis,
   FolderOpen,
   Gauge,
+  Globe,
+  Mic,
   GitCompareArrows,
   ListChecks,
   History,
@@ -82,6 +84,20 @@ const UsageDialog = lazy(() =>
   import('./Dialogs').then((module) => ({ default: module.UsageDialog })),
 );
 const PromptTemplates = lazy(() => import('./PromptTemplates'));
+const ConversationNavigation = lazy(() => import('./ConversationNavigation'));
+const ProjectFilePicker = lazy(() => import('./ProjectFilePicker'));
+const OfficePreview = lazy(() => import('./OfficePreview'));
+const FirstRunWizard = lazy(() => import('./FirstRunWizard'));
+const ProviderSettings = lazy(() => import('./ProviderSettings'));
+const TerminalPanel = lazy(() => import('./TerminalPanel'));
+const WebPreview = lazy(() => import('./WebPreview'));
+import type { CliInstallState } from './FirstRunWizard';
+import type { PreviewOwner } from './WebPreview';
+import type { ConversationTarget } from './conversation-navigation.mjs';
+import { canPreviewOffice } from './office-preview-model';
+import ResizeHandle from './ResizeHandle';
+import './workspace-upgrades.css';
+import './desktop-tools.css';
 import UsageStatus from './UsageStatus';
 import EffortControl from './EffortControl';
 import './navigation-panels.css';
@@ -124,6 +140,9 @@ type Dialog =
   | 'project-tools'
   | 'engine'
   | 'templates'
+  | 'onboarding'
+  | 'providers'
+  | 'terminal'
   | null;
 export default function App() {
   const { t } = useI18n();
@@ -184,6 +203,18 @@ export default function App() {
     if (open) setSidebar(true);
   }
   const [inspectorTab, setInspectorTab] = useState<'files' | 'changes' | 'plan'>('files');
+  const [sidebarWidth, setSidebarWidth] = useState(0),
+    [inspectorWidth, setInspectorWidth] = useState(0),
+    [composerHeight, setComposerHeight] = useState(0);
+  const [viewport, setViewport] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  const [conversationNavigation, setConversationNavigation] = useState(false);
+  const [filePickerOwner, setFilePickerOwner] = useState<PreviewOwner | null>(null);
+  const [previewOwner, setPreviewOwner] = useState<PreviewOwner | null>(null);
+  const [officeLayout, setOfficeLayout] = useState(true);
+  const [installState, setInstallState] = useState<CliInstallState>({ status: 'idle', log: '' });
   const [fileToOpen, setFileToOpen] = useState<{
     path: string;
     line?: number;
@@ -245,7 +276,8 @@ export default function App() {
         notify(t('草稿暂时无法保存到本机，请保留重要内容后再关闭应用。'));
       }
     });
-  const composerRef = useRef({ cwd: '', sessionId: '' });
+  const composerRef = useRef({ cwd: '', sessionId: '', draftKey: 'initial' });
+  const draftAliases = useRef(new Map<string, PreviewOwner>());
   const draftRestoredRef = useRef(false);
   const needsRestoreRef = useRef(false);
   const restorePromiseRef = useRef<Promise<boolean> | null>(null);
@@ -267,7 +299,13 @@ export default function App() {
     const value = currentDraft();
     persistDraft();
     const same = previous.cwd === targetCwd && previous.sessionId === sessionId;
-    composerRef.current = { cwd: targetCwd, sessionId };
+    const nextOwner = {
+      cwd: targetCwd,
+      sessionId,
+      draftKey: same ? previous.draftKey : sessionId ? `session:${sessionId}` : crypto.randomUUID(),
+    };
+    composerRef.current = nextOwner;
+    if (transfer && !same) draftAliases.current.set(previous.draftKey, nextOwner);
     if (transfer) {
       if (previous.cwd && !previous.sessionId)
         draftStoreRef.current!.save(previous.cwd, '', {
@@ -296,10 +334,36 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!uiRestored.current || initializing) return;
-    const ui = { sidebar, inspector, inspectorTab, navigationTab };
+    const ui = {
+      sidebar,
+      inspector,
+      inspectorTab,
+      navigationTab,
+      sidebarWidth: sidebarWidth || undefined,
+      inspectorWidth: inspectorWidth || undefined,
+      composerHeight: composerHeight || undefined,
+    };
     if (JSON.stringify(settingsRef.current.ui) === JSON.stringify(ui)) return;
-    void saveSettings({ ui }).catch((e) => notify(errorText(e)));
-  }, [sidebar, inspector, inspectorTab, navigationTab, initializing]);
+    const timer = window.setTimeout(
+      () => void saveSettings({ ui }).catch((e) => notify(errorText(e))),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    sidebar,
+    inspector,
+    inspectorTab,
+    navigationTab,
+    sidebarWidth,
+    inspectorWidth,
+    composerHeight,
+    initializing,
+  ]);
+  useEffect(() => {
+    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
   async function refreshSessions(target = cwdRef.current) {
     if (!target) return;
     try {
@@ -483,6 +547,9 @@ export default function App() {
             (data.settings.ui?.inspector === true ? 'files' : 'sessions'),
         );
         setInspectorTab(data.settings.ui?.inspectorTab || 'files');
+        setSidebarWidth(data.settings.ui?.sidebarWidth || 0);
+        setInspectorWidth(data.settings.ui?.inspectorWidth || 0);
+        setComposerHeight(data.settings.ui?.composerHeight || 0);
         uiRestored.current = true;
       }
       if (!sessionRef.current) {
@@ -493,7 +560,7 @@ export default function App() {
       if (!data.cli.connected) {
         setConnection('error');
         setConnectionError(data.cli.error || '');
-        if (!data.cli.path) setDialog('settings');
+        if (!data.cli.path) setDialog('onboarding');
       } else if (sessionRef.current && needsRestoreRef.current) {
         await restoreSession();
       } else if (!restorePromiseRef.current) setConnection('ready');
@@ -549,6 +616,16 @@ export default function App() {
       },
     );
     const unsub = window.desktop?.onEvent((event: DesktopEvent) => {
+      if (event.type === 'preview-captured') {
+        appendFilesToDraft([event.attachment], event.owner);
+        notify(t('已加入原会话草稿'));
+        return;
+      }
+      if (event.type === 'cli-install-state') {
+        setInstallState(event.state);
+        return;
+      }
+      if (event.type === 'terminal-data' || event.type === 'terminal-exit') return;
       if (event.type === 'connection') {
         if (!event.sessionId && sessionRef.current) return;
         if (event.sessionId && event.sessionId !== sessionRef.current?.sessionId) return;
@@ -754,9 +831,9 @@ export default function App() {
     const area = draftRef.current;
     if (area) {
       area.style.height = 'auto';
-      area.style.height = `${Math.min(190, Math.max(52, area.scrollHeight))}px`;
+      area.style.height = `${composerHeight ? Math.min(composerHeight, Math.max(90, viewport.height * 0.36)) : Math.min(190, Math.max(52, area.scrollHeight))}px`;
     }
-  }, [draft]);
+  }, [draft, composerHeight, viewport.height]);
   async function saveSettings(patch: Partial<Settings>) {
     const previousPath = settingsRef.current.grokPath;
     const saved = await request<Settings>('settings.save', patch);
@@ -1075,12 +1152,10 @@ export default function App() {
     );
   }
   async function attach() {
+    const owner = { ...composerRef.current };
     try {
       const selected = await request<Attachment[]>('dialog.attach');
-      setAttachments((previous) => [
-        ...previous,
-        ...selected.filter((item) => !previous.some((file) => file.path === item.path)),
-      ]);
+      appendFilesToDraft(selected, owner);
     } catch (e) {
       notify(errorText(e));
     }
@@ -1109,11 +1184,35 @@ export default function App() {
       notify(errorText(e));
     }
   }
+  function appendFilesToDraft(files: Attachment[], origin: PreviewOwner) {
+    const owner = draftAliases.current.get(origin.draftKey) || origin;
+    const current = composerRef.current;
+    const active = current.cwd === owner.cwd && current.sessionId === (owner.sessionId || '');
+    const draft = active
+      ? currentDraft()
+      : draftStoreRef.current!.read(owner.cwd, owner.sessionId || '');
+    const merged = {
+      ...draft,
+      attachments: [
+        ...draft.attachments,
+        ...files.filter(
+          (file) =>
+            !draft.attachments.some(
+              (previous) => previous.path === file.path && previous.text === file.text,
+            ),
+        ),
+      ],
+    };
+    if (active) replaceDraft(merged);
+    draftStoreRef.current!.save(owner.cwd, owner.sessionId || '', merged);
+  }
+  const contextOwner = { ...composerRef.current };
   function addContext(file: Attachment) {
-    setAttachments((previous) => [...previous, file]);
+    appendFilesToDraft([file], contextOwner);
     notify(t('已加入上下文'));
   }
   async function inspectAttachment(file: Attachment) {
+    setOfficeLayout(true);
     const preview = { ...file, loading: file.text === undefined && !!file.path };
     setAttachmentPreview(preview);
     if (file.text !== undefined || !file.path) return;
@@ -1137,11 +1236,46 @@ export default function App() {
     if (!Array.from(event.clipboardData.items).some((item) => item.type.startsWith('image/')))
       return;
     event.preventDefault();
+    const owner = { ...composerRef.current };
     try {
       const file = await request<Attachment | null>('clipboard.image');
-      if (file) addContext(file);
+      if (file) appendFilesToDraft([file], owner);
     } catch (e) {
       notify(errorText(e));
+    }
+  }
+  const navigateConversation = useCallback((target: ConversationTarget) => {
+    stickToBottom.current = false;
+    setShowScroll(true);
+    const root = threadRef.current;
+    const node =
+      target.kind === 'error'
+        ? root?.querySelector<HTMLElement>('[data-conversation-error]')
+        : [...(root?.querySelectorAll<HTMLElement>('[data-row-id]') || [])].find(
+            (item) => item.dataset.rowId === target.rowId,
+          );
+    if (!node) return;
+    for (const details of node.querySelectorAll('details')) details.open = true;
+    let ancestor: HTMLElement | null = node;
+    while (ancestor && ancestor !== root) {
+      if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+      ancestor = ancestor.parentElement;
+    }
+    node.scrollIntoView({ block: 'center' });
+    node.classList.add('conversation-jump');
+    setTimeout(() => node.classList.remove('conversation-jump'), 1800);
+  }, []);
+  async function openWebPreview() {
+    if (!sessionRef.current) await newConversation();
+    if (sessionRef.current) setPreviewOwner({ ...composerRef.current });
+  }
+  async function dictate() {
+    draftRef.current?.focus();
+    try {
+      await request('dictation.start');
+      notify(t('语音由 Windows 控制。如未出现听写框，请保持输入框聚焦并按 Win + H。'));
+    } catch (error) {
+      notify(errorText(error));
     }
   }
   function dropFiles(event: React.DragEvent) {
@@ -1476,6 +1610,11 @@ export default function App() {
   return (
     <div
       className={`app unified-layout ${sidebar ? '' : 'sidebar-hidden'} ${inspector ? '' : 'inspector-hidden'}`}
+      style={
+        {
+          '--navigation-width': `${Math.min(inspector ? inspectorWidth || Math.max(224, Math.min(310, viewport.width * 0.195)) : sidebarWidth || Math.max(224, Math.min(310, viewport.width * 0.195)), Math.max(200, viewport.width - 600))}px`,
+        } as React.CSSProperties
+      }
     >
       <aside className="sidebar" hidden={!sidebar}>
         <div className="brand">
@@ -1748,6 +1887,19 @@ export default function App() {
             </IconButton>
           </div>
         </div>
+        <ResizeHandle
+          axis="horizontal"
+          label={t('调整侧栏宽度')}
+          value={
+            inspector
+              ? inspectorWidth || Math.min(310, viewport.width * 0.195)
+              : sidebarWidth || Math.min(310, viewport.width * 0.195)
+          }
+          min={200}
+          max={Math.min(480, viewport.width - 600)}
+          onChange={inspector ? setInspectorWidth : setSidebarWidth}
+          onReset={() => (inspector ? setInspectorWidth(0) : setSidebarWidth(0))}
+        />
       </aside>
       <main className="workspace">
         <header className="topbar">
@@ -1765,6 +1917,14 @@ export default function App() {
             <span title={currentTitle}>{currentTitle}</span>
           </div>
           <div className="topbar-actions">
+            <IconButton
+              label={t('搜索与提问目录')}
+              active={conversationNavigation}
+              onClick={() => setConversationNavigation((value) => !value)}
+              disabled={!rows.length}
+            >
+              <Search size={17} />
+            </IconButton>
             <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
               <Workflow size={17} />
             </IconButton>
@@ -1789,16 +1949,15 @@ export default function App() {
               <ListChecks size={17} />
               {t('计划')}
             </button>
-            <IconButton
-              label={t('在项目终端中打开')}
-              onClick={() =>
-                void request('system.open', { target: 'terminal', cwd }).catch((e) =>
-                  notify(errorText(e)),
-                )
-              }
-              disabled={!cwd}
-            >
+            <IconButton label={t('交互终端')} onClick={() => setDialog('terminal')} disabled={!cwd}>
               <Terminal size={17} />
+            </IconButton>
+            <IconButton
+              label={t('网页预览')}
+              onClick={() => void openWebPreview()}
+              disabled={!cwd || !!loadingSession}
+            >
+              <Globe size={17} />
             </IconButton>
             <IconButton label={t('额度与上下文')} onClick={() => setDialog('usage')}>
               <Gauge size={17} />
@@ -1853,6 +2012,16 @@ export default function App() {
             </IconButton>
           </div>
         </header>
+        {conversationNavigation && (
+          <Suspense fallback={<Spinner />}>
+            <ConversationNavigation
+              sessionId={session?.sessionId || cwd}
+              rows={rows}
+              turnError={turnError}
+              onNavigate={navigateConversation}
+            />
+          </Suspense>
+        )}
         {(connection === 'error' || connection === 'disconnected') && (
           <div className="connection-banner">
             <TriangleAlert size={16} />
@@ -2013,7 +2182,7 @@ export default function App() {
                 />
               ))}
               {turnError && (
-                <div className="turn-error">
+                <div className="turn-error" data-conversation-error>
                   <TriangleAlert size={18} />
                   <div>
                     <strong>{classifyFailure(turnError).title}</strong>
@@ -2112,6 +2281,16 @@ export default function App() {
             onDrop={dropFiles}
           >
             {dragging && <div className="drop-hint">{t('松开以添加文件或图片')}</div>}
+            <ResizeHandle
+              axis="vertical"
+              reverse
+              label={t('调整输入区高度')}
+              value={composerHeight || draftRef.current?.clientHeight || 90}
+              min={90}
+              max={Math.min(360, Math.max(90, viewport.height * 0.36))}
+              onChange={setComposerHeight}
+              onReset={() => setComposerHeight(0)}
+            />
             <div className="attachment-list">
               {attachments.map((file, index) => (
                 <span key={`${file.path}:${index}`} title={file.path}>
@@ -2170,6 +2349,16 @@ export default function App() {
               <div className="composer-tools">
                 <IconButton label={t('添加文件或图片')} onClick={() => void attach()}>
                   <Paperclip size={18} />
+                </IconButton>
+                <IconButton
+                  label={t('引用项目文件')}
+                  onClick={() => setFilePickerOwner({ ...composerRef.current })}
+                  disabled={!cwd}
+                >
+                  <FolderOpen size={17} />
+                </IconButton>
+                <IconButton label={t('Windows 语音输入')} onClick={() => void dictate()}>
+                  <Mic size={17} />
                 </IconButton>
                 <IconButton label={t('打开动作库 · Ctrl K')} onClick={() => void openActions()}>
                   <CommandIcon size={17} />
@@ -2398,6 +2587,41 @@ export default function App() {
           </div>
         }
       >
+        {dialog === 'terminal' && cwd && (
+          <TerminalPanel cwd={cwd} onClose={() => setDialog(null)} />
+        )}
+        {previewOwner && <WebPreview owner={previewOwner} onClose={() => setPreviewOwner(null)} />}
+        {filePickerOwner && (
+          <ProjectFilePicker
+            cwd={filePickerOwner.cwd}
+            sessionId={filePickerOwner.sessionId}
+            onClose={() => setFilePickerOwner(null)}
+            onSelect={(files) => {
+              appendFilesToDraft(files, filePickerOwner);
+              setFilePickerOwner(null);
+              draftRef.current?.focus();
+            }}
+          />
+        )}
+        {dialog === 'onboarding' && (
+          <FirstRunWizard
+            cliStatus={cliStatus || bootstrap?.cli}
+            installState={installState}
+            request={request}
+            onClose={() => setDialog(null)}
+            onComplete={(path) => {
+              setDialog(null);
+              void initialize(true).then(() => openProject(path));
+            }}
+          />
+        )}
+        {dialog === 'providers' && (
+          <ProviderSettings
+            request={request}
+            onClose={() => setDialog(null)}
+            onChanged={() => void initialize(true)}
+          />
+        )}
         {dialog === 'templates' && (
           <PromptTemplates
             items={settings.promptTemplates || []}
@@ -2450,6 +2674,12 @@ export default function App() {
               </p>
             )}
             <div className="engine-actions">
+              <button className="secondary-button" onClick={() => setDialog('onboarding')}>
+                {t('首次使用引导')}
+              </button>
+              <button className="secondary-button" onClick={() => setDialog('providers')}>
+                {t('模型来源')}
+              </button>
               <button
                 className="secondary-button"
                 disabled={!!engineAction}
@@ -2523,38 +2753,71 @@ export default function App() {
             title={attachmentPreview.name}
             subtitle={attachmentPreview.path || t('文本上下文')}
             onClose={() => setAttachmentPreview(null)}
+            wide={canPreviewOffice(attachmentPreview.path)}
           >
-            {attachmentPreview.dataUrl && (
-              <img
-                className="attachment-image"
-                src={attachmentPreview.dataUrl}
-                alt={attachmentPreview.name}
-              />
+            {canPreviewOffice(attachmentPreview.path) && (
+              <>
+                <div className="desktop-tool-actions">
+                  <button
+                    className={officeLayout ? 'primary-button' : 'secondary-button'}
+                    onClick={() => setOfficeLayout(true)}
+                  >
+                    {t('排版预览')}
+                  </button>
+                  <button
+                    className={!officeLayout ? 'primary-button' : 'secondary-button'}
+                    onClick={() => setOfficeLayout(false)}
+                  >
+                    {t('文字内容')}
+                  </button>
+                </div>
+                {officeLayout && (
+                  <OfficePreview
+                    path={attachmentPreview.path}
+                    name={attachmentPreview.name}
+                    onExternal={() => {
+                      void request('system.open', {
+                        target: 'file',
+                        path: attachmentPreview.path,
+                      }).catch((error) => notify(errorText(error)));
+                    }}
+                  />
+                )}
+              </>
             )}
-            {attachmentPreview.loading && (
-              <p role="status">
-                <Spinner /> {t('正在读取附件…')}
-              </p>
-            )}
-            {attachmentPreview.error && <p role="alert">{attachmentPreview.error}</p>}
-            {attachmentPreview.notice && (
-              <p className="attachment-notice">{t('以下为发送给 Grok 的文字。')}</p>
-            )}
-            {attachmentPreview.native && (
-              <p className="attachment-notice">
-                {t('由 Grok 原生读取；发送时读取本地文件的最新内容。')}
-              </p>
-            )}
-            {attachmentPreview.native && (
-              <p className="attachment-native-description">{attachmentPreview.text}</p>
-            )}
-            {!attachmentPreview.loading &&
-              !attachmentPreview.error &&
-              !attachmentPreview.native && (
-                <pre className="attachment-preview">
-                  {attachmentPreview.text || attachmentPreview.path}
-                </pre>
+            <div hidden={officeLayout && canPreviewOffice(attachmentPreview.path)}>
+              {attachmentPreview.dataUrl && (
+                <img
+                  className="attachment-image"
+                  src={attachmentPreview.dataUrl}
+                  alt={attachmentPreview.name}
+                />
               )}
+              {attachmentPreview.loading && (
+                <p role="status">
+                  <Spinner /> {t('正在读取附件…')}
+                </p>
+              )}
+              {attachmentPreview.error && <p role="alert">{attachmentPreview.error}</p>}
+              {attachmentPreview.notice && (
+                <p className="attachment-notice">{t('以下为发送给 Grok 的文字。')}</p>
+              )}
+              {attachmentPreview.native && (
+                <p className="attachment-notice">
+                  {t('由 Grok 原生读取；发送时读取本地文件的最新内容。')}
+                </p>
+              )}
+              {attachmentPreview.native && (
+                <p className="attachment-native-description">{attachmentPreview.text}</p>
+              )}
+              {!attachmentPreview.loading &&
+                !attachmentPreview.error &&
+                !attachmentPreview.native && (
+                  <pre className="attachment-preview">
+                    {attachmentPreview.text || attachmentPreview.path}
+                  </pre>
+                )}
+            </div>
             {attachmentPreview.path && (
               <button
                 className="secondary-button"

@@ -6,6 +6,10 @@ import { workflows } from './locales/workflows';
 import { usageStatus } from './locales/usage-status';
 import { taskPresentation } from './locales/task-presentation';
 import { promptTemplates } from './locales/prompt-templates';
+import { conversationUpgrades } from './locales/conversation-upgrades';
+import { workspaceUpgrades } from './locales/workspace-upgrades';
+import { runtimeUpgrades } from './locales/runtime-upgrades';
+import { desktopTools } from './locales/desktop-tools';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
@@ -17,6 +21,10 @@ const english: Record<string, string> = {
   ...usageStatus,
   ...taskPresentation,
   ...promptTemplates,
+  ...conversationUpgrades,
+  ...workspaceUpgrades,
+  ...runtimeUpgrades,
+  ...desktopTools,
 };
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';
