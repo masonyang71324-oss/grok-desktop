@@ -352,6 +352,7 @@ export default function Inspector({
     });
   }, [diff]);
   function closeFile() {
+    if (saving) return;
     if (dirty) {
       setConfirmDiscard(true);
       return;

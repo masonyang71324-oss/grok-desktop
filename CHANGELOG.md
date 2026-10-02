@@ -1,5 +1,12 @@
 # Changes
 
+## 1.6.1
+
+- Keep the editor open during in-flight saves, including when newer input matches the previous baseline, so closing cannot silently lose that input.
+- Show cancellation instead of success when the worktree destination picker is dismissed, preserving the form for an explicit retry.
+- Decode ACP stderr across UTF-8 chunk boundaries so Chinese error details remain readable.
+- Add regressions for these cases and for read-only truncated previews; document the reliability requirements used by future changes.
+
 ## 1.6.0
 
 - Unify Chats, Files and Tasks in the left navigation, retaining file editing, changes, plans, task controls and full task-center access.

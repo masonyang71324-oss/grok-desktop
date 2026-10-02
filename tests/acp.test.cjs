@@ -707,6 +707,20 @@ test('cancel keeps the turn active until server completion and settles permissio
   assert.ok(f.events.some((e) => e.type === 'permission-resolved' && e.requestId === 'p'));
 });
 
+test('split UTF8 stderr keeps Chinese diagnostics intact when the agent exits', async (t) => {
+  const f = fixture(t);
+  await f.client.newSession({ cwd: 'C:\\project' });
+  await f.client.send({ sessionId: 'session-a', text: 'work' });
+  const diagnostic = '无法读取项目文件：权限不足';
+  for (const byte of Buffer.from(diagnostic)) f.child().stderr.write(Buffer.from([byte]));
+  f.child().emit('exit', 1, null);
+  await tick();
+  const failures = f.events.filter((event) => event.type === 'turn-error');
+  assert.equal(failures.length, 1);
+  assert.ok(failures[0].message.includes(diagnostic));
+  assert.equal(failures[0].message.includes('\uFFFD'), false);
+});
+
 test('split UTF8 chunks stay intact; malformed protocol terminates the affected foreground turn', async (t) => {
   const f = fixture(t);
   await f.client.newSession({ cwd: 'C:\\project' });

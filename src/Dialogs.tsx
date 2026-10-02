@@ -1009,6 +1009,10 @@ export function ManagementDialog({
         values: { ...payload, ...(sessionId ? { sessionId } : {}) },
       });
       setResult(data);
+      if (action.id === 'worktree-create' && data.data?.cancelled === true) {
+        notify(data.text);
+        return;
+      }
       if (data.exitCode && data.exitCode !== 0)
         setError(t('操作未完成（退出码 {code}），请展开详细输出。', { code: data.exitCode }));
       else if (action.fields || action.destructive) {

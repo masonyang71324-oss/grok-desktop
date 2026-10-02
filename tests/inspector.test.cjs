@@ -69,7 +69,7 @@ async function fixture(t) {
               text,
               eol: text.includes('\r\n') ? 'crlf' : 'lf',
               mtimeMs: window.files[key]?.mtimeMs || 1,
-              truncated: false,
+              truncated: !!window.files[key]?.truncated,
             };
           }
           if (command === 'workspace.save') {
@@ -147,6 +147,43 @@ test('unsaved edits and in-flight saves block unload until saved or explicitly d
   await page.getByRole('button', { name: '关闭 · Esc' }).click();
   await page.getByRole('button', { name: '放弃修改', exact: true }).click();
   assert.equal(await unloadPrevented(), false);
+});
+
+test('closing during a pending save preserves an edit reverted to the previous baseline', async (t) => {
+  const page = await fixture(t);
+  await page.locator('.file-row[title="note.txt"]').click();
+  const editor = page.getByRole('textbox', { name: '文件内容' });
+  await editor.fill('submitted edit');
+  await hold(page, 'workspace.save');
+  await page.getByRole('button', { name: '保存文件' }).click();
+  await editor.fill('original');
+  await page.getByRole('button', { name: '关闭 · Esc' }).click();
+  assert.equal(await editor.count(), 1);
+  await page.keyboard.press('Escape');
+  assert.equal(await editor.inputValue(), 'original');
+  assert.equal(await page.getByRole('dialog', { name: '放弃未保存的修改' }).count(), 0);
+  assert.equal(
+    await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+    true,
+  );
+  await release(page, 'workspace.save');
+  await page.waitForFunction(() => window.notices.includes('文件已保存'));
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: '放弃未保存的修改' }).waitFor();
+  await page.getByRole('button', { name: '继续编辑', exact: true }).click();
+  assert.equal(await editor.inputValue(), 'original');
+  await page.getByRole('button', { name: '保存文件' }).click();
+  await release(page, 'workspace.save');
+  await page.waitForFunction(
+    () => window.notices.filter((text) => text === '文件已保存').length === 2,
+  );
+  assert.equal(await page.evaluate(() => window.files['C:/a/note.txt'].text), 'original');
+  await page.keyboard.press('Escape');
+  await editor.waitFor({ state: 'detached' });
 });
 
 test('saving preserves text typed after clicking Save and advances the saved baseline', async (t) => {
@@ -238,6 +275,26 @@ test('CRLF editor text compares normalized content and passes the original line 
   );
   assert.equal(payload.eol, 'crlf');
   assert.equal(payload.text, 'alpha\nchanged\n');
+});
+
+test('truncated file previews stay read-only with saving disabled', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    window.files['C:/a/note.txt'] = { text: 'preview prefix', mtimeMs: 1, truncated: true };
+  });
+  await page.locator('.file-row[title="note.txt"]').click();
+  const editor = page.getByRole('textbox', { name: '文件内容' });
+  assert.equal(await editor.evaluate((element) => element.readOnly), true);
+  assert.equal(await page.getByRole('button', { name: '保存文件' }).isDisabled(), true);
+  await editor.press('End');
+  await editor.press('x');
+  assert.equal(await editor.inputValue(), 'preview prefix');
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.command === 'workspace.save').length,
+    ),
+    0,
+  );
 });
 
 test('hidden build folders are browsable and file actions use the current workspace target', async (t) => {

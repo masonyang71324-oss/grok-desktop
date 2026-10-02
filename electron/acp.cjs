@@ -108,8 +108,9 @@ class GrokClient {
           }
         }
       });
+      child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => {
-        stderr = (stderr + chunk.toString()).slice(-3000);
+        stderr = (stderr + chunk).slice(-3000);
       });
       child.stdin.on('error', (error) =>
         this._fail(
