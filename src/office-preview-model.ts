@@ -53,7 +53,7 @@ export type OfficePreviewModel = { readOnly: true; notices: string[] } & (
       kind: 'pptx';
       width: number;
       height: number;
-      slides: { shapes: SlideShape[]; background?: string }[];
+      slides: { shapes: SlideShape[]; background?: string; unpositionedText?: string }[];
     }
   | { kind: 'text'; text: string }
 );

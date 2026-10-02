@@ -17,6 +17,8 @@ const noticeKeys: Record<string, string> = {
     '只读工作表预览显示文件中已有的格式和公式结果，不会重新计算；图表、条件格式和复杂样式可能未显示。',
   'pptx-limitations':
     '幻灯片仅预览静态文本和图片的位置；母版、组合图形、图表、动画和复杂样式可能未显示。',
+  'pptx-unpositioned-text':
+    '部分文字使用母版或布局坐标，现显示为文字预览。请用默认程序查看原始位置。',
   'legacy-layout': '此格式仅支持文字预览。使用默认程序查看原始排版。',
   'unsupported-layout': '此文档的排版结构暂不支持，现显示可提取文字。使用默认程序查看完整文档。',
   'preview-truncated':
@@ -242,53 +244,60 @@ export default function OfficePreview({
           {model.slides.map((slide, index) => (
             <div className="office-slide-section" key={index}>
               <span className="muted">{t('幻灯片 {number}', { number: index + 1 })}</span>
-              <div
-                className="office-slide"
-                style={{
-                  aspectRatio: `${model.width}/${model.height}`,
-                  background: slide.background || '#fff',
-                }}
-              >
-                {slide.shapes.map((shape, key) => {
-                  const style: CSSProperties = {
-                    left: `${shape.x}%`,
-                    top: `${shape.y}%`,
-                    width: `${shape.width}%`,
-                    height: `${shape.height}%`,
-                    transform: `rotate(${shape.rotation || 0}deg)`,
-                    background: shape.background,
-                  };
-                  return shape.kind === 'image' ? (
-                    <img
-                      key={key}
-                      className="office-slide-shape"
-                      style={style}
-                      src={shape.src}
-                      alt=""
-                    />
-                  ) : (
-                    <div key={key} className="office-slide-shape office-slide-text" style={style}>
-                      {shape.paragraphs?.map((p, pIndex) => (
-                        <p key={pIndex} style={{ textAlign: p.align }}>
-                          {p.runs.map((run, rIndex) => (
-                            <span
-                              key={rIndex}
-                              style={{
-                                fontSize: `${(run.fontSize / (model.width / 12700)) * 100}cqw`,
-                                fontWeight: run.bold ? 'bold' : undefined,
-                                fontStyle: run.italic ? 'italic' : undefined,
-                                color: run.color,
-                              }}
-                            >
-                              {run.text}
-                            </span>
-                          ))}
-                        </p>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
+              {(slide.shapes.length > 0 || !slide.unpositionedText) && (
+                <div
+                  className="office-slide"
+                  style={{
+                    aspectRatio: `${model.width}/${model.height}`,
+                    background: slide.background || '#fff',
+                  }}
+                >
+                  {slide.shapes.map((shape, key) => {
+                    const style: CSSProperties = {
+                      left: `${shape.x}%`,
+                      top: `${shape.y}%`,
+                      width: `${shape.width}%`,
+                      height: `${shape.height}%`,
+                      transform: `rotate(${shape.rotation || 0}deg)`,
+                      background: shape.background,
+                    };
+                    return shape.kind === 'image' ? (
+                      <img
+                        key={key}
+                        className="office-slide-shape"
+                        style={style}
+                        src={shape.src}
+                        alt=""
+                      />
+                    ) : (
+                      <div key={key} className="office-slide-shape office-slide-text" style={style}>
+                        {shape.paragraphs?.map((p, pIndex) => (
+                          <p key={pIndex} style={{ textAlign: p.align }}>
+                            {p.runs.map((run, rIndex) => (
+                              <span
+                                key={rIndex}
+                                style={{
+                                  fontSize: `${(run.fontSize / (model.width / 12700)) * 100}cqw`,
+                                  fontWeight: run.bold ? 'bold' : undefined,
+                                  fontStyle: run.italic ? 'italic' : undefined,
+                                  color: run.color,
+                                }}
+                              >
+                                {run.text}
+                              </span>
+                            ))}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {slide.unpositionedText && (
+                <pre className="office-text-preview office-slide-fallback">
+                  {slide.unpositionedText}
+                </pre>
+              )}
             </div>
           ))}
         </div>

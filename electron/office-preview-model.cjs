@@ -14,6 +14,14 @@ const {
 const LIMIT = 64 * 1024 * 1024;
 const fail = (message) => Object.assign(new Error(message), { code: 'preview-failed' });
 const one = (node, local) => descendants(node, local)[0];
+const relationshipUris = new Set([
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+  'http://purl.oclc.org/ooxml/officeDocument/relationships',
+]);
+const relationshipAttr = (node, local) =>
+  Object.values(node.attrs).find(
+    (attribute) => attribute.local === local && relationshipUris.has(attribute.uri),
+  )?.value;
 const number = (node, name, fallback = 0) => Number(node && attr(node, name)) || fallback;
 
 async function packageZip(bytes) {
@@ -284,19 +292,33 @@ async function pptxModel(bytes) {
     ids = descendants(root, 'sldId');
   const slides = [];
   for (const id of ids.slice(0, 100)) {
-    const rel = slideRels.find((r) => r.id === attr(id, 'id') && r.type?.endsWith('/slide'));
+    const rel = slideRels.find(
+      (r) => r.id === relationshipAttr(id, 'id') && r.type?.endsWith('/slide'),
+    );
     if (!rel || rel.external) throw fail('Missing slide relationship');
     const slidePart = resolvePath(part, rel.target),
       slide = parseXml(await pkg.read(slidePart));
     const rels = await relationships(pkg, slidePart),
       tree = one(slide, 'spTree');
-    const shapes = [];
+    const shapes = [],
+      unpositioned = [];
     for (const shape of elements(tree || { children: [] })) {
       if (!['sp', 'pic'].includes(shape.local)) continue;
       const transform = one(shape, 'xfrm'),
         offset = transform && elements(transform, 'off')[0],
         extent = transform && elements(transform, 'ext')[0];
-      if (!offset || !extent) continue;
+      if (!offset || !extent) {
+        // Ordinary title/body placeholders can inherit their coordinates from
+        // a layout/master. Preserve their text without inventing a position.
+        const tx = elements(shape, 'txBody')[0];
+        if (tx)
+          unpositioned.push(
+            ...elements(tx, 'p')
+              .map((paragraph) => descendants(paragraph, 't').map(content).join(''))
+              .filter((text) => text.trim()),
+          );
+        continue;
+      }
       const geometry = {
         x: (number(offset, 'x') / width) * 100,
         y: (number(offset, 'y') / height) * 100,
@@ -346,12 +368,20 @@ async function pptxModel(bytes) {
       }
     }
     const background = one(slide, 'bgPr');
-    slides.push({ shapes, background: background && color(one(background, 'srgbClr')) });
+    slides.push({
+      shapes,
+      background: background && color(one(background, 'srgbClr')),
+      unpositionedText: unpositioned.length ? unpositioned.join('\n') : undefined,
+    });
   }
   return {
     kind: 'pptx',
     readOnly: true,
-    notices: ['pptx-limitations', ...(ids.length > 100 ? ['preview-truncated'] : [])],
+    notices: [
+      'pptx-limitations',
+      ...(slides.some((slide) => slide.unpositionedText) ? ['pptx-unpositioned-text'] : []),
+      ...(ids.length > 100 ? ['preview-truncated'] : []),
+    ],
     width,
     height,
     slides,

@@ -26,6 +26,8 @@ export const workspaceUpgrades: Record<string, string> = {
     'Read-only sheets display saved formatting and formula results without recalculating. Charts, conditional formatting and complex styles may be omitted.',
   '幻灯片仅预览静态文本和图片的位置；母版、组合图形、图表、动画和复杂样式可能未显示。':
     'Slides preview positioned static text and images. Masters, grouped shapes, charts, animations and complex styles may be omitted.',
+  '部分文字使用母版或布局坐标，现显示为文字预览。请用默认程序查看原始位置。':
+    'Some text uses master or layout coordinates and is shown as text. Open with the default app to view original positions.',
   '此格式仅支持文字预览。使用默认程序查看原始排版。':
     'This format supports text preview only. Open with the default app to view original layout.',
   '此文档的排版结构暂不支持，现显示可提取文字。使用默认程序查看完整文档。':

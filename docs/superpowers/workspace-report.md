@@ -29,3 +29,13 @@ Tests were introduced for missing diff/search/model/component behavior before im
 This includes real browser DOCX paragraph/table/image rendering and isolation, readonly sheet/no save IPC, unchanged source bytes via worker preview, pointer/keyboard resize, prior-project late search, same-project different-session selection reset, generated-label translation and all existing editor-save/CRLF/truncation protections. Updated only the existing diff numbering test's selector for the new row nesting; assertions remain the same.
 
 Own source formatting check and diff whitespace check passed. TypeScript passed before concurrent root integration; the later check reported only the shared App event-union `sessionId` narrowing at App.tsx:673, communicated to root. Full suite, production/Electron packaged checks, persisted resizing and multilingual/small-window visual review remain root integration/release validation.
+
+## Review corrections
+
+Three confirmed review findings were reproduced before correction. PPTX slide relationships now select the namespace-qualified `r:id`, so ordinary numeric `id="256"` metadata cannot hide the real reference. The existing positioned-image fixture now includes both IDs; the repository's real `tests/fixtures/documents/native/sample.pptx` additionally verifies a complete standard package.
+
+Diff parsing tracks each hunk's remaining old/new line counts. Added `++counter` and removed `--counter` are represented as `+++counter`/`---counter` in the raw diff, retain content/numbering, and are distinguished from subsequent file headers after the hunk ends.
+
+Title/body placeholders with inherited master/layout positions retain readable text as per-slide `unpositionedText` instead of being silently omitted. The viewer shows this text and a bilingual layout notice; it suppresses an otherwise empty canvas for such slides. Positioned shapes still display normally. Coordinate inheritance/fidelity remains an explicit limitation.
+
+The corrective regression run passed 23/23 (`workspace-upgrades`, `workspace-upgrades-components`, `i18n-components`), including the real PPTX fixture and visible fallback. TypeScript passed after current root integration. No shared integration files were edited for these corrections.

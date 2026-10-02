@@ -1,32 +1,47 @@
 // Display-only model: the caller always retains the exact original diff.
 export function parseDiff(raw) {
+  let syntheticFile = /^(?:新文件 |New file )/.test(raw);
   let before = null,
-    after = /^(?:新文件 |New file )/.test(raw) ? 1 : null;
+    after = syntheticFile ? 1 : null,
+    beforeRemaining = 0,
+    afterRemaining = 0;
   const lines = raw.split('\n');
   if (lines.at(-1) === '') lines.pop();
   const rows = lines.map((source, id) => {
     const row = { id, source, text: source, kind: 'meta' };
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(source);
+    const inHunk = beforeRemaining > 0 || afterRemaining > 0;
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(source);
     if (hunk) {
       before = Number(hunk[1]);
-      after = Number(hunk[2]);
+      beforeRemaining = hunk[2] === undefined ? 1 : Number(hunk[2]);
+      after = Number(hunk[3]);
+      afterRemaining = hunk[4] === undefined ? 1 : Number(hunk[4]);
+      syntheticFile = false;
       row.kind = 'hunk';
     } else if (source.startsWith('diff --git ')) {
       before = null;
       after = null;
-    } else if (source.startsWith('+') && !source.startsWith('+++')) {
+      beforeRemaining = afterRemaining = 0;
+      syntheticFile = false;
+    } else if (source.startsWith('+') && (inHunk || syntheticFile || !source.startsWith('+++'))) {
       row.kind = 'add';
       row.text = source.slice(1);
       if (after !== null) row.after = after++;
-    } else if (source.startsWith('-') && !source.startsWith('---')) {
+      if (inHunk) afterRemaining--;
+    } else if (source.startsWith('-') && (inHunk || !source.startsWith('---'))) {
       row.kind = 'remove';
       row.text = source.slice(1);
       if (before !== null) row.before = before++;
+      if (inHunk) beforeRemaining--;
     } else if (source.startsWith(' ') && before !== null && after !== null) {
       row.kind = 'context';
       row.text = source.slice(1);
       row.before = before++;
       row.after = after++;
+      if (inHunk) {
+        beforeRemaining--;
+        afterRemaining--;
+      }
     }
     return row;
   });

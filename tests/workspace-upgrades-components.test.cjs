@@ -229,3 +229,32 @@ test('DOCX renders paragraphs tables and images in an isolated readonly document
     'allow-same-origin',
   );
 });
+
+test('PPTX placeholder fallback remains visible instead of an empty slide canvas', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => window.show('office', { path: 'C:/placeholder.pptx' }));
+  await page.waitForFunction(() => window.pending.length === 1);
+  await page.evaluate(() =>
+    window.pending[0].resolve({
+      ok: true,
+      data: {
+        kind: 'pptx',
+        readOnly: true,
+        notices: ['pptx-unpositioned-text'],
+        width: 9144000,
+        height: 5143500,
+        slides: [{ shapes: [], unpositionedText: 'Title retained\nBody retained' }],
+      },
+    }),
+  );
+  await page.getByText('Title retained\nBody retained', { exact: true }).waitFor();
+  assert.equal(await page.locator('.office-slide').count(), 0);
+  assert.equal(
+    await page
+      .getByText('部分文字使用母版或布局坐标，现显示为文字预览。请用默认程序查看原始位置。', {
+        exact: true,
+      })
+      .count(),
+    1,
+  );
+});

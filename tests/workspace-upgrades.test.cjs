@@ -32,6 +32,27 @@ test('diff keeps raw source while numbering multiple hunks and pairing changed l
   assert.equal(foldContext(context.rows, 2).find((r) => r.kind === 'fold').count, 8);
 });
 
+test('diff distinguishes prefix-like content inside hunks from subsequent file headers', async () => {
+  const { parseDiff } = await import('../src/diff-model.mjs');
+  const raw =
+    '--- a/counter.js\n+++ b/counter.js\n@@ -4,2 +4,2 @@\n---counter\n+++counter\n tail\n--- a/next.js\n+++ b/next.js\n@@ -8 +9 @@\n-old\n+new\n';
+  const model = parseDiff(raw);
+  assert.equal(model.raw, raw);
+  const removed = model.rows.find((row) => row.source === '---counter');
+  const added = model.rows.find((row) => row.source === '+++counter');
+  assert.equal(removed.kind, 'remove');
+  assert.equal(removed.text, '--counter');
+  assert.equal(removed.before, 4);
+  assert.equal(added.kind, 'add');
+  assert.equal(added.text, '++counter');
+  assert.equal(added.after, 4);
+  const context = model.rows.find((row) => row.source === ' tail');
+  assert.equal(context.before, 5);
+  assert.equal(context.after, 5);
+  assert.equal(model.rows.find((row) => row.source === '--- a/next.js').kind, 'meta');
+  assert.equal(model.rows.find((row) => row.source === '+++ b/next.js').kind, 'meta');
+});
+
 test('project search excludes hidden/generated folders, finds paths and reports limited results', async (t) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-search-'));
   t.after(() => fs.rm(cwd, { recursive: true, force: true }));
@@ -93,7 +114,7 @@ test('PPTX preview preserves shape positions and embedded image data', async () 
   const zip = new JSZip();
   zip.file(
     'ppt/presentation.xml',
-    '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="r1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/></p:presentation>',
+    '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="r1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/></p:presentation>',
   );
   zip.file(
     'ppt/_rels/presentation.xml.rels',
@@ -116,6 +137,40 @@ test('PPTX preview preserves shape positions and embedded image data', async () 
   assert.equal(model.slides[0].shapes[0].paragraphs[0].runs[0].text, 'Hello');
   assert.match(model.slides[0].shapes[1].src, /^data:image\/png;base64,/);
   assert.ok(model.notices.includes('pptx-limitations'));
+});
+
+test('PPTX keeps title and body placeholder text when coordinates come from unsupported layouts', async () => {
+  const { buildOfficePreview } = require('../electron/office-preview-model.cjs');
+  const zip = new JSZip();
+  zip.file(
+    'ppt/presentation.xml',
+    '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="r1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/></p:presentation>',
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    '<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>',
+  );
+  zip.file(
+    'ppt/slides/slide1.xml',
+    '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:p><a:r><a:t>标题 retained</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:p><a:r><a:t>Body first line</a:t></a:r></a:p><a:p><a:r><a:t>Body second line</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>',
+  );
+  const model = await buildOfficePreview(await zip.generateAsync({ type: 'nodebuffer' }), '.pptx');
+  assert.equal(model.kind, 'pptx');
+  assert.equal(
+    model.slides[0].unpositionedText,
+    '标题 retained\nBody first line\nBody second line',
+  );
+  assert.ok(model.notices.includes('pptx-unpositioned-text'));
+});
+
+test('real PPTX package retains standard relationship IDs and readable title/body placeholders', async () => {
+  const { buildOfficePreview } = require('../electron/office-preview-model.cjs');
+  const bytes = await fs.readFile(path.join(__dirname, 'fixtures/documents/native/sample.pptx'));
+  const model = await buildOfficePreview(bytes, '.pptx');
+  assert.equal(model.kind, 'pptx');
+  assert.equal(model.slides.length, 1);
+  assert.equal(model.slides[0].unpositionedText, 'PPT报价方案\n维护费：25800元');
+  assert.ok(model.notices.includes('pptx-unpositioned-text'));
 });
 
 test('DOCX preview removes HTML altChunks before rendering while preserving paragraph/table/image package', async () => {
