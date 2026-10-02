@@ -1,0 +1,83 @@
+.conversation-navigation {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  min-width: 0;
+}
+.conversation-navigation-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.conversation-navigation button {
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 9px;
+  text-align: left;
+  cursor: pointer;
+}
+.conversation-navigation-tabs [aria-selected='true'],
+.conversation-navigation-results button.active {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+.conversation-navigation input {
+  width: 100%;
+  min-width: 0;
+}
+.conversation-navigation-scope {
+  font-size: 12px;
+  margin: 6px 0;
+}
+.conversation-search-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.conversation-search-count span {
+  margin-right: auto;
+}
+.conversation-navigation button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.conversation-navigation-results {
+  max-height: 230px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.conversation-navigation-results button {
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.conversation-navigation-results button:hover {
+  background: var(--surface-hover);
+}
+.conversation-outline-number {
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+}
+.markdown .math-source {
+  overflow-wrap: anywhere;
+}
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+.markdown .katex {
+  font-size: 1.08em;
+}
+[data-row-id].conversation-jump,
+[data-conversation-error].conversation-jump {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 8px;
+}

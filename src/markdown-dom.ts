@@ -1,6 +1,10 @@
-import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { translate } from './i18n';
+import { conversationMarkdown } from './markdown-math';
+import type { TokensList } from 'marked';
+
+type RenderedBlock = { html: string; nodes: Node[] };
+const renderedBlocks = new WeakMap<HTMLElement, RenderedBlock[]>();
 
 function decorateCodeBlocks(node: Node): Node {
   if (!(node instanceof HTMLElement)) return node;
@@ -39,6 +43,8 @@ function decorateCodeBlocks(node: Node): Node {
             .catch(() => {});
       }, 80);
   }
+  if (node.matches('[data-math-source]') || node.querySelector('[data-math-source]'))
+    void import('./math-render').then((module) => module.renderMath(node));
   return result;
 }
 
@@ -54,26 +60,52 @@ export function updateMarkdown(
   text: string,
   originals: WeakMap<Node, Node>,
 ) {
-  // Keep full-document parsing: later reference definitions can change earlier links.
-  const fragment = DOMPurify.sanitize(
-    marked.parse(text, { async: false, gfm: true, breaks: true }) as string,
-    { RETURN_DOM_FRAGMENT: true },
-  );
-  let current = container.firstChild;
-  for (const node of Array.from(fragment.childNodes)) {
-    const next = current?.nextSibling || null;
-    if (!current || !(originals.get(current) || current).isEqualNode(node)) {
-      const original = node.cloneNode(true);
-      const decorated = decorateCodeBlocks(node);
-      originals.set(decorated, original);
-      if (current) container.replaceChild(decorated, current);
-      else container.appendChild(decorated);
-    }
-    current = next;
+  // Lex the complete document so appended reference definitions still resolve earlier links.
+  // Retain each unchanged rendered block; sanitize only HTML which actually changed.
+  const tokens = conversationMarkdown.lexer(text);
+  const previous = renderedBlocks.get(container) || [];
+  const blocks: RenderedBlock[] = [];
+  for (const token of tokens) {
+    if (token.type === 'space') continue;
+    const single = [token] as TokensList;
+    single.links = tokens.links;
+    const html = conversationMarkdown.parser(single);
+    if (!html) continue;
+    const old = previous[blocks.length];
+    blocks.push(
+      old?.html === html
+        ? old
+        : {
+            html,
+            nodes: Array.from(DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true }).childNodes),
+          },
+    );
   }
+  let current = container.firstChild;
+  for (const block of blocks)
+    for (let index = 0; index < block.nodes.length; index++) {
+      const node = block.nodes[index];
+      if (current && node === current) {
+        current = current.nextSibling;
+        continue;
+      }
+      const next = current?.nextSibling || null;
+      if (current && (originals.get(current) || current).isEqualNode(node)) {
+        block.nodes[index] = current;
+      } else {
+        const original = node.cloneNode(true);
+        const decorated = decorateCodeBlocks(node);
+        originals.set(decorated, original);
+        if (current) container.replaceChild(decorated, current);
+        else container.appendChild(decorated);
+        block.nodes[index] = decorated;
+      }
+      current = next;
+    }
   while (current) {
     const next = current.nextSibling;
     container.removeChild(current);
     current = next;
   }
+  renderedBlocks.set(container, blocks);
 }

@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  ClipboardCopy,
   LoaderCircle,
   RotateCcw,
   Terminal,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import { copy, errorText, request } from './lib';
 import { updateMarkdown, updateMarkdownLabels } from './markdown-dom';
+import { formattedClipboard } from './formatted-copy';
 import { useI18n, translate } from './i18n';
 import type { TimelineRow } from './timeline.mjs';
 
@@ -320,9 +322,18 @@ export const Message = memo(function Message({
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
-  async function copyMessage() {
+  const contentRoot = useRef<HTMLDivElement>(null);
+  async function copyMessage(formatted = false) {
     try {
-      await copy(row.text);
+      const rendered = contentRoot.current?.querySelector<HTMLElement>('.markdown');
+      if (formatted && rendered) await request('clipboard.write', formattedClipboard(rendered));
+      else if (formatted) {
+        const plain = document.createElement('div');
+        const pre = document.createElement('pre');
+        pre.textContent = row.text;
+        plain.append(pre);
+        await request('clipboard.write', { text: row.text, html: plain.innerHTML });
+      } else await copy(row.text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch (e) {
@@ -331,7 +342,7 @@ export const Message = memo(function Message({
   }
   if (row.kind === 'thought')
     return (
-      <details className="thought" open={row.streaming}>
+      <details className="thought" open={row.streaming} data-row-id={row.id}>
         <summary>
           <span className={`thinking-dot ${row.streaming ? 'pulsing' : ''}`} />
           {t(row.streaming ? '正在思考' : '思考过程')}
@@ -344,7 +355,10 @@ export const Message = memo(function Message({
     );
   if (row.kind === 'tool')
     return (
-      <details className={`tool-row ${row.status === 'failed' ? 'failed' : ''}`}>
+      <details
+        className={`tool-row ${row.status === 'failed' ? 'failed' : ''}`}
+        data-row-id={row.id}
+      >
         <summary>
           {['pending', 'in_progress'].includes(row.status || '') ? (
             <Spinner />
@@ -374,11 +388,11 @@ export const Message = memo(function Message({
       </details>
     );
   return (
-    <article className={`message ${row.kind}`}>
+    <article className={`message ${row.kind}`} data-row-id={row.id}>
       <div className="message-avatar">
         {row.kind === 'assistant' ? <Brand small /> : <span>{t('你')}</span>}
       </div>
-      <div className="message-content">
+      <div className="message-content" ref={contentRoot}>
         <div className="message-author">
           {row.kind === 'assistant' ? 'Grok' : t('你')}
           {row.streaming && <span className="live-label">{t('正在回复')}</span>}
@@ -395,8 +409,11 @@ export const Message = memo(function Message({
         </div>
         {row.streaming && <span className="stream-cursor" />}
         <div className="message-actions">
-          <IconButton label={t('复制内容')} onClick={() => void copyMessage()}>
+          <IconButton label={t('复制原文')} onClick={() => void copyMessage()}>
             {copied ? <Check size={14} /> : <Copy size={14} />}
+          </IconButton>
+          <IconButton label={t('复制格式化内容')} onClick={() => void copyMessage(true)}>
+            <ClipboardCopy size={14} />
           </IconButton>
           {row.kind === 'user' && (
             <IconButton
