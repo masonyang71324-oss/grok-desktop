@@ -1,0 +1,32 @@
+name: Verify clean Windows CLI installation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/verify-cli-install.yml'
+      - 'scripts/verify-clean-cli-install.cjs'
+      - 'electron/cli-installer.cjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Verify official install and download cancellation on this disposable runner
+        run: node scripts/verify-clean-cli-install.cjs
+        env:
+          GROK_DESKTOP_DISPOSABLE_WINDOWS: '1'
+      - name: Preserve sanitized installer report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-windows-cli-install-report
+          path: test-results/clean-cli-install.json
+          if-no-files-found: warn
