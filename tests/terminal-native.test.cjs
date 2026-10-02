@@ -8,7 +8,7 @@ test(
   async (t) => {
     const events = [];
     const started = performance.now();
-    let firstOutputMs, commandOutputMs;
+    let firstOutputMs, promptReadyMs, commandOutputMs;
     const manager = createTerminalManager({
       spawnPty: (...args) => {
         const pty = spawnHostedPty(...args);
@@ -21,8 +21,19 @@ test(
     });
     t.after(() => manager.dispose());
     const entry = manager.open({ cwd: process.cwd() });
-    manager.write({ id: entry.id, data: "Write-Output ('NATIVE_' + 'PROBE_READY'); exit\r" });
     const deadline = Date.now() + 10000;
+    const promptReady = () => {
+      const plain = manager
+        .state({ id: entry.id })
+        .log.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '');
+      return /(?:^|[\r\n])PS [^\r\n]*> ?$/.test(plain);
+    };
+    while (!promptReady() && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    if (promptReady()) {
+      promptReadyMs = Math.round(performance.now() - started);
+      manager.write({ id: entry.id, data: "Write-Output ('NATIVE_' + 'PROBE_READY'); exit\r" });
+    }
     while (manager.state({ id: entry.id }).status === 'running' && Date.now() < deadline) {
       if (manager.state({ id: entry.id }).log.includes('NATIVE_PROBE_READY'))
         commandOutputMs ??= Math.round(performance.now() - started);
@@ -34,6 +45,7 @@ test(
         node: process.version,
         windows: require('node:os').release(),
         firstOutputMs,
+        promptReadyMs,
         commandOutputMs,
         elapsedMs: Math.round(performance.now() - started),
         status: state.status,
