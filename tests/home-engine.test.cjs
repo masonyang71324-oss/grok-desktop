@@ -26,6 +26,82 @@ before(async () => {
 });
 after(async () => browser?.close());
 
+test('returning to the previous navigation while its first save is pending persists the latest selection', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.evaluate(() => {
+    const request = window.desktop.request;
+    window.calls = [];
+    window.desktop.request = async (command, payload) => {
+      const response = await request(command, payload);
+      if (command === 'settings.save' && payload.ui?.navigationTab === 'files')
+        return new Promise((resolve) => {
+          window.finishNavigationSave = () => resolve(response);
+        });
+      return response;
+    };
+  });
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.waitForFunction(() => !!window.finishNavigationSave);
+  await page.getByRole('tab', { name: '会话', exact: true }).click();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) => call.command === 'settings.save' && call.payload.ui?.navigationTab === 'sessions',
+      ),
+    ),
+    true,
+  );
+  await page.evaluate(() => window.finishNavigationSave());
+  assert.equal(await page.evaluate(() => window.settings.ui.navigationTab), 'sessions');
+});
+
+test('navigation persists without a debounce and dragging saves its final size on release', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.evaluate(() => {
+    const schedule = window.setTimeout.bind(window);
+    window.setTimeout = (fn, delay, ...args) => (delay >= 200 ? 0 : schedule(fn, delay, ...args));
+    window.calls = [];
+  });
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) => call.command === 'settings.save' && call.payload.ui?.navigationTab === 'files',
+      ),
+    ),
+    true,
+  );
+  const handle = page.getByRole('separator', { name: '调整侧栏宽度' }),
+    bounds = await handle.boundingBox();
+  await page.evaluate(() => {
+    window.calls = [];
+  });
+  await page.mouse.move(bounds.x + 3, bounds.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 40, bounds.y + 40);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) => call.command === 'settings.save' && call.payload.ui?.inspectorWidth,
+      ),
+    ),
+    false,
+  );
+  await page.mouse.up();
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) => call.command === 'settings.save' && call.payload.ui?.inspectorWidth,
+    ),
+  );
+});
+
 test('unified navigation preserves the composer and exposes files, tasks and footer controls at small desktop sizes', async (t) => {
   const page = await fixture(t, { authStatus: 'authenticated' });
   await page.setViewportSize({ width: 980, height: 680 });
@@ -246,7 +322,11 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
             if (payload.modelId) window.models.currentModelId = payload.modelId;
             data = { models: window.models, contextWindow: window.snapshot.contextWindow };
           } else if (command === 'settings.save')
-            data = window.settings = { ...window.settings, ...payload };
+            data = window.settings = {
+              ...window.settings,
+              ...payload,
+              ui: { ...window.settings.ui, ...payload.ui },
+            };
           else if (command === 'system.run') {
             if (window.simulateUpdate) {
               window.engineStatus.version = '1.0.47';

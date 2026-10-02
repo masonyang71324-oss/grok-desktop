@@ -23,7 +23,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 - Search project files from the composer, launch Windows voice typing, and resize/remember navigation and composer dimensions.
 - Read-only DOCX/sheet/PPTX layout previews, split diffs, word marks and collapsed context. Complex content has explicit limitations and retains text/external-opening options.
 - An on-demand interactive PowerShell terminal and isolated web preview with screenshots returned to the originating conversation draft.
-- Fully idle CLI connection reclamation with session preservation, plus official CLI/ACP maintenance checks. See the [1.7.0 notes](docs/release-1.7.0.md) and [validation scope](docs/upgrade-1.7.0-validation.md).
+- Fully idle CLI connection reclamation with session preservation, plus official CLI/ACP maintenance checks. See the [1.7.1 notes](docs/release-1.7.1.md) and [validation scope](docs/upgrade-1.7.1-validation.md).
 
 - Unified Chats / Files / Tasks navigation and a persistent footer for connection, usage, context and both app/engine versions. Switching panels preserves drafts and file editing.
 - Project conversations, local drafts and restart recovery.

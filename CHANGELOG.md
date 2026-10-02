@@ -1,6 +1,12 @@
 # Changes
 
-## 1.7.0
+## 1.7.1
+
+- Publish the sixteen improvements from the 1.7.0 candidate after correcting the CI-detected settings timing issue.
+- Persist navigation changes immediately; commit resized panel dimensions on pointer release or keyboard adjustment, keeping drag movement free of repeated settings writes.
+- Add a regression that blocks delayed callbacks and checks both navigation persistence and final drag commit.
+
+## 1.7.0 (unreleased candidate)
 
 - Deliver the sixteen audited workflow improvements: search/outline, rich copy, first-run setup, enhanced diffs, file references, Office previews, web capture, interactive terminal, provider forms, rendering/idle resource improvements, resizable panels, math, upstream checks and Windows voice typing.
 - Preserve attachment and turn metadata across idle reconnection; keep original copying, document sending, external tools, approvals, queues, drafts and checkpoints.

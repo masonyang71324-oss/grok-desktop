@@ -1,6 +1,8 @@
 # 1.7.0 implementation and validation
 
-All sixteen candidates are implemented. Final local validation on 2026-10-03: **418/418 unit/component tests**, production build, complete source Electron E2E, complete packaged Electron E2E, NSIS installer and portable build all passed. Both E2E runs include the ten new cross-module checks. The release workflow also gates publication on packaged desktop-tool E2E. [Published release status](https://github.com/masonyang71324-oss/grok-desktop/releases/tag/v1.7.0).
+Release follow-up: the 1.7.0 candidate was blocked by cloud E2E before publication. Fast navigation exposed the250ms UI-settings debounce. Version1.7.1 saves navigation immediately and resized dimensions on pointer release/keyboard commit, with a failing-then-passing regression. The initial local evidence below belongs to the candidate; final1.7.1 verification is recorded separately.
+
+All sixteen candidates are implemented. Final local validation on 2026-10-03: **418/418 unit/component tests**, production build, complete source Electron E2E, complete packaged Electron E2E, NSIS installer and portable build all passed. Both E2E runs include the ten new cross-module checks. The release workflow also gates publication on packaged desktop-tool E2E. [Failed candidate CI](https://github.com/masonyang71324-oss/grok-desktop/actions/runs/37044912456).
 
 | #   | Implementation                                | Evidence                                                                                                                                                                    |
 | --- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

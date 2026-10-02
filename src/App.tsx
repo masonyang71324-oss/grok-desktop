@@ -339,26 +339,16 @@ export default function App() {
       inspector,
       inspectorTab,
       navigationTab,
-      sidebarWidth: sidebarWidth || undefined,
-      inspectorWidth: inspectorWidth || undefined,
-      composerHeight: composerHeight || undefined,
     };
-    if (JSON.stringify(settingsRef.current.ui) === JSON.stringify(ui)) return;
-    const timer = window.setTimeout(
-      () => void saveSettings({ ui }).catch((e) => notify(errorText(e))),
-      250,
+    // Persist each navigation transition. An earlier save may still be awaiting
+    // acknowledgement when the user returns to the previously saved selection.
+    void saveSettings({ ui }).catch((error) => notify(errorText(error)));
+  }, [sidebar, inspector, inspectorTab, navigationTab, initializing]);
+  function savePanelSize(key: 'sidebarWidth' | 'inspectorWidth' | 'composerHeight', value: number) {
+    void saveSettings({ ui: { [key]: value || undefined } }).catch((error) =>
+      notify(errorText(error)),
     );
-    return () => window.clearTimeout(timer);
-  }, [
-    sidebar,
-    inspector,
-    inspectorTab,
-    navigationTab,
-    sidebarWidth,
-    inspectorWidth,
-    composerHeight,
-    initializing,
-  ]);
+  }
   useEffect(() => {
     const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', resize);
@@ -834,7 +824,9 @@ export default function App() {
       area.style.height = `${composerHeight ? Math.min(composerHeight, Math.max(90, viewport.height * 0.36)) : Math.min(190, Math.max(52, area.scrollHeight))}px`;
     }
   }, [draft, composerHeight, viewport.height]);
-  async function saveSettings(patch: Partial<Settings>) {
+  async function saveSettings(
+    patch: Partial<Omit<Settings, 'ui'>> & { ui?: Partial<NonNullable<Settings['ui']>> },
+  ) {
     const previousPath = settingsRef.current.grokPath;
     const saved = await request<Settings>('settings.save', patch);
     setLocale(saved.language);
@@ -1898,7 +1890,12 @@ export default function App() {
           min={200}
           max={Math.min(480, viewport.width - 600)}
           onChange={inspector ? setInspectorWidth : setSidebarWidth}
-          onReset={() => (inspector ? setInspectorWidth(0) : setSidebarWidth(0))}
+          onCommit={(value) => savePanelSize(inspector ? 'inspectorWidth' : 'sidebarWidth', value)}
+          onReset={() => {
+            if (inspector) setInspectorWidth(0);
+            else setSidebarWidth(0);
+            savePanelSize(inspector ? 'inspectorWidth' : 'sidebarWidth', 0);
+          }}
         />
       </aside>
       <main className="workspace">
@@ -2289,7 +2286,11 @@ export default function App() {
               min={90}
               max={Math.min(360, Math.max(90, viewport.height * 0.36))}
               onChange={setComposerHeight}
-              onReset={() => setComposerHeight(0)}
+              onCommit={(value) => savePanelSize('composerHeight', value)}
+              onReset={() => {
+                setComposerHeight(0);
+                savePanelSize('composerHeight', 0);
+              }}
             />
             <div className="attachment-list">
               {attachments.map((file, index) => (
