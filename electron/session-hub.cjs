@@ -7,9 +7,41 @@ const { RuntimeActivity } = require('./background.cjs');
 const { translate: t } = require('./i18n.cjs');
 const copy = (value) => structuredClone(value);
 
+function isIdleEntry(entry) {
+  const client = entry.client;
+  return !!(
+    client.connected &&
+    entry.snapshot &&
+    entry.status === 'idle' &&
+    !entry.running &&
+    !entry.control &&
+    !entry.loading &&
+    !entry.reactivating &&
+    !entry.backgroundDone &&
+    !entry.queue.length &&
+    !entry.permissions.size &&
+    !entry.activity.busy &&
+    !entry.activity.background.size &&
+    !client.activeTurn &&
+    !client._operation &&
+    !client._loading &&
+    !client._connecting &&
+    !client._pending?.size &&
+    !client._permissions?.size
+  );
+}
+
 // One transport per owned conversation. The catalog connection never runs prompts.
 class SessionHub {
-  constructor({ emit, createClient, storageFile, beforeTurn, afterTurn, ...options }) {
+  constructor({
+    emit,
+    createClient,
+    storageFile,
+    beforeTurn,
+    afterTurn,
+    maxIdleConnections = 3,
+    ...options
+  }) {
     this.emit = emit;
     this.createClient =
       createClient || ((publish) => new GrokClient({ ...options, emit: publish }));
@@ -20,6 +52,8 @@ class SessionHub {
     this.locks = new Map();
     this.closed = false;
     this.pending = new Set();
+    this.maxIdleConnections = maxIdleConnections;
+    this.activeSessionId = null;
     this.catalog = this.createClient(emit);
     if (storageFile && fs.existsSync(storageFile)) {
       try {
@@ -84,6 +118,7 @@ class SessionHub {
       paused: false,
       snapshot: null,
       running: null,
+      lastUsed: Date.now(),
       activity: new RuntimeActivity({ isForegroundBusy: () => false }),
     };
     entry.client = this.createClient((event) => this._event(entry, event));
@@ -94,7 +129,43 @@ class SessionHub {
   _get(sessionId) {
     const entry = this.sessions.get(sessionId);
     if (!entry) throw new Error(t('此会话尚未载入，请先打开该会话后重试。'));
+    entry.lastUsed = Date.now();
     return entry;
+  }
+
+  setActiveSession(sessionId) {
+    this.activeSessionId = sessionId || null;
+    const entry = this.sessions.get(sessionId);
+    if (entry) entry.lastUsed = Date.now();
+  }
+
+  collectIdle({
+    protectSessionId = this.activeSessionId,
+    maxIdleConnections = this.maxIdleConnections,
+  } = {}) {
+    if (this.closed) return [];
+    const candidates = [...this.sessions.values()]
+      .filter(isIdleEntry)
+      .sort((a, b) => a.lastUsed - b.lastUsed);
+    const sleeping = [];
+    let excess = candidates.length - Math.max(0, maxIdleConnections);
+    for (const entry of candidates) {
+      if (excess <= 0) break;
+      if (entry.sessionId === protectSessionId) continue;
+      entry.sleepingCapabilities = copy(entry.client.capabilities || {});
+      entry.evicting = true;
+      try {
+        entry.client.dispose();
+      } finally {
+        entry.evicting = false;
+      }
+      entry.connection = 'sleeping';
+      this.emit({ type: 'connection', sessionId: entry.sessionId, state: 'sleeping' });
+      sleeping.push(entry.sessionId);
+      excess--;
+    }
+    if (sleeping.length) this._changed();
+    return sleeping;
   }
 
   _key(cwd) {
@@ -155,7 +226,7 @@ class SessionHub {
       })),
       error: entry.error,
       permissions: [...entry.permissions.values()],
-      capabilities: copy(entry.client.capabilities || {}),
+      capabilities: copy(entry.sleepingCapabilities || entry.client.capabilities || {}),
     };
   }
 
@@ -175,6 +246,9 @@ class SessionHub {
   }
 
   _event(entry, original) {
+    // An intentional resource sleep is normal, not a CLI transport failure.
+    if (entry.evicting && original.type === 'connection') return;
+    entry.lastUsed = Date.now();
     const event = { ...original, ...(entry.sessionId ? { sessionId: entry.sessionId } : {}) };
     const foreground = entry.control || entry.running;
     // Future schedules do not write now; active tasks, subagents and workflows do.
@@ -294,11 +368,20 @@ class SessionHub {
   async loadSession(payload) {
     let entry = this.sessions.get(payload.sessionId);
     if (!entry) entry = this._entry(payload.sessionId, payload.cwd);
+    entry.lastUsed = Date.now();
     if (entry.snapshot && entry.client.connected) return this._snapshot(entry);
+    const sleeping = entry.connection === 'sleeping';
+    const permissionMode = sleeping ? entry.snapshot?.permissionMode : undefined;
     if (!entry.loading)
       entry.loading = entry.client
         .loadSession(payload)
         .then((snapshot) => {
+          if (permissionMode) {
+            entry.client.setPermissionMode({ sessionId: entry.sessionId, permissionMode });
+            snapshot.permissionMode = permissionMode;
+          }
+          if (entry.connection === 'sleeping') entry.connection = 'connected';
+          delete entry.sleepingCapabilities;
           entry.snapshot = snapshot;
           return snapshot;
         })
@@ -616,20 +699,30 @@ class SessionHub {
   async configure(payload) {
     const entry = this._get(payload.sessionId);
     if (entry.running) throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
+    if (entry.connection === 'sleeping')
+      await this.loadSession({ sessionId: entry.sessionId, cwd: entry.cwd });
     const result = await entry.client.configure(payload);
     Object.assign(entry.snapshot, copy(result));
     return result;
   }
-  setPermissionMode(payload) {
+  async setPermissionMode(payload) {
     const entry = this._get(payload.sessionId);
+    if (entry.connection === 'sleeping')
+      await this.loadSession({ sessionId: entry.sessionId, cwd: entry.cwd });
     const result = entry.client.setPermissionMode(payload);
     if (entry.snapshot) entry.snapshot.permissionMode = result.permissionMode;
     return result;
   }
-  usage(payload) {
-    return (this.sessions.get(payload.sessionId)?.client || this.catalog).usage(payload);
+  async usage(payload) {
+    const entry = this.sessions.get(payload.sessionId);
+    if (entry?.connection === 'sleeping')
+      await this.loadSession({ sessionId: entry.sessionId, cwd: entry.cwd });
+    return (entry?.client || this.catalog).usage(payload);
   }
   async rename(payload) {
+    const sleeping = this.sessions.get(payload.sessionId);
+    if (sleeping?.connection === 'sleeping')
+      await this.loadSession({ sessionId: sleeping.sessionId, cwd: sleeping.cwd });
     await (this.sessions.get(payload.sessionId)?.client || this.catalog).rename(payload);
     const entry = this.sessions.get(payload.sessionId);
     if (entry) {
@@ -641,13 +734,18 @@ class SessionHub {
     const entry = this.sessions.get(payload.sessionId);
     if (entry?.running || entry?.queue.length)
       throw new Error(t('请先停止任务并移除排队消息，再删除会话。'));
+    if (entry?.connection === 'sleeping')
+      await this.loadSession({ sessionId: entry.sessionId, cwd: entry.cwd });
     await (entry?.client || this.catalog).deleteSession(payload);
     entry?.client.dispose();
     this.sessions.delete(payload.sessionId);
     this._changed();
   }
-  extension(method, params = {}, routingSessionId = params.sessionId) {
-    return (this.sessions.get(routingSessionId)?.client || this.catalog).extension(method, params);
+  async extension(method, params = {}, routingSessionId = params.sessionId) {
+    const entry = this.sessions.get(routingSessionId);
+    if (entry?.connection === 'sleeping')
+      await this.loadSession({ sessionId: entry.sessionId, cwd: entry.cwd });
+    return (entry?.client || this.catalog).extension(method, params);
   }
   async restart() {
     if (this.activeTurn) throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
@@ -680,4 +778,4 @@ class SessionHub {
     );
   }
 }
-module.exports = { SessionHub };
+module.exports = { SessionHub, isIdleEntry };
