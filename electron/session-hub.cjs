@@ -209,7 +209,34 @@ class SessionHub {
       if (entry.running && !entry.permissions.size) entry.status = 'running';
     }
     if (event.type === 'update' && entry.snapshot) entry.snapshot.updates.push(copy(event.update));
+    const update =
+      event.type === 'update' ? event.update : event.type === 'notification' ? event.payload : null;
+    if (entry.snapshot && update) {
+      if (update.sessionUpdate === 'current_mode_update' && entry.snapshot.modes)
+        entry.snapshot.modes.currentModeId = update.currentModeId;
+      if (update.sessionUpdate === 'config_option_update') {
+        entry.snapshot.configOptions = copy(update.configOptions);
+        entry.snapshot._meta = {
+          ...entry.snapshot._meta,
+          configOptions: copy(update.configOptions),
+        };
+      }
+      if (
+        update.sessionUpdate === 'model_changed' &&
+        Number.isSafeInteger(update.context_window_selection) &&
+        update.context_window_selection > 0
+      )
+        entry.snapshot.contextWindow = update.context_window_selection;
+    }
     if (event.type === 'models' && entry.snapshot) entry.snapshot.models = copy(event.models);
+    if (event.type === 'models' && entry.snapshot) {
+      const selected = event.models.availableModels?.find(
+        (model) => model.modelId === event.models.currentModelId,
+      );
+      if (selected?._meta?.contextWindow !== undefined)
+        entry.snapshot.contextWindow = selected._meta.contextWindow;
+      else delete entry.snapshot.contextWindow;
+    }
     if (event.type === 'commands' && entry.snapshot) entry.snapshot.commands = copy(event.commands);
     if (['turn-end', 'turn-error'].includes(event.type) && entry.running) {
       // The final checkpoint is part of the directory lock, before the next turn.

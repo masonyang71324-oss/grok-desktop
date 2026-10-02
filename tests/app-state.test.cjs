@@ -12,6 +12,13 @@ const { EventEmitter } = require('node:events');
 const { PassThrough, Writable } = require('node:stream');
 const root = path.join(__dirname, '..');
 const ts = require(path.join(root, 'node_modules/typescript'));
+const libExports = {};
+vm.runInNewContext(
+  ts.transpileModule(fs.readFileSync(path.join(root, 'src/lib.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText,
+  { exports: libExports, require: () => ({ translate: (key) => key }), Error },
+);
 const { GrokClient } = require(path.join(root, 'electron/acp.cjs'));
 const cwd = 'C:\\fake-project';
 const models = { currentModelId: 'grok', availableModels: [{ modelId: 'grok', name: 'Grok' }] };
@@ -164,7 +171,13 @@ async function fixture(
     getExecutable: () => 'fake.exe',
     spawnFn,
     emit(event) {
-      queueMicrotask(() => listener?.(event));
+      // Match SessionHub's session event scope, including transport lifecycle events.
+      queueMicrotask(() =>
+        listener?.({
+          ...event,
+          ...(currentFakeSession ? { sessionId: event.sessionId || currentFakeSession } : {}),
+        }),
+      );
     },
   });
   const request = async (command, payload) => {
@@ -211,6 +224,7 @@ async function fixture(
     },
     './lib': {
       request,
+      classifyFailure: libExports.classifyFailure,
       errorText: (error) => error.message,
       baseName: (value) => value,
       readableDate: (value) => value,

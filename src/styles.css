@@ -656,6 +656,70 @@ code {
 .home-update-status.downloading .home-update-copy {
   color: var(--accent);
 }
+.home-version-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 25px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.home-engine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.home-engine-status:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.home-engine-status strong {
+  color: var(--text);
+  font-weight: 650;
+}
+.home-engine-status.required {
+  color: var(--danger);
+}
+.home-version-bar .icon-button {
+  width: 28px;
+  height: 28px;
+}
+.engine-details {
+  margin: 0 0 20px;
+}
+.engine-details > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.engine-details dt,
+.engine-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.engine-details dd {
+  margin: 0;
+  font-size: 13px;
+}
+.engine-path {
+  overflow-wrap: anywhere;
+}
+.engine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.engine-hint {
+  margin-top: 15px;
+}
 .connection-pill {
   display: flex;
   align-items: center;
@@ -1335,7 +1399,8 @@ code {
   color: var(--accent);
 }
 .model-control select,
-.effort-control select {
+.effort-control select,
+.context-control select {
   border: 0;
   background: transparent;
   font-size: 10px;
@@ -1347,10 +1412,12 @@ code {
   height: 28px;
 }
 .model-control select:hover,
-.effort-control select:hover {
+.effort-control select:hover,
+.context-control select:hover {
   background: var(--surface-hover);
 }
-.effort-control {
+.effort-control,
+.context-control {
   margin-left: 3px;
   border-left: 1px solid var(--border);
   padding-left: 5px;
@@ -2769,7 +2836,8 @@ code {
   max-width: 200px;
 }
 .model-control select,
-.effort-control select {
+.effort-control select,
+.context-control select {
   font-size: 12px;
 }
 .composer-bottom,

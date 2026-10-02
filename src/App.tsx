@@ -23,6 +23,7 @@ import {
   Paperclip,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   ShieldCheck,
@@ -40,9 +41,12 @@ import type {
   AppUpdateState,
   Attachment,
   Bootstrap,
+  CliStatus,
   Command,
+  ConfigureResult,
   DesktopEvent,
   ModelsState,
+  ManagementResult,
   PermissionRequest,
   SessionSnapshot,
   SessionSummary,
@@ -99,11 +103,22 @@ type Permission = {
   sessionId: string;
 };
 type Dialog =
-  'actions' | 'settings' | 'management' | 'usage' | 'shortcuts' | 'tasks' | 'project-tools' | null;
+  | 'actions'
+  | 'settings'
+  | 'management'
+  | 'usage'
+  | 'shortcuts'
+  | 'tasks'
+  | 'project-tools'
+  | 'engine'
+  | null;
 export default function App() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<Settings>(defaults);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
+  const [engineAction, setEngineAction] = useState('');
+  const [engineError, setEngineError] = useState('');
   const [appUpdate, setAppUpdate] = useState<AppUpdateState>({
     mode: 'development',
     status: 'unsupported',
@@ -403,12 +418,12 @@ export default function App() {
       }
     }
   }
-  async function initialize() {
+  async function initialize(refreshCatalog = false) {
     setInitializing(true);
     setConnection('connecting');
     setConnectionError('');
     try {
-      const data = await request<Bootstrap>('bootstrap');
+      const data = await request<Bootstrap>(refreshCatalog ? 'cli.refresh' : 'bootstrap');
       void request<TaskSummary[]>('tasks.list')
         .then((value) => {
           setTasks(value);
@@ -416,6 +431,12 @@ export default function App() {
         })
         .catch(() => {});
       setBootstrap(data);
+      setCliStatus({
+        ...data.cli,
+        authStatus: data.cli.authStatus || 'unknown',
+        models: data.models,
+      });
+      void readEngineStatus();
       setAppUpdate(
         data.update || {
           mode: 'development',
@@ -479,6 +500,7 @@ export default function App() {
         );
         for (const item of items) {
           if (item.update.sessionUpdate === 'plan') setPlan(item.update.entries || []);
+          updateContextWindow(item.update);
           if (item.update.sessionUpdate === 'current_mode_update') {
             const current = sessionRef.current;
             const modeId = item.update.currentModeId || item.update.modeId;
@@ -496,7 +518,9 @@ export default function App() {
     );
     const unsub = window.desktop?.onEvent((event: DesktopEvent) => {
       if (event.type === 'connection') {
+        if (!event.sessionId && sessionRef.current) return;
         if (event.sessionId && event.sessionId !== sessionRef.current?.sessionId) return;
+        if (event.message) updateAuthentication(event.message);
         if (event.state === 'error' || event.state === 'disconnected') {
           if (sessionRef.current) needsRestoreRef.current = true;
           setConnection(event.state);
@@ -539,14 +563,35 @@ export default function App() {
         return;
       }
       if (event.type === 'commands') {
-        if (!event.sessionId || event.sessionId === sessionRef.current?.sessionId)
+        if (
+          (!event.sessionId && !sessionRef.current) ||
+          event.sessionId === sessionRef.current?.sessionId
+        )
           setCommands(event.commands);
         return;
       }
       if (event.type === 'models') {
-        if (!event.sessionId || event.sessionId === sessionRef.current?.sessionId) {
+        if (
+          (!event.sessionId && !sessionRef.current) ||
+          event.sessionId === sessionRef.current?.sessionId
+        ) {
           modelsRef.current = event.models;
           setModels(event.models);
+          const current = sessionRef.current;
+          if (current) {
+            const model = event.models.availableModels.find(
+              (item) => item.modelId === event.models.currentModelId,
+            );
+            const next = {
+              ...current,
+              models: event.models,
+              ...(typeof model?._meta?.contextWindow === 'number'
+                ? { contextWindow: model._meta.contextWindow }
+                : {}),
+            };
+            sessionRef.current = next;
+            setSession(next);
+          }
         }
         return;
       }
@@ -568,6 +613,9 @@ export default function App() {
         return;
       }
       if (event.type === 'notification') {
+        if (event.kind === 'model_changed' && event.sessionId === sessionRef.current?.sessionId) {
+          updateContextWindow(event.payload);
+        }
         if (event.kind === 'settings-reloaded') {
           if (sessionRef.current) {
             needsRestoreRef.current = true;
@@ -628,7 +676,10 @@ export default function App() {
         setPending(false);
         setCancelling(false);
         setPermissions((items) => items.filter((item) => item.sessionId !== event.sessionId));
-        if (event.type === 'turn-error') setTurnError(event.message);
+        if (event.type === 'turn-error') {
+          setTurnError(event.message);
+          updateAuthentication(event.message);
+        }
         setRevision((value) => value + 1);
         void refreshSessions();
       }
@@ -797,24 +848,35 @@ export default function App() {
       setSession(next);
     }
   }
-  async function configureSelection(patch: { modelId?: string; effort?: string; modeId?: string }) {
+  function updateContextWindow(payload: Record<string, any> | undefined) {
+    const current = sessionRef.current;
+    const value =
+      payload?.context_window_selection ?? payload?.contextWindow ?? payload?._meta?.contextWindow;
+    if (!current || typeof value !== 'number') return;
+    const next = { ...current, contextWindow: value };
+    sessionRef.current = next;
+    setSession(next);
+  }
+  async function configureSelection(patch: {
+    modelId?: string;
+    effort?: string;
+    modeId?: string;
+    contextWindow?: number;
+  }) {
     if (busyRef.current || transitionRef.current) return;
     if (needsRestoreRef.current && !(await restoreSession())) return;
     transitionRef.current = true;
     setConfiguring(true);
     try {
       if (sessionRef.current) {
-        const result = await request<{
-          models: ModelsState;
-          modes?: SessionSnapshot['modes'];
-        }>('session.configure', {
+        const result = await request<ConfigureResult>('session.configure', {
           sessionId: sessionRef.current.sessionId,
           ...patch,
         });
         modelsRef.current = result.models;
         setModels(result.models);
-        if (result.modes && sessionRef.current) {
-          const next = { ...sessionRef.current, modes: result.modes };
+        if (sessionRef.current) {
+          const next = { ...sessionRef.current, ...result };
           sessionRef.current = next;
           setSession(next);
         }
@@ -921,6 +983,7 @@ export default function App() {
       setRun(null);
       if (userRowId) setRows((previous) => previous.filter((row) => row.id !== userRowId));
       setTurnError(errorText(e));
+      updateAuthentication(errorText(e));
       notify(errorText(e));
       persistDraft();
       if (needsRestoreRef.current) void restoreSession();
@@ -941,16 +1004,20 @@ export default function App() {
     if (action === 'usage') setDialog('usage');
     else if (action === 'settings') setDialog('settings');
     else if (action === 'login')
-      void request('system.open', { target: 'terminal', cwd: cwdRef.current }).catch((e) =>
+      void request('system.open', { target: 'grok-login', cwd: cwdRef.current }).catch((e) =>
         notify(errorText(e)),
       );
-    else if (action === 'reconnect') void initialize();
+    else if (action === 'reconnect') void initialize(true);
     else {
       const last = [...rows].reverse().find((row) => row.kind === 'user');
       if (last && !draftValueRef.current.trim() && !attachmentRef.current.length)
         fillDraft(last.text, last.attachments || []);
       else draftRef.current?.focus();
     }
+  }
+  function updateAuthentication(error: string) {
+    if (classifyFailure(error).action === 'login')
+      setCliStatus((previous) => (previous ? { ...previous, authStatus: 'required' } : previous));
   }
   function recoveryLabel(error: string) {
     return t(
@@ -1177,15 +1244,47 @@ export default function App() {
   }
   const currentModelId = session
     ? models.currentModelId
-    : settings.modelId || models.currentModelId;
+    : models.availableModels.some((model) => model.modelId === settings.modelId)
+      ? settings.modelId
+      : models.currentModelId;
   const selectedModel = models.availableModels.find((model) => model.modelId === currentModelId);
-  const currentEffort = session
+  const effortOptions = selectedModel?._meta?.reasoningEfforts || [];
+  const selectedEffort = session
     ? selectedModel?._meta?.reasoningEffort || ''
     : settings.effort || selectedModel?._meta?.reasoningEffort || '';
-  const effortOptions = selectedModel?._meta?.reasoningEfforts || [];
+  const defaultEffort = effortOptions.find((option) => option.default);
+  const currentEffort = effortOptions.some(
+    (option) => (option.value || option.id) === selectedEffort,
+  )
+    ? selectedEffort
+    : defaultEffort?.value || defaultEffort?.id || '';
+  const contextWindows = selectedModel?._meta?.contextWindows || [];
+  const selectedContextWindow =
+    session?.contextWindow ??
+    selectedModel?._meta?.contextWindow ??
+    selectedModel?._meta?.totalContextTokens;
+  const currentContextWindow = contextWindows.includes(selectedContextWindow || 0)
+    ? selectedContextWindow
+    : '';
   const currentTitle =
     sessions.find((item) => item.sessionId === session?.sessionId)?.title || t('新会话');
   const busy = !!run || pending;
+  const engineBusy =
+    busy ||
+    tasks.some(
+      (task) =>
+        ['running', 'waiting', 'starting', 'cancelling'].includes(task.status) ||
+        !!task.turnId ||
+        task.queued.length > 0 ||
+        task.permissions.length > 0,
+    );
+  const engineAuthStatus = cliStatus?.authStatus || 'unknown';
+  const engineAuthLabel =
+    engineAuthStatus === 'authenticated'
+      ? t('已登录')
+      : engineAuthStatus === 'required'
+        ? t('需要登录')
+        : t('登录状态未知');
   const filteredSessions = sessions.filter((item) =>
     item.title.toLowerCase().includes(search.toLowerCase()),
   );
@@ -1219,6 +1318,65 @@ export default function App() {
   async function runUpdateAction(command: 'update.check' | 'update.download' | 'update.install') {
     const next = await request<AppUpdateState>(command);
     setAppUpdate(next);
+  }
+  async function readEngineStatus(checkUpdate = false) {
+    try {
+      const status = await request<CliStatus>(
+        'cli.status',
+        checkUpdate ? { checkUpdate: true } : undefined,
+      );
+      setCliStatus(status);
+      setEngineError(status.error || '');
+    } catch (error) {
+      setEngineError(errorText(error));
+      setCliStatus((previous) => (previous ? { ...previous, authStatus: 'unknown' } : previous));
+    }
+  }
+  async function runEngineAction(action: 'check' | 'refresh' | 'update' | 'login') {
+    if (engineAction || (action === 'update' && (engineBusy || transitionRef.current))) return;
+    setEngineAction(action);
+    setEngineError('');
+    try {
+      if (action === 'login') {
+        await request('system.open', { target: 'grok-login', cwd: cwdRef.current });
+      } else if (action === 'check') {
+        await readEngineStatus(true);
+      } else {
+        if (action === 'update') {
+          const result = await request<ManagementResult>('system.run', {
+            action: 'update-install',
+            cwd: cwdRef.current,
+            values: {},
+          });
+          if (result.exitCode) throw new Error(result.text || t('引擎更新失败'));
+          await initialize();
+        } else {
+          const data = await request<Bootstrap>('cli.refresh');
+          setBootstrap(data);
+          if (!sessionRef.current) {
+            modelsRef.current = data.models;
+            setModels(data.models);
+            setCommands(data.commands);
+            setConnection(data.cli.connected ? 'ready' : 'error');
+            setConnectionError(data.cli.error || '');
+          }
+        }
+        await readEngineStatus();
+        notify(
+          t(
+            action === 'update'
+              ? 'Grok Build 已更新'
+              : sessionRef.current
+                ? '引擎与模型已刷新，新会话将使用最新模型列表。'
+                : '引擎与模型已刷新',
+          ),
+        );
+      }
+    } catch (error) {
+      setEngineError(errorText(error));
+    } finally {
+      setEngineAction('');
+    }
   }
   return (
     <div
@@ -1421,35 +1579,6 @@ export default function App() {
             <span title={currentTitle}>{currentTitle}</span>
           </div>
           <div className="topbar-actions">
-            {appUpdate.currentVersion && (
-              <button
-                type="button"
-                className={`home-update-status ${appUpdate.status}`}
-                title={t('点击检查 Grok Desktop 更新')}
-                disabled={appUpdate.status === 'checking'}
-                onClick={() => {
-                  if (
-                    appUpdate.status === 'available' ||
-                    appUpdate.status === 'downloading' ||
-                    appUpdate.status === 'downloaded' ||
-                    appUpdate.status === 'unsupported'
-                  ) {
-                    setDialog('settings');
-                    return;
-                  }
-                  void runUpdateAction('update.check').catch(() =>
-                    notify(t('更新操作失败，请稍后重试。')),
-                  );
-                }}
-              >
-                <span className="home-update-product">Grok Desktop</span>
-                <strong>v{appUpdate.currentVersion}</strong>
-                <span className="home-update-separator" aria-hidden="true">
-                  ·
-                </span>
-                <span className="home-update-copy">{homeUpdateStatus}</span>
-              </button>
-            )}
             <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
               <Workflow size={17} />
             </IconButton>
@@ -1537,6 +1666,57 @@ export default function App() {
             </IconButton>
           </div>
         </header>
+        <div className="home-version-bar">
+          {appUpdate.currentVersion && (
+            <button
+              type="button"
+              className={`home-update-status ${appUpdate.status}`}
+              title={t('点击检查 Grok Desktop 更新')}
+              disabled={appUpdate.status === 'checking'}
+              onClick={() => {
+                if (
+                  ['available', 'downloading', 'downloaded', 'unsupported'].includes(
+                    appUpdate.status,
+                  )
+                ) {
+                  setDialog('settings');
+                  return;
+                }
+                void runUpdateAction('update.check').catch(() =>
+                  notify(t('更新操作失败，请稍后重试。')),
+                );
+              }}
+            >
+              <span className="home-update-product">Grok Desktop</span>
+              <strong>v{appUpdate.currentVersion}</strong>
+              <span className="home-update-separator" aria-hidden="true">
+                ·
+              </span>
+              <span className="home-update-copy">{homeUpdateStatus}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className={`home-engine-status ${engineAuthStatus}`}
+            aria-label={t('Grok Build 引擎详情')}
+            aria-haspopup="dialog"
+            aria-expanded={dialog === 'engine'}
+            onClick={() => setDialog('engine')}
+          >
+            <span>Grok Build</span>
+            <strong>{cliStatus?.version ? `v${cliStatus.version}` : t('版本未知')}</strong>
+            <span aria-hidden="true">·</span>
+            <span>{engineAuthLabel}</span>
+            <ChevronDown size={12} />
+          </button>
+          <IconButton
+            label={t('刷新引擎与模型')}
+            disabled={!!engineAction || initializing}
+            onClick={() => void runEngineAction('refresh')}
+          >
+            <RefreshCw size={14} />
+          </IconButton>
+        </div>
         {(connection === 'error' || connection === 'disconnected') && (
           <div className="connection-banner">
             <TriangleAlert size={16} />
@@ -1881,6 +2061,25 @@ export default function App() {
                     </select>
                   </label>
                 )}
+                {!!session && contextWindows.length > 1 && (
+                  <label className="context-control" title={t('上下文窗口')}>
+                    <select
+                      aria-label={t('上下文窗口')}
+                      value={currentContextWindow}
+                      disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
+                      onChange={(event) =>
+                        void configureSelection({ contextWindow: Number(event.target.value) })
+                      }
+                    >
+                      {!currentContextWindow && <option value="">{t('默认上下文')}</option>}
+                      {contextWindows.map((tokens) => (
+                        <option key={tokens} value={tokens}>
+                          {Math.round(tokens / 1000)}K
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {!!session?.modes?.availableModes?.length && (
                   <label className="mode-control" title={t('会话模式')}>
                     <select
@@ -1997,6 +2196,82 @@ export default function App() {
           </div>
         }
       >
+        {dialog === 'engine' && (
+          <Modal
+            title={t('Grok Build 引擎')}
+            subtitle={t('用于运行 Grok 会话的本机引擎。')}
+            onClose={() => setDialog(null)}
+          >
+            <dl className="engine-details">
+              <div>
+                <dt>{t('引擎版本')}</dt>
+                <dd>{cliStatus?.version || t('版本未知')}</dd>
+              </div>
+              <div>
+                <dt>{t('登录状态')}</dt>
+                <dd>{engineAuthLabel}</dd>
+              </div>
+              <div>
+                <dt>{t('可执行文件')}</dt>
+                <dd className="engine-path">
+                  {cliStatus?.path || bootstrap?.cli.path || t('未找到')}
+                </dd>
+              </div>
+              {cliStatus?.latestVersion && (
+                <div>
+                  <dt>{t('引擎更新')}</dt>
+                  <dd>
+                    {cliStatus.updateAvailable
+                      ? t('可更新至 {version}', { version: cliStatus.latestVersion })
+                      : t('已是最新')}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {engineError && (
+              <p className="danger-text" role="alert">
+                {engineError}
+              </p>
+            )}
+            <div className="engine-actions">
+              <button
+                className="secondary-button"
+                disabled={!!engineAction}
+                onClick={() => void runEngineAction('login')}
+              >
+                {t('登录 Grok Build')}
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!!engineAction}
+                onClick={() => void runEngineAction('refresh')}
+              >
+                {engineAction === 'refresh' && <Spinner />}
+                {t('刷新引擎与模型')}
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!!engineAction}
+                onClick={() => void runEngineAction('check')}
+              >
+                {engineAction === 'check' && <Spinner />}
+                {t('检查引擎更新')}
+              </button>
+              <button
+                className="primary-button"
+                disabled={
+                  !!engineAction || engineBusy || configuring || !!loadingSession || initializing
+                }
+                onClick={() => void runEngineAction('update')}
+              >
+                {engineAction === 'update' && <Spinner />}
+                {t('更新 Grok Build')}
+              </button>
+            </div>
+            <p className="engine-hint">{t('登录完成后，点击刷新引擎与模型。')}</p>
+            {engineBusy && <p className="engine-hint">{t('等待所有任务结束后可更新引擎。')}</p>}
+          </Modal>
+        )}
         {dialog === 'tasks' && (
           <TaskCenter
             tasks={tasks}

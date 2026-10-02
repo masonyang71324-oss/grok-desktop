@@ -21,6 +21,42 @@ const models = {
     },
   ],
 };
+const currentModels = {
+  currentModelId: 'grok-4.7',
+  availableModels: [
+    {
+      modelId: 'grok-4.7',
+      name: 'Grok 4.7',
+      _meta: {
+        supportsReasoningEffort: true,
+        reasoningEffort: 'xhigh',
+        reasoningEfforts: [
+          { id: 'low', value: 'low', label: 'Low', default: false },
+          { id: 'medium', value: 'medium', label: 'Medium', default: false },
+          { id: 'high', value: 'high', label: 'High', default: true },
+          { id: 'xhigh', value: 'xhigh', label: 'Extra High', default: false },
+        ],
+        contextWindows: [256000, 500000],
+        totalContextTokens: 256000,
+      },
+    },
+    {
+      modelId: 'grok-4.5',
+      name: 'Grok 4.5',
+      _meta: {
+        supportsReasoningEffort: true,
+        reasoningEffort: 'high',
+        reasoningEfforts: [
+          { id: 'low', value: 'low', label: 'Low', default: false },
+          { id: 'medium', value: 'medium', label: 'Medium', default: false },
+          { id: 'high', value: 'high', label: 'High', default: true },
+        ],
+        contextWindows: [256000, 500000],
+        totalContextTokens: 256000,
+      },
+    },
+  ],
+};
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(t, override = () => false, options = {}) {
   const received = [],
@@ -141,6 +177,385 @@ test('initialize identifies the supplied desktop application version', async (t)
     f.received.find((req) => req.method === 'initialize').params.clientInfo.version,
     '9.8.7',
   );
+});
+
+test('explicit default effort resets to the advertised default while omission preserves effort', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  await f.client.configure({ sessionId: 'session-a' });
+  assert.equal(f.received.filter((req) => req.method === 'session/set_model').length, 0);
+  const configured = await f.client.configure({ sessionId: 'session-a', effort: '' });
+  assert.deepEqual(f.received.find((req) => req.method === 'session/set_model')?.params, {
+    sessionId: 'session-a',
+    modelId: 'grok-4.7',
+    _meta: { reasoningEffort: 'high' },
+  });
+  assert.equal(configured.models.availableModels[0]._meta.reasoningEffort, 'high');
+});
+
+test('new sessions reconcile obsolete saved models with the returned session default', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  const session = await f.client.newSession({
+    cwd: 'C:\\project',
+    modelId: 'removed-model',
+    effort: 'medium',
+  });
+  assert.equal(session.models.currentModelId, 'grok-4.7');
+  assert.deepEqual(f.received.find((req) => req.method === 'session/set_model')?.params, {
+    sessionId: 'session-a',
+    modelId: 'grok-4.7',
+    _meta: { reasoningEffort: 'medium' },
+  });
+});
+
+test('new sessions replace unsupported saved effort with the target model default', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  const session = await f.client.newSession({
+    cwd: 'C:\\project',
+    modelId: 'grok-4.5',
+    effort: 'xhigh',
+  });
+  assert.equal(session.models.currentModelId, 'grok-4.5');
+  assert.deepEqual(f.received.find((req) => req.method === 'session/set_model')?.params, {
+    sessionId: 'session-a',
+    modelId: 'grok-4.5',
+    _meta: { reasoningEffort: 'high' },
+  });
+  await assert.rejects(f.client.configure({ sessionId: 'session-a', effort: 'xhigh' }), /推理强度/);
+  await assert.rejects(
+    f.client.configure({ sessionId: 'session-a', modelId: 'removed-model' }),
+    /模型/,
+  );
+});
+
+test('top-level configuration options survive session creation and live configuration updates', async (t) => {
+  const configOptions = [
+    {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      type: 'select',
+      currentValue: 'high',
+      options: [{ value: 'high', name: 'High' }],
+    },
+  ];
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models, configOptions });
+    return true;
+  });
+  const session = await f.client.newSession({ cwd: 'C:\\project' });
+  assert.deepEqual(session.configOptions, configOptions);
+  const nextOptions = [
+    { ...configOptions[0], currentValue: 'low', options: [{ value: 'low', name: 'Low' }] },
+  ];
+  f.child().deliver({
+    jsonrpc: '2.0',
+    method: 'session/update',
+    params: {
+      sessionId: 'session-a',
+      update: { sessionUpdate: 'config_option_update', configOptions: nextOptions },
+    },
+  });
+  await tick();
+  const configured = await f.client.configure({ sessionId: 'session-a' });
+  assert.deepEqual(configured.configOptions, nextOptions);
+  configured.configOptions[0].currentValue = 'caller mutation';
+  assert.equal(f.client._session('session-a').configOptions[0].currentValue, 'low');
+});
+
+test('context window configuration uses the model setter even when model and effort are unchanged', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  const session = await f.client.newSession({ cwd: 'C:\\project' });
+  assert.equal(session.contextWindow, 256000);
+  const configured = await f.client.configure({
+    sessionId: 'session-a',
+    modelId: 'grok-4.7',
+    effort: 'xhigh',
+    contextWindow: 500000,
+  });
+  assert.deepEqual(f.received.find((req) => req.method === 'session/set_model')?.params, {
+    sessionId: 'session-a',
+    modelId: 'grok-4.7',
+    _meta: { reasoningEffort: 'xhigh', contextWindow: 500000 },
+  });
+  assert.equal(configured.contextWindow, 500000);
+  assert.equal(configured.models.availableModels[0]._meta.contextWindow, 500000);
+  assert.equal(
+    f.events.findLast((event) => event.type === 'models').models.availableModels[0]._meta
+      .contextWindow,
+    500000,
+  );
+  f.child().deliver({
+    jsonrpc: '2.0',
+    method: '_x.ai/session_notification',
+    params: {
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'model_changed',
+        model_id: 'grok-4.7',
+        reasoning_effort: 'xhigh',
+        context_window_selection: 256000,
+      },
+    },
+  });
+  await tick();
+  assert.equal(f.client._session('session-a').contextWindow, 256000);
+  assert.equal(
+    f.events.findLast((event) => event.type === 'models').models.availableModels[0]._meta
+      .contextWindow,
+    256000,
+  );
+  await f.client.send({ sessionId: 'session-a', text: 'work' });
+  await assert.rejects(
+    f.client.configure({ sessionId: 'session-a', contextWindow: 500000 }),
+    /正在|运行/,
+  );
+});
+
+test('model setter responses retain returned configuration options', async (t) => {
+  const configOptions = [
+    {
+      id: 'reasoning_effort',
+      name: 'Reasoning Effort',
+      category: 'thought_level',
+      type: 'select',
+      currentValue: 'high',
+      options: [{ value: 'high', name: 'High' }],
+    },
+  ];
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/set_model') return false;
+    child.reply(req, { configOptions });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  const configured = await f.client.configure({ sessionId: 'session-a', effort: 'high' });
+  assert.deepEqual(configured.configOptions, configOptions);
+});
+
+test('switching models without a context override preserves a supported session window', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  await f.client.configure({ sessionId: 'session-a', contextWindow: 500000 });
+  const configured = await f.client.configure({
+    sessionId: 'session-a',
+    modelId: 'grok-4.5',
+    effort: 'high',
+  });
+  assert.equal(configured.contextWindow, 500000);
+  assert.equal(configured.models.availableModels[1]._meta.contextWindow, 500000);
+  assert.deepEqual(f.received.findLast((req) => req.method === 'session/set_model').params, {
+    sessionId: 'session-a',
+    modelId: 'grok-4.5',
+    _meta: { reasoningEffort: 'high' },
+  });
+});
+
+test('context configuration rejects windows outside the advertised positive integer choices', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  for (const contextWindow of [0, -1, 1.5, NaN, 128000]) {
+    await assert.rejects(
+      f.client.configure({ sessionId: 'session-a', contextWindow }),
+      /上下文窗口/,
+    );
+  }
+  assert.equal(f.received.filter((req) => req.method === 'session/set_model').length, 0);
+});
+
+test('legacy models without advertised context windows remain usable and reject explicit window selection', async (t) => {
+  const f = fixture(t);
+  const session = await f.client.newSession({ cwd: 'C:\\project' });
+  assert.equal(session.contextWindow, undefined);
+  await assert.rejects(
+    f.client.configure({ sessionId: 'session-a', contextWindow: 500000 }),
+    /上下文窗口/,
+  );
+});
+
+test('model_changed actual effort and context selection win over the requested configuration', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method === 'session/new') {
+      child.reply(req, { sessionId: 'session-a', models: currentModels });
+      return true;
+    }
+    if (req.method !== 'session/set_model') return false;
+    child.deliver({
+      jsonrpc: '2.0',
+      method: '_x.ai/session_notification',
+      params: {
+        sessionId: 'session-a',
+        update: {
+          sessionUpdate: 'model_changed',
+          model_id: 'grok-4.7',
+          reasoning_effort: 'low',
+          context_window_selection: 256000,
+        },
+      },
+    });
+    child.reply(req, { _meta: { model: { Ok: 'grok-4.7' } } });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  const configured = await f.client.configure({
+    sessionId: 'session-a',
+    effort: 'high',
+    contextWindow: 500000,
+  });
+  assert.equal(configured.models.availableModels[0]._meta.reasoningEffort, 'low');
+  assert.equal(configured.contextWindow, 256000);
+  assert.equal(configured.models.availableModels[0]._meta.contextWindow, 256000);
+});
+
+test('provider wire-model acknowledgements preserve the advertised model alias and actual selection', async (t) => {
+  const aliasedModels = structuredClone(currentModels);
+  aliasedModels.currentModelId = 'project-alias';
+  aliasedModels.availableModels.push({
+    ...structuredClone(currentModels.availableModels[0]),
+    modelId: 'project-alias',
+  });
+  const f = fixture(t, (req, child) => {
+    if (req.method === 'session/new') {
+      child.reply(req, { sessionId: 'session-a', models: aliasedModels });
+      return true;
+    }
+    if (req.method !== 'session/set_model') return false;
+    child.deliver({
+      jsonrpc: '2.0',
+      method: '_x.ai/session_notification',
+      params: {
+        sessionId: 'session-a',
+        update: {
+          sessionUpdate: 'model_changed',
+          model_id: 'project-alias',
+          reasoning_effort: 'low',
+          context_window_selection: 500000,
+        },
+      },
+    });
+    child.reply(req, { _meta: { model: { Ok: 'grok-4.7' } } });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  const configured = await f.client.configure({
+    sessionId: 'session-a',
+    modelId: 'project-alias',
+    effort: 'high',
+    contextWindow: 500000,
+  });
+  assert.equal(configured.models.currentModelId, 'project-alias');
+  assert.equal(configured.models.availableModels.at(-1)._meta.reasoningEffort, 'low');
+  assert.equal(configured.contextWindow, 500000);
+});
+
+test('model response metadata supplies the actual effort and context selection', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method === 'session/new') {
+      child.reply(req, { sessionId: 'session-a', models: currentModels });
+      return true;
+    }
+    if (req.method !== 'session/set_model') return false;
+    const actualModels = structuredClone(currentModels);
+    actualModels.availableModels[0]._meta.reasoningEffort = 'medium';
+    actualModels.availableModels[0]._meta.contextWindow = 256000;
+    child.reply(req, { models: actualModels });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  const configured = await f.client.configure({
+    sessionId: 'session-a',
+    effort: 'high',
+    contextWindow: 500000,
+  });
+  assert.equal(configured.models.availableModels[0]._meta.reasoningEffort, 'medium');
+  assert.equal(configured.contextWindow, 256000);
+});
+
+test('official live model catalog updates refresh a catalog connection without creating a session', async (t) => {
+  const f = fixture(t);
+  await f.client.ensure();
+  const updatedModels = {
+    currentModelId: 'future-model',
+    availableModels: [
+      { modelId: 'future-model', name: 'Future Grok', _meta: { supportsReasoningEffort: false } },
+    ],
+  };
+  f.child().deliver({ jsonrpc: '2.0', method: '_x.ai/models/update', params: updatedModels });
+  await tick();
+  assert.deepEqual(f.client.models, updatedModels);
+  const event = f.events.findLast((item) => item.type === 'models');
+  assert.deepEqual(event.models, updatedModels);
+  assert.equal(event.sessionId, undefined);
+  assert.equal(
+    f.received.some((req) => req.method === 'session/new'),
+    false,
+  );
+});
+
+test('live catalog changes preserve active selections while adding future models and options', async (t) => {
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/new') return false;
+    child.reply(req, { sessionId: 'session-a', models: currentModels });
+    return true;
+  });
+  await f.client.newSession({ cwd: 'C:\\project' });
+  await f.client.configure({ sessionId: 'session-a', contextWindow: 500000 });
+  const updatedModels = structuredClone(currentModels);
+  updatedModels.currentModelId = 'future-model';
+  updatedModels.availableModels.push({
+    modelId: 'future-model',
+    name: 'Future Grok',
+    _meta: { supportsReasoningEffort: false },
+  });
+  updatedModels.availableModels[0]._meta.reasoningEffort = 'low';
+  updatedModels.availableModels[0]._meta.reasoningEfforts.push({
+    id: 'max',
+    value: 'max',
+    label: 'Maximum',
+    default: false,
+  });
+  updatedModels.availableModels[0]._meta.contextWindows.push(1000000);
+  f.child().deliver({ jsonrpc: '2.0', method: '_x.ai/models/update', params: updatedModels });
+  await tick();
+  const session = f.client._session('session-a');
+  assert.equal(session.models.currentModelId, 'grok-4.7');
+  assert.equal(session.models.availableModels[0]._meta.reasoningEffort, 'xhigh');
+  assert.equal(session.contextWindow, 500000);
+  assert.equal(session.models.availableModels[0]._meta.contextWindow, 500000);
+  assert.equal(session.models.availableModels.at(-1).modelId, 'future-model');
+  assert.equal(session.models.availableModels[0]._meta.reasoningEfforts.at(-1).value, 'max');
+  assert.deepEqual(
+    session.models.availableModels[0]._meta.contextWindows,
+    [256000, 500000, 1000000],
+  );
+  const event = f.events.findLast((item) => item.type === 'models');
+  assert.equal(event.sessionId, 'session-a');
+  assert.deepEqual(event.models, session.models);
+  assert.equal(f.received.filter((req) => req.method === 'session/set_model').length, 1);
 });
 
 test('history load gets 120 seconds but an unresolved load still invalidates transport state', async (t) => {

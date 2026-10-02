@@ -18,6 +18,21 @@ const SESSION_STATE_METHODS = new Set([
 const emptyModels = () => ({ currentModelId: '', availableModels: [] });
 const copy = (value) => (value == null ? value : structuredClone(value));
 const validId = (id) => typeof id === 'string' || typeof id === 'number';
+const positiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
+const defaultEffort = (model) => {
+  const option = model?._meta?.reasoningEfforts?.find((item) => item.default === true);
+  return option?.value || option?.id;
+};
+const supportsEffort = (model, effort) =>
+  model?._meta?.supportsReasoningEffort !== false &&
+  (!model?._meta?.reasoningEfforts?.length ||
+    model._meta.reasoningEfforts.some((item) => item.id === effort || item.value === effort));
+const defaultContextWindow = (model) => {
+  const value = model?._meta?.totalContextTokens;
+  return positiveInteger(value) && model?._meta?.contextWindows?.includes(value)
+    ? value
+    : undefined;
+};
 
 class GrokClient {
   constructor({
@@ -46,6 +61,7 @@ class GrokClient {
     this._nextId = 0;
     this._operation = null;
     this._loading = null;
+    this._modelConfiguration = null;
   }
 
   async ensure() {
@@ -197,6 +213,37 @@ class GrokClient {
   }
 
   _notification(method, params) {
+    if (method === '_x.ai/models/update') {
+      const session = this._sessions.get(this.activeSessionId);
+      const models = copy(params);
+      if (session) {
+        const selectedId = session.models.currentModelId;
+        const previous = session.models.availableModels.find(
+          (model) => model.modelId === selectedId,
+        );
+        const selected = models.availableModels.find((model) => model.modelId === selectedId);
+        models.currentModelId = selectedId;
+        if (selected) {
+          selected._meta = {
+            ...selected._meta,
+            ...(previous?._meta?.reasoningEffort !== undefined
+              ? { reasoningEffort: previous._meta.reasoningEffort }
+              : {}),
+            ...(session.contextWindow !== undefined
+              ? { contextWindow: session.contextWindow }
+              : {}),
+          };
+        }
+        session.models = models;
+      }
+      this.models = copy(models);
+      this.emit({
+        type: 'models',
+        ...(session ? { sessionId: session.sessionId } : {}),
+        models: copy(models),
+      });
+      return;
+    }
     if (method === '_x.ai/session_notification' && params.update) {
       if (this._loading?.sessionId === params.sessionId) this._loading.updates.push(params.update);
       else {
@@ -253,14 +300,26 @@ class GrokClient {
     }
     if (update.sessionUpdate === 'current_mode_update' && session?.modes)
       session.modes.currentModeId = update.currentModeId;
-    if (update.sessionUpdate === 'config_option_update' && session)
+    if (update.sessionUpdate === 'config_option_update' && session) {
+      session.configOptions = copy(update.configOptions);
       session._meta = { ...session._meta, configOptions: copy(update.configOptions) };
+    }
     if (update.sessionUpdate === 'model_changed' && session && update.model_id) {
+      if (this._modelConfiguration?.sessionId === sessionId)
+        this._modelConfiguration.update = copy(update);
       session.models.currentModelId = update.model_id;
+      const model = session.models.availableModels.find((item) => item.modelId === update.model_id);
+      const contextWindow = positiveInteger(update.context_window_selection)
+        ? update.context_window_selection
+        : defaultContextWindow(model);
       this._mergeModel(session, {
         modelId: update.model_id,
-        ...(update.reasoning_effort ? { _meta: { reasoningEffort: update.reasoning_effort } } : {}),
+        _meta: {
+          ...(update.reasoning_effort ? { reasoningEffort: update.reasoning_effort } : {}),
+          contextWindow,
+        },
       });
+      this._syncContextWindow(session);
       if (sessionId === this.activeSessionId) this.models = copy(session.models);
       if (emit) this.emit({ type: 'models', sessionId, models: copy(session.models) });
     }
@@ -279,6 +338,19 @@ class GrokClient {
         _meta: { ...existing._meta, ...copy(model._meta) },
       };
     }
+  }
+
+  _syncContextWindow(session) {
+    const model = session.models.availableModels.find(
+      (item) => item.modelId === session.models.currentModelId,
+    );
+    const contextWindow = positiveInteger(model?._meta?.contextWindow)
+      ? model._meta.contextWindow
+      : defaultContextWindow(model);
+    if (contextWindow !== undefined) {
+      session.contextWindow = contextWindow;
+      model._meta = { ...model._meta, contextWindow };
+    } else delete session.contextWindow;
   }
 
   _serverRequest({ id, method, params = {} }) {
@@ -424,12 +496,16 @@ class GrokClient {
       commands: copy(result.commands || result._meta?.availableCommands || this.commands),
       updates: copy(updates),
       ...(result.modes ? { modes: copy(result.modes) } : {}),
+      ...(result.configOptions || result._meta?.configOptions
+        ? { configOptions: copy(result.configOptions || result._meta.configOptions) }
+        : {}),
       _meta: copy(result._meta || {}),
       permissionMode,
     };
     this._sessions.set(sessionId, session);
     this.activeSessionId = sessionId;
     for (const update of updates) this._applyUpdate(sessionId, update, false);
+    this._syncContextWindow(session);
     this.models = copy(session.models);
     this.commands = copy(session.commands);
     return session;
@@ -456,7 +532,25 @@ class GrokClient {
         [],
         payload.permissionMode === 'auto' ? 'auto' : 'ask',
       );
-      await this._configure({ ...payload, sessionId: result.sessionId });
+      // Saved preferences may outlive a model catalog update. Reconcile only
+      // creation defaults; explicit changes to an open session still validate.
+      const availableModels = session.models.availableModels;
+      const modelId =
+        payload.modelId &&
+        availableModels.length &&
+        !availableModels.some((model) => model.modelId === payload.modelId)
+          ? undefined
+          : payload.modelId;
+      const model = availableModels.find(
+        (item) => item.modelId === (modelId || session.models.currentModelId),
+      );
+      const effort =
+        payload.effort && !supportsEffort(model, payload.effort)
+          ? model?._meta?.supportsReasoningEffort === false
+            ? undefined
+            : defaultEffort(model)
+          : payload.effort;
+      await this._configure({ ...payload, modelId, effort, sessionId: result.sessionId });
       await this._discoverCommands(payload.cwd, result.sessionId);
       this.emit({ type: 'sessions-changed', sessionId: result.sessionId });
       return this._publishSession(session);
@@ -495,16 +589,19 @@ class GrokClient {
       return {
         models: copy(session.models),
         ...(session.modes ? { modes: copy(session.modes) } : {}),
+        ...(session.configOptions ? { configOptions: copy(session.configOptions) } : {}),
+        ...(session.contextWindow !== undefined ? { contextWindow: session.contextWindow } : {}),
       };
     });
   }
 
-  async _configure({ sessionId, modelId, effort, modeId }) {
+  async _configure({ sessionId, modelId, effort, modeId, contextWindow }) {
     const session = this._session(sessionId);
     const targetModelId = modelId || session.models.currentModelId;
     const model = session.models.availableModels.find((item) => item.modelId === targetModelId);
     if (modelId && session.models.availableModels.length && !model)
       throw new Error(t('当前 Grok 版本未提供所选模型'));
+    if (effort === '') effort = defaultEffort(model);
     if (effort && model?._meta?.supportsReasoningEffort === false)
       throw new Error(t('所选模型不支持推理强度'));
     if (
@@ -513,19 +610,40 @@ class GrokClient {
       !model._meta.reasoningEfforts.some((item) => item.id === effort || item.value === effort)
     )
       throw new Error(t('所选模型不支持此推理强度'));
+    if (
+      contextWindow !== undefined &&
+      (!positiveInteger(contextWindow) || !model?._meta?.contextWindows?.includes(contextWindow))
+    )
+      throw new Error(t('所选模型不支持此上下文窗口'));
     const currentModel = session.models.availableModels.find(
       (item) => item.modelId === session.models.currentModelId,
     );
     if (
       targetModelId &&
       (targetModelId !== session.models.currentModelId ||
-        (effort && effort !== currentModel?._meta?.reasoningEffort))
+        (effort && effort !== currentModel?._meta?.reasoningEffort) ||
+        (contextWindow !== undefined && contextWindow !== session.contextWindow))
     ) {
-      const result = await this._request('session/set_model', {
-        sessionId,
-        modelId: targetModelId,
-        ...(effort ? { _meta: { reasoningEffort: effort } } : {}),
-      });
+      const previousContextWindow = session.contextWindow;
+      const configuration = { sessionId, update: null };
+      this._modelConfiguration = configuration;
+      let result;
+      try {
+        result = await this._request('session/set_model', {
+          sessionId,
+          modelId: targetModelId,
+          ...(effort || contextWindow !== undefined
+            ? {
+                _meta: {
+                  ...(effort ? { reasoningEffort: effort } : {}),
+                  ...(contextWindow !== undefined ? { contextWindow } : {}),
+                },
+              }
+            : {}),
+        });
+      } finally {
+        this._modelConfiguration = null;
+      }
       const modelResult = result?._meta?.model;
       if (modelResult && Object.hasOwn(modelResult, 'Err')) {
         const error = modelResult.Err;
@@ -533,13 +651,42 @@ class GrokClient {
           typeof error === 'string' ? error : error?.message || JSON.stringify(error),
         );
       }
-      session.models = copy(result?.models || result?._meta?.modelState || session.models);
-      session.models.currentModelId =
-        typeof modelResult?.Ok === 'string' ? modelResult.Ok : targetModelId;
+      const returnedModels = result?.models || result?._meta?.modelState;
+      session.models = copy(returnedModels || session.models);
+      // Ok may contain a provider's wire model name rather than the catalog
+      // selector (for example a configured model alias).
+      session.models.currentModelId = returnedModels?.currentModelId || targetModelId;
       const selected = session.models.availableModels.find(
         (item) => item.modelId === session.models.currentModelId,
       );
-      if (selected && effort) selected._meta = { ...selected._meta, reasoningEffort: effort };
+      const update =
+        configuration.update?.model_id === session.models.currentModelId
+          ? configuration.update
+          : null;
+      if (selected) {
+        const actualEffort =
+          update?.reasoning_effort ||
+          (returnedModels ? selected._meta?.reasoningEffort : undefined) ||
+          effort;
+        const actualContextWindow = update
+          ? positiveInteger(update.context_window_selection)
+            ? update.context_window_selection
+            : defaultContextWindow(selected)
+          : returnedModels && positiveInteger(selected._meta?.contextWindow)
+            ? selected._meta.contextWindow
+            : (contextWindow ??
+              (selected._meta?.contextWindows?.includes(previousContextWindow)
+                ? previousContextWindow
+                : undefined));
+        selected._meta = {
+          ...selected._meta,
+          ...(actualEffort ? { reasoningEffort: actualEffort } : {}),
+          ...(actualContextWindow !== undefined ? { contextWindow: actualContextWindow } : {}),
+        };
+      }
+      if (result?.configOptions || result?._meta?.configOptions)
+        session.configOptions = copy(result.configOptions || result._meta.configOptions);
+      this._syncContextWindow(session);
       this.models = copy(session.models);
       this.emit({ type: 'models', sessionId, models: copy(session.models) });
     }

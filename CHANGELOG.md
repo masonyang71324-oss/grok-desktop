@@ -1,5 +1,15 @@
 # Changes
 
+## 1.4.3
+
+- Show Grok Build version and authenticated/needs-login/unknown status on the home screen, with native login, catalog refresh and separate engine update controls.
+- Verify the executable version after an official CLI update and follow its installation directory when the configured older copy was not replaced.
+- Support advertised per-session context windows, including the 256K and 500K options returned by Grok Build 1.0.46 for Grok 4.7.
+- Restore the advertised default reasoning effort, reconcile outdated new-session preferences and synchronize mode/configuration state across conversations.
+- Consume live model catalogs while retaining active-session selections; preserve catalog aliases and authoritative configuration notifications.
+- Keep tasks and drafts intact during catalog refresh and retain existing idle/update and exit protections, with Chinese and English controls.
+- Patch DOMPurify and mail parsing dependencies plus compatible build-tool transitive dependencies; the dependency audit reports no known vulnerabilities.
+
 ## 1.4.2
 
 - Keep the installed Grok Desktop version and update state visible in the main toolbar.

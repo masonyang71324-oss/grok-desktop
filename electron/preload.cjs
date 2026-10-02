@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const commands = new Set([
   'bootstrap',
+  'cli.status',
+  'cli.refresh',
   'dialog.grok',
   'clipboard.write',
   'clipboard.image',

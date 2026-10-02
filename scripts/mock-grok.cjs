@@ -4,6 +4,26 @@ const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 const { randomUUID } = require('node:crypto');
+const cliArgs = process.argv.slice(2);
+if (cliArgs[0] === '--version') {
+  process.stdout.write('grok 1.0.46 (mock)\n');
+  process.exit(0);
+}
+if (cliArgs[0] === 'models') {
+  process.stdout.write('You are logged in with grok.com.\nDefault model: mock-grok\n');
+  process.exit(0);
+}
+if (cliArgs[0] === 'update' && cliArgs.includes('--check')) {
+  process.stdout.write(
+    JSON.stringify({
+      currentVersion: '1.0.46',
+      latestVersion: '1.0.46',
+      updateAvailable: false,
+      error: null,
+    }) + '\n',
+  );
+  process.exit(0);
+}
 const stateFile = process.env.GROK_DESKTOP_MOCK_STATE;
 const logFile = process.env.GROK_DESKTOP_MOCK_LOG;
 const models = {
@@ -15,9 +35,11 @@ const models = {
       _meta: {
         supportsReasoningEffort: true,
         reasoningEffort: 'medium',
+        totalContextTokens: 256000,
+        contextWindows: [256000, 500000],
         reasoningEfforts: [
           { id: 'low', label: 'Low' },
-          { id: 'medium', label: 'Medium' },
+          { id: 'medium', label: 'Medium', default: true },
           { id: 'high', label: 'High' },
         ],
       },
@@ -318,7 +340,30 @@ function receive(request) {
     return;
   }
   if (request.method === 'session/set_model') {
+    const selected = models.availableModels.find((model) => model.modelId === params.modelId);
+    if (!selected) return fail(request, 'mock_model_missing');
+    selected._meta.reasoningEffort =
+      params._meta?.reasoningEffort || selected._meta.reasoningEffort;
+    selected._meta.contextWindow =
+      params._meta?.contextWindow ||
+      selected._meta.contextWindow ||
+      selected._meta.totalContextTokens;
+    models.currentModelId = params.modelId;
+    session.models = structuredClone(models);
+    save();
     reply(request, { _meta: { model: { Ok: params.modelId } } });
+    write({
+      method: '_x.ai/session_notification',
+      params: {
+        sessionId: session.sessionId,
+        update: {
+          sessionUpdate: 'model_changed',
+          model_id: params.modelId,
+          reasoning_effort: selected._meta.reasoningEffort,
+          context_window_selection: selected._meta.contextWindow,
+        },
+      },
+    });
     return;
   }
   if (request.method === 'session/set_mode') {
@@ -353,10 +398,6 @@ function receive(request) {
     return;
   }
   write({ id: request.id, error: { code: -32601, message: 'mock_method_not_found' } });
-}
-if (process.argv.includes('--version')) {
-  process.stdout.write('mock-grok 0.0.0-test\n');
-  process.exit(0);
 }
 readline
   .createInterface({ input: process.stdin, crlfDelay: Infinity })

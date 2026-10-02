@@ -20,7 +20,7 @@ const { spawn } = require('node:child_process');
 const { SessionHub } = require('./session-hub.cjs');
 const { RuntimeActivity } = require('./background.cjs');
 const { loadSettings, writeSettings, resolveGrok } = require('./settings.cjs');
-const { runChecked } = require('./process.cjs');
+const { runChecked, runProcess } = require('./process.cjs');
 const { buildCommand, runManagement } = require('./management.cjs');
 const workspace = require('./workspace.cjs');
 const { createEventDelivery } = require('./event-delivery.cjs');
@@ -32,6 +32,7 @@ const { createProjectRunner } = require('./project-runner.cjs');
 const { storeClipboardImage, previewAttachment } = require('./attachments.cjs');
 const documentFormats = require('./document.cjs');
 const { createAppUpdater } = require('./updater.cjs');
+const { readCliStatus, selectUpdatedCli } = require('./cli-status.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -47,6 +48,7 @@ let win = null,
   quitting = false,
   exitDialogOpen = false,
   installUpdateRequested = false;
+let engineState = { authStatus: 'unknown' };
 const activity = new RuntimeActivity({
   isForegroundBusy: () => !!client.activeTurn,
 });
@@ -151,6 +153,31 @@ function saveSettings(patch) {
   return operation;
 }
 
+function runGrokDiagnostic(executable, args, options) {
+  return runProcess(
+    executable,
+    process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
+      ? [path.resolve(process.env.GROK_DESKTOP_TEST_GROK_SCRIPT), ...args]
+      : args,
+    options,
+  );
+}
+
+async function engineStatus({ checkUpdate = false } = {}) {
+  const executable = resolveGrok(settings.grokPath);
+  const next = await readCliStatus(executable, { run: runGrokDiagnostic, checkUpdate });
+  engineState = { ...next, version: next.version || client.version };
+  return { ...engineState, models: client.models };
+}
+
+async function refreshEngine() {
+  activity.assertSessionAllowed();
+  // The catalog connection owns no turns. Refreshing it keeps all session tasks alive.
+  await client.catalog.restart();
+  await engineStatus();
+  return bootstrap();
+}
+
 async function validCwd(cwd) {
   if (typeof cwd !== 'string' || !path.isAbsolute(cwd))
     throw new Error(t('请选择有效的项目目录。'));
@@ -181,6 +208,7 @@ async function bootstrap() {
       path: cliPath,
       version,
       connected: !!client.connected,
+      authStatus: engineState.path === cliPath ? engineState.authStatus : 'unknown',
       capabilities: client.capabilities || {},
       ...(error ? { error } : {}),
     },
@@ -211,10 +239,10 @@ async function openSystem({ target, cwd, path: filepath, url }) {
     await shell.openExternal(url);
     return;
   }
-  if (target === 'terminal') {
+  if (target === 'terminal' || target === 'grok-login') {
     const directory = await validCwd(cwd || settings.lastProject || os.homedir());
     const exe = resolveGrok(settings.grokPath);
-    const code = `& '${exe.replaceAll("'", "''")}'`;
+    const code = `& '${exe.replaceAll("'", "''")}'${target === 'grok-login' ? ' login' : ''}`;
     const child = spawn(
       'powershell.exe',
       ['-NoLogo', '-NoExit', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')],
@@ -311,7 +339,30 @@ async function management({ action, cwd, values = {} }) {
   const command = buildCommand(action, values);
   const run = async () => {
     const directory = cwd ? await validCwd(cwd) : os.homedir();
-    const result = await runManagement(resolveGrok(settings.grokPath), action, values, directory);
+    const executable = resolveGrok(settings.grokPath);
+    const beforeUpdate =
+      action === 'update-install'
+        ? await readCliStatus(executable, { run: runGrokDiagnostic, checkUpdate: true })
+        : null;
+    if (beforeUpdate && !beforeUpdate.latestVersion)
+      throw new Error(beforeUpdate.error || t('无法检查 Grok Build 更新，请检查网络后重试。'));
+    const result = await runManagement(executable, action, values, directory);
+    if (beforeUpdate) {
+      const updatedPath = await selectUpdatedCli(
+        executable,
+        resolveGrok(),
+        beforeUpdate.latestVersion,
+        { run: runGrokDiagnostic },
+      );
+      if (updatedPath !== executable) {
+        const savePath = settingsQueue.then(async () => {
+          settings = await writeSettings(settingsFile, { ...settings, grokPath: updatedPath });
+        });
+        settingsQueue = savePath.catch(() => {});
+        await savePath;
+        await engineStatus();
+      }
+    }
     if (command.mutates) {
       await client.restart();
       emit({
@@ -327,6 +378,8 @@ async function management({ action, cwd, values = {} }) {
 
 const handlers = {
   bootstrap,
+  'cli.status': engineStatus,
+  'cli.refresh': refreshEngine,
   'settings.save': saveSettings,
   'clipboard.write': ({ text }) => {
     if (typeof text !== 'string') throw new Error(t('复制内容无效。'));

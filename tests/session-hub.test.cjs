@@ -107,6 +107,9 @@ function fixture(options = {}) {
           emit({ type: 'turn-start', sessionId: this.id, turnId: 'raw' });
           return { turnId: 'raw' };
         },
+        publish(event) {
+          emit(event);
+        },
         permission() {
           emit({
             type: 'permission',
@@ -187,6 +190,52 @@ test('two sessions isolate permission IDs, cancellation and live reload snapshot
   await tick();
   assert.equal(clients[2].cancelled, undefined);
   assert.equal(hub.listTasks()[1].status, 'waiting');
+});
+
+test('switching conversations preserves live mode and configuration updates in the cached snapshot', async () => {
+  const { hub, clients } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  const modes = {
+    currentModeId: 'code',
+    availableModes: [
+      { id: 'code', name: 'Code' },
+      { id: 'plan', name: 'Plan' },
+    ],
+  };
+  clients[1].publish({ type: 'session', session: { ...a, modes, configOptions: [] } });
+  await hub.newSession({ cwd: '/b' });
+  clients[1].publish({
+    type: 'update',
+    update: { sessionUpdate: 'current_mode_update', currentModeId: 'plan' },
+  });
+  const configOptions = [
+    {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      type: 'select',
+      currentValue: 'high',
+      options: [{ value: 'high', name: 'High' }],
+    },
+  ];
+  clients[1].publish({
+    type: 'update',
+    update: { sessionUpdate: 'config_option_update', configOptions },
+  });
+  clients[1].publish({
+    type: 'notification',
+    kind: 'model_changed',
+    payload: {
+      sessionUpdate: 'model_changed',
+      model_id: 'grok-4.7',
+      reasoning_effort: 'high',
+      context_window_selection: 500000,
+    },
+  });
+  const reopened = await hub.loadSession(a);
+  assert.equal(reopened.modes.currentModeId, 'plan');
+  assert.deepEqual(reopened.configOptions, configOptions);
+  assert.equal(reopened.contextWindow, 500000);
+  assert.equal(clients[1].loads, 0);
 });
 
 test('same directory serializes turns and completion hooks, queues are FIFO and removable', async () => {

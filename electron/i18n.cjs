@@ -35,6 +35,13 @@ const english = {
   '工作树已存在：{path}': 'Worktree already exists: {path}',
   '工作树已创建：{path}': 'Worktree created: {path}',
   '配置已更新，Grok 已重新连接。': 'Settings updated. Grok has reconnected.',
+  所选模型不支持此上下文窗口: 'The selected model does not support this context window',
+  '无法检查 Grok 登录状态，请检查网络后重试。':
+    'Could not check Grok sign-in status. Check your connection and try again.',
+  '无法检查 Grok Build 更新，请检查网络后重试。':
+    'Could not check for Grok Build updates. Check your connection and try again.',
+  '更新后未找到对应版本的 Grok Build，请在设置中检查程序路径。':
+    'The updated Grok Build executable was not found. Check its path in Settings.',
   '复制内容无效。': 'The content to copy is invalid.',
   '选择 Grok Build 程序': 'Select the Grok Build executable',
   'Windows 程序': 'Windows executable',

@@ -110,6 +110,22 @@ async function mockLog() {
     );
     pass('initialize-version');
 
+    phase = 'engine-home-status';
+    const engine = await request('cli.status', { checkUpdate: true });
+    assert.equal(engine.authStatus, 'authenticated');
+    assert.equal(engine.version, '1.0.46');
+    assert.equal(engine.updateAvailable, false);
+    await page.locator('.home-engine-status').filter({ hasText: '已登录' }).waitFor();
+    await page.locator('.home-engine-status').click();
+    await page.getByRole('dialog', { name: 'Grok Build 引擎', exact: true }).waitFor();
+    await page.getByRole('button', { name: '检查引擎更新', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Grok Build 引擎', exact: true })
+      .getByText('已是最新', { exact: true })
+      .waitFor();
+    await page.getByRole('button', { name: '关闭 · Esc', exact: true }).click();
+    pass('engine-home-status-and-official-update-check');
+
     phase = 'executable-picker';
     await app.evaluate(({ dialog }, executable) => {
       const original = dialog.showOpenDialog;
@@ -331,6 +347,22 @@ async function mockLog() {
     await send('展示代码和文件修改。MOCK_RENDER');
     await waitEnd();
     await page.locator('.code-block code .hljs-keyword').first().waitFor();
+    const contextControl = page.getByRole('combobox', { name: '上下文窗口', exact: true });
+    await contextControl.selectOption('500000');
+    await page.waitForFunction(() => !document.querySelector('.context-control select').disabled);
+    const reasoningControl = page.getByRole('combobox', { name: '推理深度', exact: true });
+    await reasoningControl.selectOption('high');
+    await page.waitForFunction(() => !document.querySelector('.effort-control select').disabled);
+    await reasoningControl.selectOption('');
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.effort-control select').value === 'medium' &&
+        !document.querySelector('.effort-control select').disabled,
+    );
+    assert.equal(await contextControl.inputValue(), '500000');
+    await request('cli.refresh');
+    assert.equal(await contextControl.inputValue(), '500000');
+    pass('context-selection-default-effort-and-catalog-refresh');
     await page.locator('.tool-row summary').click();
     assert.equal(
       await page.locator('.tool-diff-new pre').textContent(),
@@ -341,7 +373,9 @@ async function mockLog() {
     await page.screenshot({ path: path.join(screenshots, 'e2e-desktop.png') });
     await page.locator('.tool-diff').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(screenshots, 'e2e-diff.png') });
-    await page.getByRole('button', { name: /Grok Desktop v1\.4\.2/ }).click();
+    await page
+      .getByRole('button', { name: new RegExp('Grok Desktop v' + version.replaceAll('.', '\\.')) })
+      .click();
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: path.join(screenshots, 'e2e-settings.png') });
     pass('rendering-screenshots');

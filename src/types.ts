@@ -21,6 +21,8 @@ export interface Model {
     reasoningEffort?: string;
     supportsReasoningEffort?: boolean;
     totalContextTokens?: number;
+    contextWindow?: number;
+    contextWindows?: number[];
     reasoningEfforts?: {
       id: string;
       value?: string;
@@ -87,6 +89,8 @@ export interface SessionSnapshot {
   sessionId: string;
   cwd: string;
   models: ModelsState;
+  contextWindow?: number;
+  configOptions?: SessionConfigOption[];
   commands: Command[];
   updates: AcpUpdate[];
   modes?: {
@@ -94,6 +98,29 @@ export interface SessionSnapshot {
     availableModes: { id: string; name: string; description?: string }[];
   };
   _meta?: Record<string, any>;
+}
+export interface SessionConfigOption {
+  id: string;
+  name?: string;
+  category?: string;
+  type?: string;
+  currentValue?: string | number;
+  options?: { value: string | number; name?: string; description?: string }[];
+}
+export interface ConfigureResult {
+  models: ModelsState;
+  modes?: SessionSnapshot['modes'];
+  contextWindow?: number;
+  configOptions?: SessionConfigOption[];
+}
+export interface CliStatus {
+  path: string;
+  version: string;
+  authStatus: 'authenticated' | 'required' | 'unknown';
+  models: ModelsState;
+  error?: string;
+  latestVersion?: string;
+  updateAvailable?: boolean;
 }
 export interface PermissionRequest {
   sessionId: string;
@@ -189,6 +216,7 @@ export interface Bootstrap {
     path: string;
     version: string;
     connected: boolean;
+    authStatus?: CliStatus['authStatus'];
     error?: string;
     capabilities?: { promptCapabilities?: { image?: boolean } };
   };
