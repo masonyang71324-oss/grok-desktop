@@ -439,12 +439,9 @@ if (process.argv[2] === '--child') {
           String(rootPid),
         ],
         {
-          // This read-only observer needs inbox PowerShell commands, not the
-          // hosted runner's third-party module catalog in a fresh user profile.
-          env: {
-            ...env,
-            PSModulePath: path.join(systemRoot, 'System32/WindowsPowerShell/v1.0/Modules'),
-          },
+          // The observer only reads kernel PID metadata. Keep its normal OS/
+          // compiler environment; the CLI, model and tool children remain in env.
+          env: process.env,
           cwd: dirs.cwd,
           windowsHide: true,
           timeout: 10000,
