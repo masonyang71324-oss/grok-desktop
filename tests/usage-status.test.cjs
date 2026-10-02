@@ -385,3 +385,143 @@ test('the narrow status row shows actual zero, opens details, and keeps failed r
   assert.equal(await page.getByText('剩余 0%', { exact: true }).count(), 1);
   assert.equal(await page.getByText('0 / 200,000', { exact: true }).count(), 1);
 });
+
+let compactFiles;
+async function compactFixture(t, values = {}) {
+  const path = require('node:path');
+  const { buildSync } = require('esbuild');
+  const { launchBrowser } = require('../scripts/browser-launch.cjs');
+  compactFiles ||= buildSync({
+    stdin: {
+      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import UsageStatus from './src/UsageStatus'; const root=createRoot(document.getElementById('root')); window.showStatus=(props={})=>root.render(<UsageStatus compact cwd="C:/project" sessionId="s1" connected {...props} onOpen={()=>window.opened++}/>);`,
+      loader: 'tsx',
+      resolveDir: path.join(__dirname, '..'),
+    },
+    outfile: 'usage-status-compact.js',
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    jsx: 'automatic',
+    define: { 'process.env.NODE_ENV': '"development"' },
+  }).outputFiles;
+  const browser = await launchBrowser();
+  t.after(() => browser.close());
+  const page = await browser.newPage({
+    viewport: { width: 980, height: 400 },
+    timezoneId: 'Asia/Shanghai',
+  });
+  page.setDefaultTimeout(5000);
+  await page.setContent(
+    '<style>body{margin:0;background:#14171b;font-family:Arial}#root{width:430px;margin:20px}button{font:inherit}</style><div id="root"></div>',
+  );
+  await page.evaluate((values) => {
+    window.account = values.account ?? {
+      fetchedAt: '2026-10-02T10:00:00Z',
+      plan: 'supergrok',
+      remainingPercent: 0,
+    };
+    window.context = values.context ?? {
+      info: { context: { used: 198765, total: 500000, usagePct: 0 } },
+      usage: {},
+    };
+    window.calls = [];
+    window.opened = 0;
+    window.failed = false;
+    window.hold = !!values.hold;
+    window.pending = [];
+    window.desktop = {
+      request: (command, payload) => {
+        window.calls.push({ command, payload });
+        const response = () =>
+          window.failed
+            ? { ok: false, error: 'offline' }
+            : { ok: true, data: command === 'account.usage' ? window.account : window.context };
+        return window.hold
+          ? new Promise((resolve) => window.pending.push(() => resolve(response())))
+          : Promise.resolve(response());
+      },
+    };
+  }, values);
+  await page.addStyleTag({ content: compactFiles.find((file) => file.path.endsWith('.css')).text });
+  await page.addScriptTag({ content: compactFiles.find((file) => file.path.endsWith('.js')).text });
+  await page.evaluate(() => window.showStatus());
+  await page.waitForFunction(() => window.calls.length === 2);
+  return page;
+}
+
+test('compact usage keeps exact values, shows only known progress, and opens details in one click', async (t) => {
+  const page = await compactFixture(t);
+  await page.getByText('剩余 0%', { exact: true }).waitFor();
+  await page.getByText('198,765 / 500,000', { exact: true }).waitFor();
+  const progress = page.getByRole('progressbar');
+  assert.equal(await progress.count(), 2);
+  assert.equal(await progress.nth(0).getAttribute('aria-valuenow'), '0');
+  assert.equal(await progress.nth(1).getAttribute('aria-valuenow'), '39.753');
+  const details = page.getByRole('button', { name: /^查看额度与上下文明细/ });
+  assert.match(await details.getAttribute('aria-label'), /更新于 18:00/);
+  await details.click();
+  assert.equal(await page.evaluate(() => window.opened), 1);
+  const layout = await page.evaluate(() => {
+    const status = document.querySelector('.usage-status');
+    const metrics = [...status.querySelectorAll('.usage-status-metric')];
+    return {
+      height: status.getBoundingClientRect().height,
+      width: status.scrollWidth,
+      border: getComputedStyle(status).borderTopWidth,
+      aligned:
+        Math.abs(metrics[0].getBoundingClientRect().top - metrics[1].getBoundingClientRect().top) <
+        1,
+    };
+  });
+  assert.ok(layout.height <= 36, `compact row grew to ${layout.height}px`);
+  assert.ok(layout.width <= 430, `compact row overflowed to ${layout.width}px`);
+  assert.equal(layout.border, '0px');
+  assert.equal(layout.aligned, true);
+});
+
+test('compact unknown values do not invent quota or context progress', async (t) => {
+  const page = await compactFixture(t, {
+    account: { plan: null, remainingPercent: null },
+    context: { info: {}, usage: {} },
+  });
+  await page.getByText('额度未返回', { exact: true }).waitFor();
+  await page.getByText('统计未返回', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('progressbar').count(), 0);
+  assert.equal(await page.getByText('剩余 100%', { exact: true }).count(), 0);
+});
+
+test('compact loading and failed refresh remain visible while prior exact values are retained', async (t) => {
+  const page = await compactFixture(t, { hold: true });
+  await page.getByText('读取中…', { exact: true }).first().waitFor();
+  assert.equal(
+    await page.getByRole('button', { name: '刷新用量', exact: true }).isDisabled(),
+    true,
+  );
+  assert.equal(await page.getByRole('progressbar').count(), 0);
+  await page.evaluate(() => {
+    window.hold = false;
+    window.pending.splice(0).forEach((resolve) => resolve());
+  });
+  await page.getByText('剩余 0%', { exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.failed = true;
+  });
+  await page.getByRole('button', { name: '刷新用量', exact: true }).click();
+  await page.getByText('更新失败', { exact: true }).first().waitFor();
+  assert.equal(await page.getByText('剩余 0%', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('198,765 / 500,000', { exact: true }).count(), 1);
+  assert.equal(await page.getByRole('progressbar').count(), 2);
+  assert.match(
+    await page.getByRole('button', { name: /^查看额度与上下文明细/ }).getAttribute('aria-label'),
+    /更新失败 · 上次数据 · 18:00/,
+  );
+  assert.equal(await page.evaluate(() => window.calls.length), 4);
+  await page.evaluate(() => window.showStatus({ connected: false }));
+  await page.getByText('未连接', { exact: true }).first().waitFor();
+  assert.equal(
+    await page.getByRole('button', { name: '刷新用量', exact: true }).isDisabled(),
+    true,
+  );
+  assert.equal(await page.getByText('剩余 0%', { exact: true }).count(), 1);
+});

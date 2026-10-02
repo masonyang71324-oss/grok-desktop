@@ -1,0 +1,101 @@
+.effort-picker {
+  min-width: 0;
+}
+.effort-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  min-height: 34px;
+  max-width: 160px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #929da9);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.effort-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.effort-trigger > svg {
+  flex-shrink: 0;
+}
+.effort-trigger:hover:not(:disabled),
+.effort-trigger[aria-expanded='true'] {
+  background: var(--surface-hover, #242a31);
+  color: var(--text, #edf1f3);
+}
+.effort-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.effort-trigger:focus-visible,
+.effort-popup button:focus-visible,
+.effort-popup select:focus-visible {
+  outline: 2px solid var(--accent, #80d8bb);
+  outline-offset: 2px;
+}
+.effort-popup {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--border, #2a3038);
+  border-radius: 10px;
+  background: var(--surface-raised, #20252c);
+  box-shadow: 0 8px 24px #0003;
+  color: var(--text, #edf1f3);
+  text-align: left;
+}
+.effort-popup-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.effort-popup-presets button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 4px;
+  border: 1px solid var(--border, #2a3038);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #929da9);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.effort-popup-presets button:hover {
+  background: var(--surface-hover, #242a31);
+  color: var(--text, #edf1f3);
+}
+.effort-popup-presets button[aria-pressed='true'] {
+  border-color: var(--accent, #80d8bb);
+  background: var(--accent-soft, #213b33);
+  color: var(--accent, #80d8bb);
+}
+.effort-popup-field {
+  display: grid;
+  gap: 8px;
+  color: var(--muted, #929da9);
+  font-size: 12px;
+}
+.effort-popup-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 9px;
+  border: 1px solid var(--border, #2a3038);
+  border-radius: 6px;
+  background: var(--surface, #1b1f25);
+  color: var(--text, #edf1f3);
+  font: inherit;
+  font-size: 14px;
+}

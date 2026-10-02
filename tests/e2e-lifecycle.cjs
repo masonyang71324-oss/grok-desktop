@@ -79,6 +79,7 @@ async function launch() {
 }
 
 async function openEditor(text) {
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
   await page.locator('.file-row[title="fixture.txt"]').click();
   const editor = page.getByRole('textbox', { name: '文件内容', exact: true });
   if (text !== undefined) await editor.fill(text);

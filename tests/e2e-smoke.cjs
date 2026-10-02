@@ -82,6 +82,19 @@ async function mockLog() {
     .filter(Boolean)
     .map((line) => JSON.parse(line));
 }
+async function openEffort() {
+  await page.getByRole('button', { name: '推理深度', exact: true }).click();
+  return page.getByRole('combobox', { name: '推理深度', exact: true });
+}
+async function assertEffort(value, label) {
+  await page.waitForFunction((expected) => {
+    const trigger = document.querySelector('.effort-trigger');
+    return trigger && !trigger.disabled && trigger.textContent.trim() === expected;
+  }, label);
+  const control = await openEffort();
+  assert.equal(await control.inputValue(), value);
+  await control.press('Escape');
+}
 
 (async () => {
   try {
@@ -170,6 +183,7 @@ async function mockLog() {
     pass('native-file-drop-and-remove');
 
     phase = 'workspace-watch';
+    await page.getByRole('tab', { name: '文件', exact: true }).click();
     await page.locator('.inspector .file-row').filter({ hasText: 'fixture.txt' }).waitFor();
     const externalFile = path.join(project, 'external-change.txt');
     await resetEvents();
@@ -270,6 +284,7 @@ async function mockLog() {
     pass('cancel');
 
     phase = 'history-load';
+    await page.getByRole('tab', { name: '会话', exact: true }).click();
     await page
       .getByRole('button', { name: /新建会话/ })
       .first()
@@ -295,6 +310,7 @@ async function mockLog() {
       sidebar: true,
       inspector: false,
       inspectorTab: 'changes',
+      navigationTab: 'sessions',
     });
     const normalBounds = await app.evaluate(({ BrowserWindow, screen }) => {
       const win = BrowserWindow.getAllWindows()[0];
@@ -330,11 +346,20 @@ async function mockLog() {
       sidebar: true,
       inspector: false,
       inspectorTab: 'changes',
+      navigationTab: 'sessions',
     });
     for (const key of ['x', 'y', 'width', 'height'])
       assert.equal(restoredSettings.window[key], normalBounds[key]);
     assert.equal(restoredSettings.window.maximized, false);
     await page.locator('.app.inspector-hidden').waitFor();
+    assert.equal(
+      await page.getByRole('tab', { name: '会话', exact: true }).getAttribute('aria-selected'),
+      'true',
+    );
+    assert.equal(
+      await page.getByRole('tabpanel', { name: '文件', exact: true }).isVisible(),
+      false,
+    );
     pass('settings-window-and-ui');
 
     phase = 'rendering-screenshots';
@@ -350,33 +375,22 @@ async function mockLog() {
     const contextControl = page.getByRole('combobox', { name: '上下文窗口', exact: true });
     await contextControl.selectOption('500000');
     await page.waitForFunction(() => !document.querySelector('.context-control select').disabled);
-    const reasoningControl = page.getByRole('combobox', { name: '推理深度', exact: true });
-    await reasoningControl.selectOption('high');
-    await page.waitForFunction(() => !document.querySelector('.effort-control select').disabled);
-    await reasoningControl.selectOption('');
-    await page.waitForFunction(
-      () =>
-        document.querySelector('.effort-control select').value === 'medium' &&
-        !document.querySelector('.effort-control select').disabled,
-    );
+    await (await openEffort()).selectOption('high');
+    await assertEffort('high', '深入');
+    await (await openEffort()).selectOption('');
+    await assertEffort('medium', '标准');
     assert.equal(await contextControl.inputValue(), '500000');
     await request('cli.refresh');
     assert.equal(await contextControl.inputValue(), '500000');
     pass('context-selection-default-effort-and-catalog-refresh');
     phase = 'ux-actions-and-summary';
     await page.locator('.usage-status').filter({ hasText: '62.5%' }).waitFor();
+    await openEffort();
     await page.getByRole('button', { name: '快速处理', exact: true }).click();
-    await page.waitForFunction(
-      () =>
-        document.querySelector('.effort-control select').value === 'low' &&
-        !document.querySelector('.effort-control select').disabled,
-    );
+    await assertEffort('low', '轻量');
+    await openEffort();
     await page.getByRole('button', { name: '标准处理', exact: true }).click();
-    await page.waitForFunction(
-      () =>
-        document.querySelector('.effort-control select').value === 'medium' &&
-        !document.querySelector('.effort-control select').disabled,
-    );
+    await assertEffort('medium', '标准');
     const promptCountBefore = (await mockLog()).filter((item) => item.type === 'prompt').length;
     const templateText = '\n  Reusable exact prompt\n';
     await page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true }).fill(templateText);

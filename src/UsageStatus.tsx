@@ -17,6 +17,7 @@ export interface UsageStatusProps {
   connected?: boolean;
   active?: boolean;
   contextWindow?: number;
+  compact?: boolean;
   onOpen: () => void;
 }
 
@@ -27,6 +28,7 @@ export default function UsageStatus({
   connected = true,
   active = false,
   contextWindow,
+  compact = false,
   onOpen,
 }: UsageStatusProps) {
   const { t, locale } = useI18n();
@@ -93,6 +95,13 @@ export default function UsageStatus({
       }[account.data.plan.toLowerCase()] ?? account.data.plan)
     : t('套餐额度');
   const remaining = account.data?.remainingPercent;
+  const accountValue =
+    remaining != null
+      ? t('剩余 {percent}', { percent: percent(remaining) })
+      : account.loading
+        ? t('读取中…')
+        : t('额度未返回');
+  const accountCaption = caption(account, account.data?.fetchedAt);
   const contextData = context.data;
   const contextValue = !sessionId
     ? t('尚未选择会话')
@@ -104,40 +113,64 @@ export default function UsageStatus({
           ? t('读取中…')
           : t('统计未返回');
   const contextCaption = sessionId ? caption(context) : t('创建会话后显示');
+  const compactState = (value: UsageRead<unknown>) =>
+    !connected
+      ? t('未连接')
+      : value.error
+        ? t('更新失败')
+        : value.loading && value.data
+          ? t('读取中…')
+          : '';
+  const detailLabel = t('查看额度与上下文明细');
+  const accountDetail = `${plan}: ${accountValue} · ${accountCaption}`;
+  const contextDetail = `${t('上下文')}: ${contextValue} · ${contextCaption}`;
+  const progress = (value: number, label: string) => (
+    <span
+      className="usage-status-track"
+      role="progressbar"
+      aria-label={label}
+      aria-valuenow={Math.min(100, Math.max(0, value))}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <span style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+    </span>
+  );
 
   return (
-    <section className="usage-status" aria-label={t('用量概览')}>
+    <section className={`usage-status${compact ? ' is-compact' : ''}`} aria-label={t('用量概览')}>
       <button
         type="button"
         className="usage-status-detail"
-        aria-label={t('查看额度与上下文明细')}
+        aria-label={compact ? `${detailLabel} · ${accountDetail} · ${contextDetail}` : detailLabel}
         onClick={onOpen}
       >
-        <span className="usage-status-metric">
+        <span className="usage-status-metric" title={compact ? accountDetail : undefined}>
           <span className="usage-status-heading">
             <Gauge size={14} aria-hidden="true" />
             <span title={plan}>{plan}</span>
           </span>
-          <strong>
-            {remaining != null
-              ? t('剩余 {percent}', { percent: percent(remaining) })
-              : account.loading
-                ? t('读取中…')
-                : t('额度未返回')}
-          </strong>
+          <strong>{accountValue}</strong>
+          {compact && remaining != null && progress(remaining, `${plan} ${accountValue}`)}
           <span
             className={`usage-status-caption${account.error || !connected ? ' is-stale' : ''}`}
             title={account.error || account.data?.fetchedAt || undefined}
           >
-            {caption(account, account.data?.fetchedAt)}
+            {compact ? compactState(account) : accountCaption}
           </span>
         </span>
-        <span className="usage-status-metric">
+        <span className="usage-status-metric" title={compact ? contextDetail : undefined}>
           <span className="usage-status-heading">
             <BookOpen size={14} aria-hidden="true" />
             <span>{t('上下文')}</span>
           </span>
           <strong>{contextValue}</strong>
+          {compact &&
+            contextData?.percent != null &&
+            progress(
+              contextData.percent,
+              `${t('上下文')} ${t('已用 {percent}', { percent: percent(contextData.percent) })}`,
+            )}
           <span
             className={`usage-status-caption${context.error || !connected ? ' is-stale' : ''}`}
             title={
@@ -147,7 +180,7 @@ export default function UsageStatus({
                 : undefined)
             }
           >
-            {contextCaption}
+            {compact ? (sessionId ? compactState(context) : '') : contextCaption}
           </span>
         </span>
       </button>

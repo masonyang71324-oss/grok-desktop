@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, memo, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowUpRight,
   Check,
@@ -125,7 +126,7 @@ export function Modal({
       previous?.focus();
     };
   }, []);
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
@@ -151,7 +152,8 @@ export function Modal({
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 export function Markdown({ text, notify }: { text: string; notify?: (message: string) => void }) {

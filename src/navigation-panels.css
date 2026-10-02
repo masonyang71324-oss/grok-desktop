@@ -1,0 +1,117 @@
+.inspector[hidden] {
+  display: none;
+}
+
+.inspector.inspector-embedded {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.inspector-embedded .inspector-tabs {
+  flex-shrink: 0;
+  gap: 3px;
+  padding: 0 10px;
+}
+
+.inspector-embedded .inspector-tabs button {
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 3px;
+  font-size: 11px;
+}
+
+.inspector-embedded .inspector-tabs .inspector-refresh {
+  flex: 0 0 26px;
+  align-self: center;
+  height: 26px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  border: 0;
+}
+
+.inspector-embedded .inspector-options {
+  flex-shrink: 0;
+  padding: 10px 12px;
+  font-size: 10px;
+}
+
+.inspector-embedded .tree-heading {
+  padding: 14px 12px 9px;
+}
+
+.inspector-embedded .empty-box {
+  padding: 24px 14px;
+}
+
+.task-center-embedded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.task-panel-hint {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 11px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.task-center-embedded .workflow-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  overflow: auto;
+  padding: 0 10px 12px;
+}
+
+.task-center-embedded .workflow-card {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 12px;
+  border-color: var(--border-soft);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.task-center-embedded .workflow-card > .text-button {
+  justify-content: flex-start;
+  width: 100%;
+  color: var(--text);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.task-center-embedded .workflow-card > .secondary-button {
+  width: 100%;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.task-center-embedded .queue-item {
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.task-center-embedded .queue-item > div {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,0 +1,651 @@
+/* Selected unified-navigation layout. Scoped to the desktop shell. */
+.app.unified-layout,
+.app.unified-layout.inspector-hidden {
+  --navigation-width: clamp(224px, 19.5vw, 310px);
+  --reading-width: 1224px;
+  --faint: #8a96a3;
+  grid-template-columns: var(--navigation-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: 'navigation workspace' 'status status';
+  font-size: 14px;
+}
+.app.unified-layout.sidebar-hidden,
+.app.unified-layout.sidebar-hidden.inspector-hidden {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'workspace' 'status';
+}
+.unified-layout [hidden] {
+  display: none !important;
+}
+:root[data-theme='light'] .app.unified-layout {
+  --faint: #64727c;
+}
+.unified-layout .sidebar {
+  grid-area: navigation;
+  padding: 22px 16px 12px;
+  gap: 0;
+  min-width: 0;
+}
+.unified-layout .brand {
+  margin: 0 6px 24px;
+  height: 38px;
+  gap: 12px;
+}
+.unified-layout .brand > div {
+  font-size: 28px;
+}
+.unified-layout .brand > div > span {
+  font-size: 9px;
+}
+.unified-layout .brand-mark {
+  border-radius: 9px;
+}
+.unified-layout .new-conversation {
+  min-height: 42px;
+  margin-bottom: 16px;
+  padding: 10px 13px;
+  font-size: 14px;
+  border-radius: 9px;
+}
+.unified-layout .navigation-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0 -4px 12px;
+}
+.unified-layout .navigation-tabs button {
+  position: relative;
+  gap: 7px;
+  padding: 12px 4px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.unified-layout .navigation-tabs button:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.unified-layout .navigation-tabs button[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.unified-layout .navigation-attention {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  position: absolute;
+  right: 2px;
+  top: 9px;
+}
+.unified-layout .project-switcher {
+  position: relative;
+  margin-bottom: 14px;
+}
+.unified-layout .project-switcher .section-label {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+}
+.unified-layout .project-switcher .section-label button {
+  width: 28px;
+  height: 32px;
+}
+.unified-layout .project-button {
+  width: calc(100% - 30px);
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  min-height: 54px;
+  background: transparent;
+}
+.unified-layout .project-button:hover,
+.unified-layout .project-button.active {
+  background: var(--surface);
+}
+.unified-layout .project-button strong {
+  font-size: 14px;
+}
+.unified-layout .project-button small {
+  font-size: 12px;
+}
+.unified-layout .project-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+}
+.unified-layout .sidebar-panels {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.unified-layout .navigation-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.unified-layout .inspector-embedded .inspector-tabs {
+  padding: 0;
+  gap: 2px;
+}
+.unified-layout .inspector-embedded .inspector-tabs button {
+  white-space: nowrap;
+  gap: 4px;
+  padding: 9px 2px;
+  font-size: 12px;
+}
+.unified-layout .inspector-embedded .inspector-tabs svg {
+  flex-shrink: 0;
+}
+.unified-layout .inspector-embedded .inspector-options {
+  padding: 8px 4px;
+  font-size: 11px;
+}
+.unified-layout .inspector-embedded .tree-heading {
+  padding: 10px 6px;
+}
+.unified-layout .embedded-project-heading {
+  display: none;
+}
+.unified-layout .history-heading {
+  font-size: 12px;
+  padding: 0 6px;
+  margin-bottom: 10px;
+}
+.unified-layout .search-input {
+  margin-bottom: 10px;
+  min-height: 36px;
+}
+.unified-layout .search-input input {
+  font-size: 13px;
+}
+.unified-layout .session-list {
+  flex: 1;
+  min-height: 0;
+}
+.unified-layout .session-select {
+  padding: 12px 10px;
+  gap: 9px;
+}
+.unified-layout .session-select span {
+  font-size: 13px;
+}
+.unified-layout .session-select small {
+  font-size: 11px;
+}
+.unified-layout .session-item {
+  border: 0;
+  border-radius: 7px;
+  margin-bottom: 3px;
+}
+.unified-layout .session-item.selected {
+  background: var(--surface-hover);
+}
+.unified-layout .history-empty {
+  padding: 26px 12px;
+  font-size: 13px;
+}
+.unified-layout .history-empty small {
+  font-size: 12px;
+}
+.unified-layout .sidebar-bottom {
+  flex-shrink: 0;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  gap: 2px;
+}
+.unified-layout .sidebar-bottom > button,
+.unified-layout .sidebar-bottom-row > button {
+  min-height: 35px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.unified-layout .workspace {
+  grid-area: workspace;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.unified-layout .topbar {
+  min-height: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  padding: 0 26px;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.unified-layout .breadcrumb {
+  min-width: 0;
+  font-size: 14px;
+  gap: 12px;
+}
+.unified-layout .breadcrumb > span {
+  max-width: 300px;
+}
+.unified-layout .topbar-actions {
+  gap: 7px;
+}
+.unified-layout .topbar-actions .icon-button {
+  width: 34px;
+  height: 34px;
+}
+.unified-layout .header-action {
+  flex-shrink: 0;
+  height: 34px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.unified-layout .header-action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.unified-layout .thread {
+  padding: 0 32px;
+  min-height: 0;
+}
+.unified-layout .conversation {
+  max-width: var(--reading-width);
+  padding: 34px 24px 12px;
+}
+.unified-layout .message {
+  margin-bottom: 30px;
+  gap: 14px;
+}
+.unified-layout .message-avatar {
+  width: 30px;
+}
+.unified-layout .message-author {
+  font-size: 14px;
+  margin-bottom: 9px;
+}
+.unified-layout .markdown,
+.unified-layout .user-text {
+  font-size: 16px;
+  line-height: 1.8;
+}
+.unified-layout .markdown pre,
+.unified-layout .markdown code:not(pre code) {
+  font-size: 13px;
+}
+.unified-layout .message.user {
+  flex-direction: row-reverse;
+  max-width: 88%;
+  width: fit-content;
+  margin-left: auto;
+}
+.unified-layout .message.user .message-content {
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-hover);
+  padding: 12px 16px;
+}
+.unified-layout .message.user .message-author {
+  display: none;
+}
+.unified-layout .tool-row {
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+}
+.unified-layout .tool-row > summary {
+  padding: 12px 4px;
+}
+.unified-layout .tool-row[open] {
+  background: var(--surface);
+  border-radius: 8px;
+}
+.unified-layout .task-result-container {
+  max-width: var(--reading-width);
+  margin: 12px auto 20px;
+  padding: 0 24px;
+}
+.unified-layout .task-outcome {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0;
+  padding: 16px 4px 8px;
+}
+.unified-layout .task-outcome-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.unified-layout .task-outcome-summary-row {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.unified-layout .task-outcome-details {
+  margin-top: 9px;
+}
+.unified-layout .task-outcome-details > summary {
+  font-size: 12px;
+}
+.unified-layout .composer-area {
+  width: 100%;
+  max-width: calc(var(--reading-width) + 64px);
+  margin: 0 auto;
+  padding: 10px 32px 12px;
+  flex-shrink: 0;
+}
+.unified-layout .composer {
+  border-radius: 12px;
+  border-color: var(--border);
+  background: var(--surface);
+  box-shadow: none;
+  padding: 0;
+}
+.unified-layout .composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.unified-layout .composer > textarea {
+  padding: 16px 18px 8px;
+  min-height: 78px;
+  max-height: 190px;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.unified-layout .composer-toolbar {
+  padding: 9px 14px 13px;
+  min-height: 54px;
+  gap: 10px;
+}
+.unified-layout .composer-tools {
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.unified-layout .composer-tools .icon-button {
+  width: 32px;
+  height: 34px;
+  flex-shrink: 0;
+}
+.unified-layout .composer-tools .toolbar-divider {
+  display: none;
+}
+.unified-layout .model-control,
+.unified-layout .context-control,
+.unified-layout .mode-control {
+  min-height: 34px;
+  margin: 0;
+  padding: 0 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+}
+.unified-layout .model-control {
+  max-width: 190px;
+}
+.unified-layout .effort-trigger {
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.unified-layout .model-control select,
+.unified-layout .context-control select,
+.unified-layout .mode-control select {
+  font-size: 13px;
+  height: 32px;
+  padding: 3px;
+  color: var(--text);
+}
+.unified-layout .mode-control select {
+  max-width: 100px;
+}
+.unified-layout .send-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+.unified-layout .composer-bottom {
+  margin-top: 9px;
+  gap: 12px;
+  min-height: 34px;
+  font-size: 12px;
+}
+.unified-layout .composer-bottom > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.unified-layout .composer-bottom .queue-control {
+  margin-left: auto;
+  flex-shrink: 0;
+  gap: 6px;
+  font-size: 12px;
+  min-height: 32px;
+}
+.unified-layout .permission-trigger {
+  min-height: 34px;
+  font-size: 12px;
+}
+.unified-layout .task-activity {
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+}
+.unified-layout .desktop-status-bar {
+  grid-area: status;
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 5px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--sidebar);
+  z-index: 5;
+}
+.unified-layout .desktop-status-bar .sidebar-status {
+  grid-column: 1;
+  margin: 0;
+  padding: 0;
+  gap: 7px;
+  font-size: 12px;
+  border: 0;
+  min-width: 0;
+}
+.unified-layout .sidebar-status > span:last-child {
+  display: none;
+}
+.unified-layout .home-resource-bar {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.unified-layout .home-version-bar {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  gap: 4px;
+  max-width: 470px;
+}
+.unified-layout .home-update-status,
+.unified-layout .home-engine-status {
+  border: 0;
+  border-radius: 5px;
+  padding: 5px;
+  min-height: 30px;
+  font-size: 12px;
+  gap: 4px;
+  background: transparent;
+}
+.unified-layout .home-update-status:hover,
+.unified-layout .home-engine-status:hover {
+  background: var(--surface-hover);
+}
+.unified-layout .home-version-bar .icon-button {
+  width: 28px;
+  height: 28px;
+}
+.unified-layout .home-update-status.available,
+.unified-layout .home-update-status.downloaded {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.unified-layout .welcome {
+  max-width: var(--reading-width);
+  padding: 58px 20px 34px;
+}
+.unified-layout .welcome-orbit {
+  display: none;
+}
+.unified-layout .welcome-kicker {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.unified-layout .welcome h1 {
+  font-size: 32px;
+  letter-spacing: -0.5px;
+  margin: 0 0 18px;
+}
+.unified-layout .welcome > p {
+  font-size: 15px;
+  line-height: 1.8;
+}
+.unified-layout .welcome-cards {
+  width: 100%;
+  max-width: 740px;
+  gap: 12px;
+  margin: 34px 0 24px;
+}
+.unified-layout .welcome-cards > button {
+  border: 0;
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 20px 16px;
+}
+.unified-layout .welcome-cards > button::before {
+  display: none;
+}
+.unified-layout .welcome-cards strong {
+  font-size: 14px;
+}
+.unified-layout .welcome-cards span {
+  font-size: 12px;
+}
+.unified-layout .welcome-project {
+  font-size: 12px;
+}
+.unified-layout .toast {
+  bottom: 62px;
+}
+@media (max-width: 1150px) {
+  .app.unified-layout {
+    --navigation-width: 224px;
+  }
+  .unified-layout .sidebar {
+    padding: 18px 12px 10px;
+  }
+  .unified-layout .topbar {
+    padding: 0 18px;
+    gap: 8px;
+  }
+  .unified-layout .breadcrumb {
+    gap: 7px;
+  }
+  .unified-layout .breadcrumb > span {
+    max-width: 180px;
+  }
+  .unified-layout .topbar-actions {
+    gap: 3px;
+  }
+  .unified-layout .thread {
+    padding: 0 24px;
+  }
+  .unified-layout .conversation,
+  .unified-layout .task-result-container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .unified-layout .composer-area {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .unified-layout .composer-tools {
+    gap: 4px;
+  }
+  .unified-layout .model-control {
+    max-width: 155px;
+  }
+  .unified-layout .desktop-status-bar {
+    gap: 8px;
+    padding: 5px 12px;
+  }
+  .unified-layout .home-version-bar {
+    max-width: 425px;
+  }
+  .unified-layout .home-update-copy {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .unified-layout .composer-bottom > span {
+    display: none;
+  }
+}
+@media (max-height: 740px) {
+  .unified-layout .sidebar {
+    padding-top: 14px;
+  }
+  .unified-layout .brand {
+    margin-bottom: 15px;
+  }
+  .unified-layout .new-conversation {
+    margin-bottom: 10px;
+  }
+  .unified-layout .project-switcher {
+    margin-bottom: 8px;
+  }
+  .unified-layout .project-button {
+    min-height: 40px;
+    padding: 6px;
+  }
+  .unified-layout .project-button small {
+    display: none;
+  }
+  .unified-layout .sidebar-bottom {
+    padding-top: 7px;
+    margin-top: 8px;
+  }
+  .unified-layout .sidebar-bottom > button,
+  .unified-layout .sidebar-bottom-row > button {
+    min-height: 32px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .unified-layout .composer > textarea {
+    min-height: 64px;
+  }
+  .unified-layout .welcome {
+    padding-top: 28px;
+    padding-bottom: 18px;
+  }
+  .unified-layout .welcome-cards {
+    margin-top: 22px;
+  }
+}

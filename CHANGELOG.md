@@ -1,5 +1,14 @@
 # Changes
 
+## 1.6.0
+
+- Unify Chats, Files and Tasks in the left navigation, retaining file editing, changes, plans, task controls and full task-center access.
+- Keep connection, account/context statistics and separate Desktop/Build version controls in a compact persistent footer.
+- Align the conversation and composer, simplify borders, improve typography and adapt the layout to small desktop windows.
+- Combine effort presets and the full advertised exact/default levels in one keyboard-accessible control.
+- Preserve editor state across panel switches, correct dialog stacking and restore expected focus when menus close.
+- Retain bilingual controls, attachments, permissions, queue/cancel, checkpoints, scripts, favorites and all management actions.
+
 ## 1.5.1
 
 - Honor Stop during attachment preparation and model configuration before a prompt reaches Grok.

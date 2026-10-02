@@ -15,7 +15,7 @@ const defaults = {
   lastProject: '',
   notifications: true,
   promptTemplates: [],
-  ui: { sidebar: true, inspector: true, inspectorTab: 'files' },
+  ui: { sidebar: true, inspector: false, inspectorTab: 'files', navigationTab: 'sessions' },
   window: null,
 };
 
@@ -53,6 +53,11 @@ function normalizeSettings(input = {}) {
     ui: {
       sidebar: input.ui?.sidebar !== false,
       inspector: input.ui?.inspector !== false,
+      navigationTab: ['sessions', 'files', 'tasks'].includes(input.ui?.navigationTab)
+        ? input.ui.navigationTab
+        : input.ui?.inspector === true
+          ? 'files'
+          : 'sessions',
       inspectorTab: ['files', 'changes', 'plan'].includes(input.ui?.inspectorTab)
         ? input.ui.inspectorTab
         : 'files',

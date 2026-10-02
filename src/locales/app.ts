@@ -1,4 +1,10 @@
 export const app: Record<string, string> = {
+  工作区导航: 'Workspace navigation',
+  工作区状态: 'Workspace status',
+  会话: 'Chats',
+  任务: 'Tasks',
+  任务队列: 'Task queue',
+
   常用任务: 'Saved tasks',
   推理快捷设置: 'Quick reasoning settings',
   处理方式: 'Task effort',

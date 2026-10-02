@@ -11,7 +11,12 @@ export interface Settings {
   lastProject: string;
   notifications?: boolean;
   promptTemplates?: { id: string; name: string; text: string }[];
-  ui?: { sidebar: boolean; inspector: boolean; inspectorTab: 'files' | 'changes' | 'plan' };
+  ui?: {
+    sidebar: boolean;
+    inspector: boolean;
+    inspectorTab: 'files' | 'changes' | 'plan';
+    navigationTab?: 'sessions' | 'files' | 'tasks';
+  };
   window?: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
 }
 export interface Model {

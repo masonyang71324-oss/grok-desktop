@@ -26,6 +26,40 @@ before(async () => {
 });
 after(async () => browser?.close());
 
+test('unified navigation preserves the composer and exposes files, tasks and footer controls at small desktop sizes', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.setViewportSize({ width: 980, height: 680 });
+  const draft = page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true });
+  await draft.fill('切换面板后保留的草稿');
+  const navigation = page.getByRole('tablist', { name: '工作区导航' });
+  await navigation.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.locator('.inspector').getByText('先选择一个项目', { exact: true }).waitFor();
+  await navigation.getByRole('tab', { name: '任务', exact: true }).click();
+  await page.locator('.task-center-embedded').getByText('暂无任务', { exact: true }).waitFor();
+  await navigation.getByRole('tab', { name: '会话', exact: true }).click();
+  assert.equal(await draft.inputValue(), '切换面板后保留的草稿');
+  const footer = await page.locator('.desktop-status-bar').boundingBox();
+  const send = await page.getByRole('button', { name: '发送消息', exact: true }).boundingBox();
+  assert.ok(footer && footer.y + footer.height <= 680);
+  assert.ok(send && send.y + send.height <= footer.y);
+  assert.equal(await page.locator('.desktop-status-bar .home-engine-status').isVisible(), true);
+  assert.equal(await page.locator('.desktop-status-bar .home-update-status').isVisible(), true);
+  assert.equal(await page.locator('.desktop-status-bar .usage-status').isVisible(), true);
+  await page.getByRole('button', { name: '收起侧边栏', exact: true }).click();
+  assert.equal(await navigation.isVisible(), false);
+  assert.equal(await draft.inputValue(), '切换面板后保留的草稿');
+  await page.getByRole('button', { name: '展开侧边栏', exact: true }).click();
+  assert.equal(await navigation.isVisible(), true);
+  await navigation.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '收起侧边栏', exact: true }).click();
+  await page.getByRole('button', { name: '展开项目上下文', exact: true }).click();
+  assert.equal(
+    await navigation.getByRole('tab', { name: '文件', exact: true }).getAttribute('aria-selected'),
+    'true',
+  );
+  assert.equal(await page.locator('.inspector').isVisible(), true);
+});
+
 test('expanded task results stay in the thread scroll while the send control remains visible with a long draft', async (t) => {
   const page = await fixture(t, { authStatus: 'authenticated' });
   await page.setViewportSize({ width: 980, height: 680 });
@@ -338,10 +372,12 @@ test('advertised effort defaults and context selection use authoritative configu
   await page.getByRole('button', { name: '打开项目文件夹', exact: true }).click();
   await page.getByRole('button', { name: 'My existing session', exact: true }).click();
   const context = page.getByRole('combobox', { name: '上下文窗口', exact: true });
+  await page.getByRole('button', { name: '推理深度', exact: true }).click();
   assert.equal(
     await page.getByRole('combobox', { name: '推理深度', exact: true }).inputValue(),
     'medium',
   );
+  await page.keyboard.press('Escape');
   assert.equal(await context.inputValue(), '256000');
   await context.selectOption('500000');
   await page.waitForFunction(() =>
@@ -399,10 +435,12 @@ test('obsolete saved model defaults display the advertised catalog default witho
     await page.getByRole('combobox', { name: '选择模型', exact: true }).inputValue(),
     'grok-4.7',
   );
+  await page.getByRole('button', { name: '推理深度', exact: true }).click();
   assert.equal(
     await page.getByRole('combobox', { name: '推理深度', exact: true }).inputValue(),
     'medium',
   );
+  await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(() => window.settings.modelId), 'grok-code-fast-1');
 });
 

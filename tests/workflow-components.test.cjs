@@ -7,7 +7,7 @@ let browser, bundle;
 before(async () => {
   bundle = buildSync({
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import ProjectTools from './src/ProjectTools';import TaskCenter from './src/TaskCenter';const root=createRoot(document.getElementById('root'));window.showTools=(editorOpen=false)=>root.render(<ProjectTools cwd="C:/project" sessionId="s1" editorOpen={editorOpen} onRestored={()=>window.restored=true} onClose={()=>{}} notify={message=>window.notices.push(message)}/>);window.showTasks=()=>root.render(<TaskCenter tasks={[{sessionId:'s1',cwd:'C:/project',title:'task',status:'paused',permissions:[],queued:[{id:'q1',text:'queued request',createdAt:''}]}]} onOpen={()=>{}} onClose={()=>{}} notify={message=>window.notices.push(message)}/>);`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import ProjectTools from './src/ProjectTools';import TaskCenter from './src/TaskCenter';const root=createRoot(document.getElementById('root'));window.showTools=(editorOpen=false)=>root.render(<ProjectTools cwd="C:/project" sessionId="s1" editorOpen={editorOpen} onRestored={()=>window.restored=true} onClose={()=>{}} notify={message=>window.notices.push(message)}/>);window.showTasks=(extra={})=>root.render(<TaskCenter tasks={[{sessionId:'s1',cwd:'C:/project',title:'task',status:'paused',permissions:[],queued:[{id:'q1',text:'queued request',createdAt:''}]}]} onOpen={task=>window.openedTask=task.sessionId} onClose={()=>{}} notify={message=>window.notices.push(message)} {...extra}/>);`,
       loader: 'tsx',
       resolveDir: path.join(__dirname, '..'),
     },
@@ -153,6 +153,7 @@ test('paused queues never resume when opened and removal is explicitly session-s
   const page = await fixture(t);
   await page.evaluate(() => window.showTasks());
   await page.getByText('queued request').waitFor();
+  assert.equal(await page.getByRole('dialog', { name: '任务中心' }).count(), 1);
   assert.equal(await page.evaluate(() => window.calls.length), 0);
   await page.getByRole('button', { name: '移除', exact: true }).click();
   await page.getByRole('button', { name: '继续队列' }).click();
@@ -160,4 +161,105 @@ test('paused queues never resume when opened and removal is explicitly session-s
     { command: 'tasks.remove', payload: { sessionId: 's1', queueId: 'q1' } },
     { command: 'tasks.resume', payload: { sessionId: 's1', queueId: undefined } },
   ]);
+});
+
+test('embedded task center preserves open, approval, stop, remove and resume controls without a modal', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() =>
+    window.showTasks({
+      embedded: true,
+      tasks: [
+        {
+          sessionId: 'paused',
+          cwd: 'C:/project',
+          title: 'Paused task',
+          status: 'paused',
+          permissions: [],
+          queued: [
+            {
+              id: 'q1',
+              text: 'queued request',
+              attachments: [{ name: 'context.txt' }],
+              createdAt: '',
+            },
+          ],
+        },
+        {
+          sessionId: 'waiting',
+          cwd: 'C:/other',
+          title: 'Approval task',
+          status: 'waiting',
+          permissions: [{ requestId: 1 }],
+          queued: [],
+        },
+        {
+          sessionId: 'background',
+          cwd: 'C:/project',
+          title: 'Background task',
+          status: 'background',
+          permissions: [],
+          queued: [],
+        },
+      ],
+    }),
+  );
+  await page.getByRole('button', { name: 'Paused task', exact: true }).waitFor();
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  await page.getByText('等待审批', { exact: true }).waitFor();
+  await page.getByText('context.txt', { exact: true }).waitFor();
+  await page
+    .getByText('本轮后台操作尚未完成，同项目的新请求会继续等待。可打开会话管理后台操作。')
+    .waitFor();
+  assert.equal(await page.evaluate(() => window.calls.length), 0);
+  await page.getByRole('button', { name: 'Approval task', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.openedTask), 'waiting');
+  await page.getByRole('button', { name: '停止任务', exact: true }).click();
+  await page.getByRole('button', { name: '移除', exact: true }).click();
+  await page.getByRole('button', { name: '继续队列', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.calls), [
+    { command: 'session.cancel', payload: { sessionId: 'waiting', queueId: undefined } },
+    { command: 'tasks.remove', payload: { sessionId: 'paused', queueId: 'q1' } },
+    { command: 'tasks.resume', payload: { sessionId: 'paused', queueId: undefined } },
+  ]);
+});
+
+test('embedded task center scrolls inside a narrow panel without horizontal overflow', async (t) => {
+  const page = await fixture(t);
+  await page.setViewportSize({ width: 900, height: 650 });
+  for (const name of ['styles.css', 'workflows.css', 'navigation-panels.css'])
+    await page.addStyleTag({ path: path.join(__dirname, '../src', name) });
+  await page.addStyleTag({ content: '#root{display:flex;width:260px;height:440px}' });
+  await page.evaluate(() =>
+    window.showTasks({
+      embedded: true,
+      tasks: Array.from({ length: 8 }, (_, index) => ({
+        sessionId: `task-${index}`,
+        cwd: 'C:/project/long/nested/directory',
+        title: `Task ${index}`,
+        status: 'paused',
+        permissions: [],
+        queued: [
+          { id: `q-${index}`, text: 'LongQueuedMessageWithoutSpaces'.repeat(4), createdAt: '' },
+        ],
+      })),
+    }),
+  );
+  await page.locator('.task-center-embedded').waitFor();
+  const layout = await page.locator('.task-center-embedded').evaluate((element) => {
+    const list = element.querySelector('.workflow-list');
+    return {
+      width: element.getBoundingClientRect().width,
+      height: element.getBoundingClientRect().height,
+      overflow: element.scrollWidth > element.clientWidth,
+      scrolls: list.scrollHeight > list.clientHeight,
+      listOverflow: list.scrollWidth > list.clientWidth,
+    };
+  });
+  assert.deepEqual(layout, {
+    width: 260,
+    height: 440,
+    overflow: false,
+    scrolls: true,
+    listOverflow: false,
+  });
 });

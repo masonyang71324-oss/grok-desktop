@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Check,
   ChevronDown,
@@ -48,6 +49,8 @@ export default function Inspector({
   onTabChange,
   onAddContext,
   onEditorOpenChange,
+  embedded = false,
+  visible = true,
 }: {
   cwd: string;
   plan: any[];
@@ -59,9 +62,12 @@ export default function Inspector({
   onTabChange?: (tab: InspectorTab) => void;
   onAddContext?: (file: Attachment) => void;
   onEditorOpenChange?: (open: boolean) => void;
+  embedded?: boolean;
+  visible?: boolean;
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<InspectorTab>(initialTab);
+  useEffect(() => setTab(initialTab), [initialTab]);
   const [tree, setTree] = useState<Record<string, WorkspaceEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showHidden, setShowHidden] = useState(false);
@@ -359,19 +365,23 @@ export default function Inspector({
     setEdited('');
     setSaving(false);
   }
+  const renderDialog = (dialog: ReactNode) =>
+    embedded ? createPortal(dialog, document.body) : dialog;
   return (
-    <aside className="inspector">
-      <div className="inspector-title">
-        <span>{t('项目上下文')}</span>
-        <div className="button-cluster">
-          <IconButton label={t('刷新')} onClick={() => void refresh()} disabled={busy || !cwd}>
-            {busy ? <Spinner /> : <RefreshCw size={15} />}
-          </IconButton>
-          <IconButton label={t('收起上下文面板')} onClick={onClose}>
-            <X size={16} />
-          </IconButton>
+    <aside className={`inspector${embedded ? ' inspector-embedded' : ''}`} hidden={!visible}>
+      {!embedded && (
+        <div className="inspector-title">
+          <span>{t('项目上下文')}</span>
+          <div className="button-cluster">
+            <IconButton label={t('刷新')} onClick={() => void refresh()} disabled={busy || !cwd}>
+              {busy ? <Spinner /> : <RefreshCw size={15} />}
+            </IconButton>
+            <IconButton label={t('收起上下文面板')} onClick={onClose}>
+              <X size={16} />
+            </IconButton>
+          </div>
         </div>
-      </div>
+      )}
       <div className="inspector-tabs">
         {(
           [
@@ -390,6 +400,16 @@ export default function Inspector({
             {item.id === 'plan' && plan.length > 0 && <span className="count">{plan.length}</span>}
           </button>
         ))}
+        {embedded && (
+          <IconButton
+            className="inspector-refresh"
+            label={t('刷新')}
+            onClick={() => void refresh()}
+            disabled={busy || !cwd}
+          >
+            {busy ? <Spinner /> : <RefreshCw size={14} />}
+          </IconButton>
+        )}
       </div>
       {tab === 'files' && cwd && (
         <label className="inspector-options">
@@ -409,7 +429,7 @@ export default function Inspector({
           </EmptyBox>
         ) : tab === 'files' ? (
           <>
-            <div className="tree-heading">
+            <div className={`tree-heading ${embedded ? 'embedded-project-heading' : ''}`}>
               <FolderOpen size={14} />
               {baseName(cwd)}
             </div>
@@ -510,183 +530,189 @@ export default function Inspector({
           </EmptyBox>
         )}
       </div>
-      <div className="inspector-footer">
-        <span className="status-dot" />
-        {t('本地工作区')}
-        <span className="ellipsis" title={cwd}>
-          {cwd ? baseName(cwd) : t('未选择')}
-        </span>
-      </div>
-      {file && (
-        <Modal
-          title={baseName(file.path)}
-          subtitle={file.path}
-          wide
-          onClose={closeFile}
-          footer={
-            <>
-              <span className="muted">
-                {t(
-                  file.truncated
-                    ? '文件较大，仅预览部分内容'
-                    : dirty
-                      ? '有未保存的修改'
-                      : '所有修改已保存',
-                )}
-              </span>
-              <button
-                className="primary-button"
-                disabled={saving || file.truncated || !dirty}
-                onClick={() => void save()}
-              >
-                {saving ? <Spinner /> : <Save size={15} />}
-                {t('保存文件')}
-              </button>
-            </>
-          }
-        >
-          <div className="file-preview-actions">
-            {onAddContext && (
+      {!embedded && (
+        <div className="inspector-footer">
+          <span className="status-dot" />
+          {t('本地工作区')}
+          <span className="ellipsis" title={cwd}>
+            {cwd ? baseName(cwd) : t('未选择')}
+          </span>
+        </div>
+      )}
+      {file &&
+        renderDialog(
+          <Modal
+            title={baseName(file.path)}
+            subtitle={file.path}
+            wide
+            onClose={closeFile}
+            footer={
               <>
+                <span className="muted">
+                  {t(
+                    file.truncated
+                      ? '文件较大，仅预览部分内容'
+                      : dirty
+                        ? '有未保存的修改'
+                        : '所有修改已保存',
+                  )}
+                </span>
                 <button
-                  className="secondary-button"
-                  onClick={() =>
-                    onAddContext({ name: file.path, path: '', kind: 'text', text: edited })
-                  }
-                  disabled={file.truncated}
+                  className="primary-button"
+                  disabled={saving || file.truncated || !dirty}
+                  onClick={() => void save()}
                 >
-                  {t('添加文件内容')}
-                </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => {
-                    const editor = editorRef.current;
-                    if (!editor || editor.selectionStart === editor.selectionEnd) {
-                      notify(t('请先选择要添加的文本'));
-                      return;
-                    }
-                    const start = edited.slice(0, editor.selectionStart).split('\n').length;
-                    onAddContext({
-                      name: `${file.path}:${start}`,
-                      path: '',
-                      kind: 'text',
-                      text: edited.slice(editor.selectionStart, editor.selectionEnd),
-                    });
-                  }}
-                >
-                  {t('添加选中文本')}
+                  {saving ? <Spinner /> : <Save size={15} />}
+                  {t('保存文件')}
                 </button>
               </>
-            )}
-            <button
-              className="secondary-button"
-              onClick={() => void openSystemFile(file.path, 'workspace-file')}
-            >
-              <ExternalLink size={14} />
-              {t('用默认程序打开')}
-            </button>
-            <button
-              className="secondary-button"
-              onClick={() => void openSystemFile(file.path, 'workspace-reveal')}
-            >
-              <FolderOpen size={14} />
-              {t('在资源管理器显示')}
-            </button>
-          </div>
-          <textarea
-            ref={editorRef}
-            className="file-editor"
-            value={edited}
-            onChange={(event) => setEdited(event.target.value)}
-            readOnly={file.truncated}
-            spellCheck={false}
-            aria-label={t('文件内容')}
-          />
-        </Modal>
-      )}
-      {confirmDiscard && file && (
-        <Modal
-          title={t('放弃未保存的修改')}
-          onClose={() => setConfirmDiscard(false)}
-          footer={
-            <>
-              <button className="secondary-button" onClick={() => setConfirmDiscard(false)}>
-                {t('继续编辑')}
-              </button>
-              <button className="primary-button danger" onClick={discardFile}>
-                {t('放弃修改')}
-              </button>
-            </>
-          }
-        >
-          <p>{t('此文件的修改尚未保存。放弃修改并关闭？')}</p>
-        </Modal>
-      )}
-      {diff && (
-        <Modal
-          title={t('文件变更')}
-          subtitle={diff.path}
-          wide
-          onClose={() => {
-            contextRef.current.diff += 1;
-            setDiff(null);
-          }}
-        >
-          <div className="diff-view">
-            {onAddContext && (
+            }
+          >
+            <div className="file-preview-actions">
+              {onAddContext && (
+                <>
+                  <button
+                    className="secondary-button"
+                    onClick={() =>
+                      onAddContext({ name: file.path, path: '', kind: 'text', text: edited })
+                    }
+                    disabled={file.truncated}
+                  >
+                    {t('添加文件内容')}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => {
+                      const editor = editorRef.current;
+                      if (!editor || editor.selectionStart === editor.selectionEnd) {
+                        notify(t('请先选择要添加的文本'));
+                        return;
+                      }
+                      const start = edited.slice(0, editor.selectionStart).split('\n').length;
+                      onAddContext({
+                        name: `${file.path}:${start}`,
+                        path: '',
+                        kind: 'text',
+                        text: edited.slice(editor.selectionStart, editor.selectionEnd),
+                      });
+                    }}
+                  >
+                    {t('添加选中文本')}
+                  </button>
+                </>
+              )}
               <button
                 className="secondary-button"
-                disabled={!diff.text}
-                onClick={() =>
-                  onAddContext({
-                    name: diff.path + ' (diff)',
-                    path: '',
-                    kind: 'text',
-                    text: diff.text,
-                  })
-                }
+                onClick={() => void openSystemFile(file.path, 'workspace-file')}
               >
-                {t('添加差异到上下文')}
+                <ExternalLink size={14} />
+                {t('用默认程序打开')}
               </button>
-            )}
-            {diff.text ? (
-              diffRows.map((line, index) => (
-                <div
-                  key={index}
-                  className={
-                    line.text.startsWith('+')
-                      ? 'diff-add'
-                      : line.text.startsWith('-')
-                        ? 'diff-remove'
-                        : line.text.startsWith('@@')
-                          ? 'diff-header'
-                          : ''
+              <button
+                className="secondary-button"
+                onClick={() => void openSystemFile(file.path, 'workspace-reveal')}
+              >
+                <FolderOpen size={14} />
+                {t('在资源管理器显示')}
+              </button>
+            </div>
+            <textarea
+              ref={editorRef}
+              className="file-editor"
+              value={edited}
+              onChange={(event) => setEdited(event.target.value)}
+              readOnly={file.truncated}
+              spellCheck={false}
+              aria-label={t('文件内容')}
+            />
+          </Modal>,
+        )}
+      {confirmDiscard &&
+        file &&
+        renderDialog(
+          <Modal
+            title={t('放弃未保存的修改')}
+            onClose={() => setConfirmDiscard(false)}
+            footer={
+              <>
+                <button className="secondary-button" onClick={() => setConfirmDiscard(false)}>
+                  {t('继续编辑')}
+                </button>
+                <button className="primary-button danger" onClick={discardFile}>
+                  {t('放弃修改')}
+                </button>
+              </>
+            }
+          >
+            <p>{t('此文件的修改尚未保存。放弃修改并关闭？')}</p>
+          </Modal>,
+        )}
+      {diff &&
+        renderDialog(
+          <Modal
+            title={t('文件变更')}
+            subtitle={diff.path}
+            wide
+            onClose={() => {
+              contextRef.current.diff += 1;
+              setDiff(null);
+            }}
+          >
+            <div className="diff-view">
+              {onAddContext && (
+                <button
+                  className="secondary-button"
+                  disabled={!diff.text}
+                  onClick={() =>
+                    onAddContext({
+                      name: diff.path + ' (diff)',
+                      path: '',
+                      kind: 'text',
+                      text: diff.text,
+                    })
                   }
                 >
-                  <span className="diff-line-number" aria-hidden="true">
-                    {line.before ?? ''}
-                  </span>
-                  <span className="diff-line-number" aria-hidden="true">
-                    {line.after ?? ''}
-                  </span>
-                  <span className="diff-line-content">
-                    {index === 0 &&
-                    (line.text === `新文件 ${diff.path}` || line.text === `New file ${diff.path}`)
-                      ? t('新文件 {path}', { path: diff.path })
-                      : ['… 内容已截断', '… Content truncated'].includes(line.text)
-                        ? t('… 内容已截断')
-                        : line.text || ' '}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <EmptyBox icon={<GitCompareArrows size={22} />} heading={t('没有可显示的文本差异')}>
-                {t('该文件可能是二进制文件。')}
-              </EmptyBox>
-            )}
-          </div>
-        </Modal>
-      )}
+                  {t('添加差异到上下文')}
+                </button>
+              )}
+              {diff.text ? (
+                diffRows.map((line, index) => (
+                  <div
+                    key={index}
+                    className={
+                      line.text.startsWith('+')
+                        ? 'diff-add'
+                        : line.text.startsWith('-')
+                          ? 'diff-remove'
+                          : line.text.startsWith('@@')
+                            ? 'diff-header'
+                            : ''
+                    }
+                  >
+                    <span className="diff-line-number" aria-hidden="true">
+                      {line.before ?? ''}
+                    </span>
+                    <span className="diff-line-number" aria-hidden="true">
+                      {line.after ?? ''}
+                    </span>
+                    <span className="diff-line-content">
+                      {index === 0 &&
+                      (line.text === `新文件 ${diff.path}` || line.text === `New file ${diff.path}`)
+                        ? t('新文件 {path}', { path: diff.path })
+                        : ['… 内容已截断', '… Content truncated'].includes(line.text)
+                          ? t('… 内容已截断')
+                          : line.text || ' '}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <EmptyBox icon={<GitCompareArrows size={22} />} heading={t('没有可显示的文本差异')}>
+                  {t('该文件可能是二进制文件。')}
+                </EmptyBox>
+              )}
+            </div>
+          </Modal>,
+        )}
     </aside>
   );
 }

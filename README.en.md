@@ -6,7 +6,7 @@
 
 An **unofficial**, Windows desktop interface for Grok Build. It is not an xAI product and is not affiliated with or endorsed by xAI. Grok Build handles authentication, model requests and conversation history.
 
-![Code and file changes](assets/screenshots/desktop.png)
+![Unified navigation and chat workspace](assets/screenshots/desktop-1.6.0.png)
 
 ## Getting started
 
@@ -19,6 +19,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 
 ## Features
 
+- Unified Chats / Files / Tasks navigation and a persistent footer for connection, usage, context and both app/engine versions. Switching panels preserves drafts and file editing.
 - Project conversations, local drafts and restart recovery.
 - A task center for background conversations, pending approvals and queued messages. Different projects can run concurrently; tasks in the same folder run in sequence. Stopped or failed queues require manual continuation.
 - Per-turn file checkpoints with review, selective restore, undo and record deletion. Later file changes prevent overwriting.

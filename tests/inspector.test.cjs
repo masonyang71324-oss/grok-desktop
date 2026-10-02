@@ -8,9 +8,12 @@ let browser, bundle;
 before(async () => {
   bundle = buildSync({
     stdin: {
-      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import Inspector from './src/Inspector';
+      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import Inspector from './src/Inspector'; import {Modal} from './src/components';
         const root=createRoot(document.getElementById('root'));
-        window.showInspector=(cwd,extra={})=>root.render(<Inspector cwd={cwd} plan={[]} revision={0} onClose={()=>root.render(null)} notify={text=>window.notices.push(text)} {...extra}/>);`,
+        let cwd='',extra={},dialogOpen=false;
+        const render=()=>root.render(<><Inspector cwd={cwd} plan={[]} revision={0} onClose={()=>root.render(null)} notify={text=>window.notices.push(text)} {...extra}/>{dialogOpen&&<Modal title="Outer settings" onClose={()=>{dialogOpen=false;render();}}><input aria-label="Setting value" /></Modal>}</>);
+        window.showInspector=(nextCwd,nextExtra={})=>{cwd=nextCwd;extra=nextExtra;render();};
+        window.showRootDialog=()=>{dialogOpen=true;render();};`,
       loader: 'tsx',
       resolveDir: path.join(__dirname, '..'),
     },
@@ -283,6 +286,128 @@ test('a requested file location opens its line and reports the active tab', asyn
     'two',
   );
   assert.equal(await page.evaluate(() => window.lastTab), 'files');
+});
+
+test('mounted inspector follows tab prop changes from navigation actions', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => window.showInspector('C:/a', { tab: 'changes' }));
+  await page.locator('.change-row').waitFor();
+  assert.equal(await page.locator('.inspector-tabs button.active').textContent(), '变更');
+  await page.evaluate(() =>
+    window.showInspector('C:/a', {
+      tab: 'plan',
+      plan: [{ content: 'Keep navigation simple', status: 'in_progress' }],
+    }),
+  );
+  await page.getByText('Keep navigation simple').waitFor();
+  assert.equal(await page.locator('.change-row').count(), 0);
+});
+
+test('embedded inspector keeps the dirty editor and discard dialog visible outside a hidden sidebar', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    window.editorStates = [];
+    window.embeddedProps = {
+      embedded: true,
+      onEditorOpenChange: (open) => window.editorStates.push(open),
+    };
+    window.showInspector('C:/a', window.embeddedProps);
+  });
+  await page.locator('.file-row[title="note.txt"]').click();
+  const editor = page.getByRole('textbox', { name: '文件内容' });
+  await editor.fill('keep these unsaved edits');
+  await editor.evaluate((element) => {
+    window.savedEditor = element;
+  });
+  await page.evaluate(() => {
+    window.showInspector('C:/a', { ...window.embeddedProps, visible: false, tab: 'plan' });
+    document.getElementById('root').style.display = 'none';
+  });
+  await editor.waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.inspector-title').count(), 0);
+  assert.equal(await page.locator('.inspector-footer').count(), 0);
+  assert.equal(await page.locator('.inspector').getAttribute('hidden'), '');
+  assert.equal(await editor.inputValue(), 'keep these unsaved edits');
+  assert.equal(await editor.evaluate((element) => element === window.savedEditor), true);
+  assert.equal(await editor.evaluate((element) => element.closest('#root') === null), true);
+  assert.equal(
+    await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+    true,
+  );
+  await page.keyboard.press('Escape');
+  const confirm = page.getByRole('dialog', { name: '放弃未保存的修改' });
+  await confirm.waitFor({ state: 'visible' });
+  await confirm.getByRole('button', { name: '继续编辑' }).click();
+  await page.evaluate(() => {
+    document.getElementById('root').style.display = '';
+    window.showInspector('C:/a', { ...window.embeddedProps, visible: true, tab: 'files' });
+  });
+  assert.equal(await editor.inputValue(), 'keep these unsaved edits');
+  assert.equal(await page.evaluate(() => window.editorStates.at(-1)), true);
+  await page.getByRole('button', { name: '保存文件' }).click();
+  await page.waitForFunction(() => window.notices.includes('文件已保存'));
+  assert.equal(
+    await page.evaluate(() => window.files['C:/a/note.txt'].text),
+    'keep these unsaved edits',
+  );
+});
+
+test('embedded diff remains usable when its navigation panel is hidden', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => window.showInspector('C:/a', { embedded: true, tab: 'changes' }));
+  await page.locator('.change-row').click();
+  const diff = page.getByRole('dialog', { name: '文件变更' });
+  await diff.waitFor();
+  await page.evaluate(() => {
+    window.showInspector('C:/a', { embedded: true, visible: false, tab: 'changes' });
+    document.getElementById('root').style.display = 'none';
+  });
+  await diff.waitFor({ state: 'visible' });
+  assert.equal(await diff.evaluate((element) => element.closest('#root') === null), true);
+  await diff.getByRole('button', { name: '关闭 · Esc' }).click();
+  await diff.waitFor({ state: 'detached' });
+});
+
+test('a later root dialog closes before the portalled dirty editor and returns focus to it', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => window.showInspector('C:/a', { embedded: true }));
+  await page.locator('.file-row[title="note.txt"]').click();
+  const editor = page.getByRole('textbox', { name: '文件内容' });
+  await editor.fill('keep the editor draft');
+  await page.evaluate(() => window.showRootDialog());
+  await page.getByRole('textbox', { name: 'Setting value' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Outer settings' }).waitFor({ state: 'detached' });
+  assert.equal(await page.getByRole('dialog', { name: '放弃未保存的修改' }).count(), 0);
+  assert.equal(await editor.inputValue(), 'keep the editor draft');
+  assert.equal(await editor.evaluate((element) => document.activeElement === element), true);
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: '放弃未保存的修改' }).waitFor();
+  await page.getByRole('button', { name: '继续编辑', exact: true }).click();
+  assert.equal(await editor.inputValue(), 'keep the editor draft');
+});
+
+test('embedded inspector fits a narrow flex panel instead of becoming the mobile overlay', async (t) => {
+  const page = await fixture(t);
+  await page.setViewportSize({ width: 900, height: 650 });
+  for (const name of ['styles.css', 'navigation-panels.css'])
+    await page.addStyleTag({ path: path.join(__dirname, '../src', name) });
+  await page.addStyleTag({ content: '#root{display:flex;width:260px;height:440px}' });
+  await page.evaluate(() => window.showInspector('C:/a', { embedded: true }));
+  await page.getByRole('button', { name: '刷新', exact: true }).waitFor();
+  const layout = await page.locator('.inspector').evaluate((element) => ({
+    width: element.getBoundingClientRect().width,
+    height: element.getBoundingClientRect().height,
+    position: getComputedStyle(element).position,
+    overflow: element.scrollWidth > element.clientWidth,
+  }));
+  assert.deepEqual(layout, { width: 260, height: 440, position: 'static', overflow: false });
+  await page.evaluate(() => window.showInspector('C:/a', { embedded: true, visible: false }));
+  await page.locator('.inspector').waitFor({ state: 'hidden' });
 });
 
 test('editor selection becomes labeled inline context without saving edits', async (t) => {

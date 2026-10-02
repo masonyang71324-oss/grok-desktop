@@ -14,6 +14,8 @@ import {
   Ellipsis,
   FolderOpen,
   Gauge,
+  GitCompareArrows,
+  ListChecks,
   History,
   MessageSquare,
   PanelLeftClose,
@@ -81,6 +83,9 @@ const UsageDialog = lazy(() =>
 );
 const PromptTemplates = lazy(() => import('./PromptTemplates'));
 import UsageStatus from './UsageStatus';
+import EffortControl from './EffortControl';
+import './navigation-panels.css';
+import './desktop-layout.css';
 import TaskActivity from './TaskActivity';
 import TaskOutcome from './TaskOutcome';
 import { effortPresets } from './effort-presets.mjs';
@@ -172,7 +177,12 @@ export default function App() {
   const [topbarMenu, setTopbarMenu] = useState(false);
   const transitionRef = useRef(false);
   const [sidebar, setSidebar] = useState(true);
-  const [inspector, setInspector] = useState(true);
+  const [navigationTab, setNavigationTab] = useState<'sessions' | 'files' | 'tasks'>('sessions');
+  const inspector = navigationTab === 'files';
+  function setInspector(open: boolean) {
+    setNavigationTab(open ? 'files' : 'sessions');
+    if (open) setSidebar(true);
+  }
   const [inspectorTab, setInspectorTab] = useState<'files' | 'changes' | 'plan'>('files');
   const [fileToOpen, setFileToOpen] = useState<{
     path: string;
@@ -286,10 +296,10 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!uiRestored.current || initializing) return;
-    const ui = { sidebar, inspector, inspectorTab };
+    const ui = { sidebar, inspector, inspectorTab, navigationTab };
     if (JSON.stringify(settingsRef.current.ui) === JSON.stringify(ui)) return;
     void saveSettings({ ui }).catch((e) => notify(errorText(e)));
-  }, [sidebar, inspector, inspectorTab, initializing]);
+  }, [sidebar, inspector, inspectorTab, navigationTab, initializing]);
   async function refreshSessions(target = cwdRef.current) {
     if (!target) return;
     try {
@@ -468,7 +478,10 @@ export default function App() {
       settingsRef.current = data.settings;
       if (!uiRestored.current) {
         setSidebar(data.settings.ui?.sidebar !== false);
-        setInspector(data.settings.ui?.inspector !== false);
+        setNavigationTab(
+          data.settings.ui?.navigationTab ||
+            (data.settings.ui?.inspector === true ? 'files' : 'sessions'),
+        );
         setInspectorTab(data.settings.ui?.inspectorTab || 'files');
         uiRestored.current = true;
       }
@@ -1462,194 +1475,280 @@ export default function App() {
   }
   return (
     <div
-      className={`app ${sidebar ? '' : 'sidebar-hidden'} ${inspector ? '' : 'inspector-hidden'}`}
+      className={`app unified-layout ${sidebar ? '' : 'sidebar-hidden'} ${inspector ? '' : 'inspector-hidden'}`}
     >
-      {sidebar && (
-        <aside className="sidebar">
-          <div className="brand">
-            <Brand />
-            <div>
-              Grok<span>DESKTOP</span>
-            </div>
-            <IconButton label={t('收起侧边栏')} onClick={() => setSidebar(false)}>
-              <PanelLeftClose size={17} />
-            </IconButton>
+      <aside className="sidebar" hidden={!sidebar}>
+        <div className="brand">
+          <Brand />
+          <div>
+            Grok<span>DESKTOP</span>
+          </div>
+          <IconButton label={t('收起侧边栏')} onClick={() => setSidebar(false)}>
+            <PanelLeftClose size={17} />
+          </IconButton>
+        </div>
+        <button
+          className="new-conversation"
+          onClick={() => void newConversation()}
+          disabled={!!loadingSession || initializing}
+        >
+          <Plus size={18} />
+          <span>{t('新建会话')}</span>
+          <kbd>Ctrl N</kbd>
+        </button>
+        <div className="navigation-tabs" role="tablist" aria-label={t('工作区导航')}>
+          {(
+            [
+              { id: 'sessions', label: '会话', icon: <MessageSquare size={17} /> },
+              { id: 'files', label: '文件', icon: <FolderOpen size={17} /> },
+              { id: 'tasks', label: '任务', icon: <ListChecks size={17} /> },
+            ] as const
+          ).map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`navigation-${item.id}`}
+              aria-controls={`panel-${item.id}`}
+              aria-selected={navigationTab === item.id}
+              tabIndex={navigationTab === item.id ? 0 : -1}
+              onClick={() => setNavigationTab(item.id)}
+              onKeyDown={(event) => {
+                const keys = ['sessions', 'files', 'tasks'] as const;
+                const next =
+                  event.key === 'ArrowRight'
+                    ? (index + 1) % 3
+                    : event.key === 'ArrowLeft'
+                      ? (index + 2) % 3
+                      : event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? 2
+                          : null;
+                if (next !== null) {
+                  event.preventDefault();
+                  setNavigationTab(keys[next]);
+                  document.getElementById(`navigation-${keys[next]}`)?.focus();
+                }
+              }}
+            >
+              {item.icon}
+              <span>{t(item.label)}</span>
+              {item.id === 'tasks' && tasks.some((task) => task.permissions.length > 0) && (
+                <span className="navigation-attention" aria-label={t('等待审批')} />
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="project-switcher">
+          <div className="section-label">
+            <button
+              title={t('打开项目文件夹')}
+              aria-label={t('打开项目文件夹')}
+              onClick={() => void openProject()}
+            >
+              <Plus size={14} />
+            </button>
           </div>
           <button
-            className="new-conversation"
-            onClick={() => void newConversation()}
-            disabled={!!loadingSession || initializing}
+            className={`project-button ${projectMenu ? 'active' : ''}`}
+            onClick={() => setProjectMenu(!projectMenu)}
+            title={cwd || t('选择项目')}
           >
-            <Plus size={18} />
-            <span>{t('新建会话')}</span>
-            <kbd>Ctrl N</kbd>
+            <span className="project-icon">
+              <FolderOpen size={18} />
+            </span>
+            <div>
+              <strong>{cwd ? baseName(cwd) : t('选择项目')}</strong>
+              <small>{cwd ? t('本地项目') : t('打开一个文件夹开始')}</small>
+            </div>
+            <ChevronDown size={14} />
           </button>
-          <div className="project-switcher">
-            <div className="section-label">
-              {t('工作空间')}
-              <button
-                title={t('打开项目文件夹')}
-                aria-label={t('打开项目文件夹')}
-                onClick={() => void openProject()}
-              >
-                <Plus size={14} />
+          {projectMenu && (
+            <div className="project-dropdown">
+              <button onClick={() => void openProject()}>
+                <FolderOpen size={15} />
+                {t('打开项目文件夹')}
               </button>
-            </div>
-            <button
-              className={`project-button ${projectMenu ? 'active' : ''}`}
-              onClick={() => setProjectMenu(!projectMenu)}
-              title={cwd || t('选择项目')}
-            >
-              <span className="project-icon">
-                <FolderOpen size={18} />
-              </span>
-              <div>
-                <strong>{cwd ? baseName(cwd) : t('选择项目')}</strong>
-                <small>{cwd ? t('本地项目') : t('打开一个文件夹开始')}</small>
-              </div>
-              <ChevronDown size={14} />
-            </button>
-            {projectMenu && (
-              <div className="project-dropdown">
-                <button onClick={() => void openProject()}>
-                  <FolderOpen size={15} />
-                  {t('打开项目文件夹')}
+              {settings.recentProjects.map((project) => (
+                <button key={project} onClick={() => void openProject(project)} title={project}>
+                  <FolderOpen size={14} />
+                  <span>{baseName(project)}</span>
+                  {project === cwd && <Check size={13} />}
                 </button>
-                {settings.recentProjects.map((project) => (
-                  <button key={project} onClick={() => void openProject(project)} title={project}>
-                    <FolderOpen size={14} />
-                    <span>{baseName(project)}</span>
-                    {project === cwd && <Check size={13} />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="history-heading">
-            <span>{t('会话记录')}</span>
-            <span className="count">{sessions.length}</span>
-          </div>
-          <div className="search-input">
-            <Search size={15} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('搜索会话')}
-              aria-label={t('搜索会话')}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} title={t('清除搜索')}>
-                <X size={13} />
-              </button>
-            )}
-          </div>
-          <div className="session-list">
-            {filteredSessions.length ? (
-              filteredSessions.map((summary) => (
-                <div
-                  key={summary.sessionId}
-                  className={`session-item ${session?.sessionId === summary.sessionId ? 'selected' : ''}`}
-                >
-                  <button
-                    className="session-select"
-                    onClick={() => void loadConversation(summary)}
-                    disabled={!!loadingSession}
-                    title={summary.title}
-                  >
-                    {loadingSession === summary.sessionId ? (
-                      <Spinner />
-                    ) : (
-                      <MessageSquare size={15} />
-                    )}
-                    <span>{summary.title || t('未命名会话')}</span>
-                    <small>{readableDate(summary.updatedAt)}</small>
-                  </button>
-                  <IconButton
-                    label={t('{value0} · 更多操作', { value0: summary.title })}
-                    onClick={() =>
-                      setSessionMenu(sessionMenu?.sessionId === summary.sessionId ? null : summary)
-                    }
-                  >
-                    <Ellipsis size={16} />
-                  </IconButton>
-                  {sessionMenu?.sessionId === summary.sessionId && (
-                    <div className="session-dropdown">
-                      <button
-                        onClick={() => {
-                          setRename(summary);
-                          setRenameTitle(summary.title);
-                          setSessionMenu(null);
-                        }}
-                      >
-                        <Pencil size={14} />
-                        {t('重命名')}
-                      </button>
-                      <button onClick={() => void exportSession(summary)}>
-                        <Download size={14} />
-                        {t('导出会话')}
-                      </button>
-                      <button
-                        className="danger-text"
-                        onClick={() => {
-                          setDeleteTarget(summary);
-                          setSessionMenu(null);
-                        }}
-                      >
-                        <Trash2 size={14} />
-                        {t('删除会话')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="history-empty">
-                <History size={21} />
-                <span>{search ? t('没有找到相关会话') : t('从一段新的对话开始')}</span>
-                <small>{search ? t('试试其他关键词') : t('此项目的会话会保存在这里')}</small>
-              </div>
-            )}
-          </div>
-          <div className="sidebar-bottom">
-            <button onClick={() => setDialog('usage')}>
-              <Gauge size={17} />
-              {t('额度与用量')}
-              <ChevronRight size={14} />
-            </button>
-            <button onClick={() => void openActions()}>
-              <CommandIcon size={17} />
-              {t('动作库')}
-              <kbd>Ctrl K</kbd>
-            </button>
-            <button onClick={() => setDialog('templates')}>
-              <Star size={17} />
-              {t('常用任务')}
-              <ChevronRight size={14} />
-            </button>
-            <button onClick={() => setDialog('management')}>
-              <Workflow size={17} />
-              {t('Grok 管理')}
-              <ChevronRight size={14} />
-            </button>
-            <div className="sidebar-bottom-row">
-              <button onClick={() => setDialog('settings')}>
-                <Settings2 size={17} />
-                {t('设置')}
-              </button>
-              <IconButton label={t('键盘快捷键')} onClick={() => setDialog('shortcuts')}>
-                <CircleHelp size={17} />
-              </IconButton>
+              ))}
             </div>
-            <div className="sidebar-status">
-              <span
-                className={`status-dot ${connection === 'ready' ? '' : connection === 'connecting' ? 'connecting' : 'offline'}`}
+          )}
+        </div>
+        <div className="sidebar-panels">
+          <section
+            id="panel-sessions"
+            className="navigation-panel session-panel"
+            role="tabpanel"
+            aria-labelledby="navigation-sessions"
+            hidden={navigationTab !== 'sessions'}
+          >
+            <div className="history-heading">
+              <span>{t('会话记录')}</span>
+              <span className="count">{sessions.length}</span>
+            </div>
+            <div className="search-input">
+              <Search size={15} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('搜索会话')}
+                aria-label={t('搜索会话')}
               />
-              {connectionLabel}
-              <span>{t('本地运行')}</span>
+              {search && (
+                <button onClick={() => setSearch('')} title={t('清除搜索')}>
+                  <X size={13} />
+                </button>
+              )}
             </div>
+            <div className="session-list">
+              {filteredSessions.length ? (
+                filteredSessions.map((summary) => (
+                  <div
+                    key={summary.sessionId}
+                    className={`session-item ${session?.sessionId === summary.sessionId ? 'selected' : ''}`}
+                  >
+                    <button
+                      className="session-select"
+                      onClick={() => void loadConversation(summary)}
+                      disabled={!!loadingSession}
+                      title={summary.title}
+                    >
+                      {loadingSession === summary.sessionId ? (
+                        <Spinner />
+                      ) : (
+                        <MessageSquare size={15} />
+                      )}
+                      <span>{summary.title || t('未命名会话')}</span>
+                      <small>{readableDate(summary.updatedAt)}</small>
+                    </button>
+                    <IconButton
+                      label={t('{value0} · 更多操作', { value0: summary.title })}
+                      onClick={() =>
+                        setSessionMenu(
+                          sessionMenu?.sessionId === summary.sessionId ? null : summary,
+                        )
+                      }
+                    >
+                      <Ellipsis size={16} />
+                    </IconButton>
+                    {sessionMenu?.sessionId === summary.sessionId && (
+                      <div className="session-dropdown">
+                        <button
+                          onClick={() => {
+                            setRename(summary);
+                            setRenameTitle(summary.title);
+                            setSessionMenu(null);
+                          }}
+                        >
+                          <Pencil size={14} />
+                          {t('重命名')}
+                        </button>
+                        <button onClick={() => void exportSession(summary)}>
+                          <Download size={14} />
+                          {t('导出会话')}
+                        </button>
+                        <button
+                          className="danger-text"
+                          onClick={() => {
+                            setDeleteTarget(summary);
+                            setSessionMenu(null);
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          {t('删除会话')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="history-empty">
+                  <History size={21} />
+                  <span>{search ? t('没有找到相关会话') : t('从一段新的对话开始')}</span>
+                  <small>{search ? t('试试其他关键词') : t('此项目的会话会保存在这里')}</small>
+                </div>
+              )}
+            </div>
+          </section>
+          <section
+            id="panel-files"
+            className="navigation-panel"
+            role="tabpanel"
+            aria-labelledby="navigation-files"
+            hidden={navigationTab !== 'files'}
+          >
+            <Inspector
+              embedded
+              visible={sidebar && navigationTab === 'files'}
+              cwd={cwd}
+              plan={plan}
+              revision={revision}
+              tab={inspectorTab}
+              onTabChange={setInspectorTab}
+              openFile={fileToOpen}
+              onClose={() => setInspector(false)}
+              notify={notify}
+              onAddContext={addContext}
+              onEditorOpenChange={setEditorOpen}
+            />
+          </section>
+          <section
+            id="panel-tasks"
+            className="navigation-panel"
+            role="tabpanel"
+            aria-labelledby="navigation-tasks"
+            hidden={navigationTab !== 'tasks'}
+          >
+            <TaskCenter
+              embedded
+              tasks={tasks}
+              notify={notify}
+              onClose={() => setNavigationTab('sessions')}
+              onOpen={(task) => {
+                setNavigationTab('sessions');
+                void loadConversation(task);
+              }}
+            />
+          </section>
+        </div>
+        <div className="sidebar-bottom">
+          <button disabled={!cwd} onClick={() => setDialog('project-tools')}>
+            <Terminal size={17} />
+            {t('项目工具')}
+            <ChevronRight size={14} />
+          </button>
+          <button onClick={() => void openActions()}>
+            <CommandIcon size={17} />
+            {t('动作库')}
+            <kbd>Ctrl K</kbd>
+          </button>
+          <button onClick={() => setDialog('templates')}>
+            <Star size={17} />
+            {t('常用任务')}
+            <ChevronRight size={14} />
+          </button>
+          <button onClick={() => setDialog('management')}>
+            <Workflow size={17} />
+            {t('Grok 管理')}
+            <ChevronRight size={14} />
+          </button>
+          <div className="sidebar-bottom-row">
+            <button onClick={() => setDialog('settings')}>
+              <Settings2 size={17} />
+              {t('设置')}
+            </button>
+            <IconButton label={t('键盘快捷键')} onClick={() => setDialog('shortcuts')}>
+              <CircleHelp size={17} />
+            </IconButton>
           </div>
-        </aside>
-      )}
+        </div>
+      </aside>
       <main className="workspace">
         <header className="topbar">
           <div className="breadcrumb">
@@ -1669,26 +1768,27 @@ export default function App() {
             <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
               <Workflow size={17} />
             </IconButton>
-            <IconButton
-              label={t('项目工具')}
+            <button
+              className="header-action"
+              onClick={() => {
+                setInspector(true);
+                setInspectorTab('changes');
+              }}
               disabled={!cwd}
-              onClick={() => setDialog('project-tools')}
             >
-              <Terminal size={17} />
-            </IconButton>
-            <span
-              className={`connection-pill ${connection === 'ready' ? '' : 'offline'}`}
-              title={connectionError || connectionLabel}
+              <GitCompareArrows size={17} />
+              {t('查看变更')}
+            </button>
+            <button
+              className="header-action"
+              onClick={() => {
+                setInspector(true);
+                setInspectorTab('plan');
+              }}
             >
-              <span className="status-dot" />
-              {connection === 'ready'
-                ? t('已连接')
-                : connection === 'connecting'
-                  ? t('连接中')
-                  : connection === 'restoring'
-                    ? t('恢复会话中')
-                    : t('未连接')}
-            </span>
+              <ListChecks size={17} />
+              {t('计划')}
+            </button>
             <IconButton
               label={t('在项目终端中打开')}
               onClick={() =>
@@ -1745,76 +1845,14 @@ export default function App() {
             )}
             <div className="toolbar-divider" />
             <IconButton
-              label={inspector ? t('收起项目上下文') : t('展开项目上下文')}
-              onClick={() => setInspector(!inspector)}
-              active={inspector}
+              label={inspector && sidebar ? t('收起项目上下文') : t('展开项目上下文')}
+              onClick={() => setInspector(!(inspector && sidebar))}
+              active={inspector && sidebar}
             >
-              {inspector ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+              {inspector && sidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
             </IconButton>
           </div>
         </header>
-        <div className="home-version-bar">
-          {appUpdate.currentVersion && (
-            <button
-              type="button"
-              className={`home-update-status ${appUpdate.status}`}
-              title={t('点击检查 Grok Desktop 更新')}
-              disabled={appUpdate.status === 'checking'}
-              onClick={() => {
-                if (
-                  ['available', 'downloading', 'downloaded', 'unsupported'].includes(
-                    appUpdate.status,
-                  )
-                ) {
-                  setDialog('settings');
-                  return;
-                }
-                void runUpdateAction('update.check').catch(() =>
-                  notify(t('更新操作失败，请稍后重试。')),
-                );
-              }}
-            >
-              <span className="home-update-product">Grok Desktop</span>
-              <strong>v{appUpdate.currentVersion}</strong>
-              <span className="home-update-separator" aria-hidden="true">
-                ·
-              </span>
-              <span className="home-update-copy">{homeUpdateStatus}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            className={`home-engine-status ${engineAuthStatus}`}
-            aria-label={t('Grok Build 引擎详情')}
-            aria-haspopup="dialog"
-            aria-expanded={dialog === 'engine'}
-            onClick={() => setDialog('engine')}
-          >
-            <span>Grok Build</span>
-            <strong>{cliStatus?.version ? `v${cliStatus.version}` : t('版本未知')}</strong>
-            <span aria-hidden="true">·</span>
-            <span>{engineAuthLabel}</span>
-            <ChevronDown size={12} />
-          </button>
-          <IconButton
-            label={t('刷新引擎与模型')}
-            disabled={!!engineAction || initializing}
-            onClick={() => void runEngineAction('refresh')}
-          >
-            <RefreshCw size={14} />
-          </IconButton>
-        </div>
-        <div className="home-resource-bar">
-          <UsageStatus
-            cwd={cwd || undefined}
-            sessionId={session?.sessionId}
-            revision={revision}
-            connected={connection === 'ready' && cliStatus?.authStatus !== 'required'}
-            active={taskActive}
-            contextWindow={session?.contextWindow}
-            onOpen={openUsage}
-          />
-        </div>
         {(connection === 'error' || connection === 'disconnected') && (
           <div className="connection-banner">
             <TriangleAlert size={16} />
@@ -2128,26 +2166,6 @@ export default function App() {
               rows={2}
               spellCheck={false}
             />
-            {!!presets.length && (
-              <div className="effort-presets" role="group" aria-label={t('推理快捷设置')}>
-                <span>{t('处理方式')}</span>
-                {presets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    title={t(preset.description)}
-                    aria-pressed={currentEffort === preset.value}
-                    disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
-                    onClick={() => void configureSelection({ effort: preset.value })}
-                  >
-                    {t(
-                      { quick: '快速处理', standard: '标准处理', deep: '深入处理' }[preset.id] ||
-                        preset.label,
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className="composer-toolbar">
               <div className="composer-tools">
                 <IconButton label={t('添加文件或图片')} onClick={() => void attach()}>
@@ -2174,28 +2192,13 @@ export default function App() {
                   </select>
                 </label>
                 {effortOptions.length > 0 && (
-                  <label className="effort-control" title={t('推理深度')}>
-                    <select
-                      aria-label={t('推理深度')}
-                      value={currentEffort}
-                      disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
-                      onChange={(e) => void configureSelection({ effort: e.target.value })}
-                    >
-                      <option value="">{t('默认推理')}</option>
-                      {effortOptions.map((e) => (
-                        <option key={e.id} value={e.value || e.id}>
-                          {{
-                            low: t('轻量'),
-                            medium: t('标准'),
-                            high: t('深入'),
-                            xhigh: t('更深入'),
-                            max: t('最高'),
-                            ultra: t('极致'),
-                          }[e.value || e.id] || e.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <EffortControl
+                    options={effortOptions}
+                    value={currentEffort}
+                    presets={presets}
+                    disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
+                    onChange={(effort) => void configureSelection({ effort })}
+                  />
                 )}
                 {!!session && contextWindows.length > 1 && (
                   <label className="context-control" title={t('上下文窗口')}>
@@ -2295,27 +2298,90 @@ export default function App() {
                 t('Enter 发送 · Shift + Enter 换行')
               )}
             </span>
-            <button onClick={() => setDialog('usage')} title={t('额度与上下文')}>
-              <Gauge size={13} />
-              {t('上下文')}
+            <button
+              className="queue-control"
+              onClick={() => setDialog('tasks')}
+              title={t('任务中心')}
+            >
+              <ListChecks size={15} />
+              {t('任务队列')}
+              <span>({tasks.reduce((count, task) => count + task.queued.length, 0)})</span>
             </button>
           </div>
         </div>
       </main>
-      {inspector && (
-        <Inspector
-          cwd={cwd}
-          plan={plan}
-          revision={revision}
-          tab={inspectorTab}
-          onTabChange={setInspectorTab}
-          openFile={fileToOpen}
-          onClose={() => setInspector(false)}
-          notify={notify}
-          onAddContext={addContext}
-          onEditorOpenChange={setEditorOpen}
-        />
-      )}
+      <footer className="desktop-status-bar" aria-label={t('工作区状态')}>
+        <div className="sidebar-status">
+          <span
+            className={`status-dot ${connection === 'ready' ? '' : connection === 'connecting' ? 'connecting' : 'offline'}`}
+          />
+          {connectionLabel}
+          <span>{t('本地运行')}</span>
+        </div>
+        <div className="home-version-bar">
+          {appUpdate.currentVersion && (
+            <button
+              type="button"
+              className={`home-update-status ${appUpdate.status}`}
+              title={t('点击检查 Grok Desktop 更新')}
+              disabled={appUpdate.status === 'checking'}
+              onClick={() => {
+                if (
+                  ['available', 'downloading', 'downloaded', 'unsupported'].includes(
+                    appUpdate.status,
+                  )
+                ) {
+                  setDialog('settings');
+                  return;
+                }
+                void runUpdateAction('update.check').catch(() =>
+                  notify(t('更新操作失败，请稍后重试。')),
+                );
+              }}
+            >
+              <span className="home-update-product">Grok Desktop</span>
+              <strong>v{appUpdate.currentVersion}</strong>
+              <span className="home-update-separator" aria-hidden="true">
+                ·
+              </span>
+              <span className="home-update-copy">{homeUpdateStatus}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className={`home-engine-status ${engineAuthStatus}`}
+            aria-label={t('Grok Build 引擎详情')}
+            aria-haspopup="dialog"
+            aria-expanded={dialog === 'engine'}
+            onClick={() => setDialog('engine')}
+          >
+            <span>Grok Build</span>
+            <strong>{cliStatus?.version ? `v${cliStatus.version}` : t('版本未知')}</strong>
+            <span aria-hidden="true">·</span>
+            <span>{engineAuthLabel}</span>
+            <ChevronDown size={12} />
+          </button>
+          <IconButton
+            label={t('刷新引擎与模型')}
+            disabled={!!engineAction || initializing}
+            onClick={() => void runEngineAction('refresh')}
+          >
+            <RefreshCw size={14} />
+          </IconButton>
+        </div>
+        <div className="home-resource-bar">
+          <UsageStatus
+            compact
+            cwd={cwd || undefined}
+            sessionId={session?.sessionId}
+            revision={revision}
+            connected={connection === 'ready' && cliStatus?.authStatus !== 'required'}
+            active={taskActive}
+            contextWindow={session?.contextWindow}
+            onOpen={openUsage}
+          />
+        </div>
+      </footer>
       {notice && (
         <div className="toast" role="status">
           <span>{notice}</span>
