@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
@@ -8,6 +8,7 @@ import {
   ExternalLink,
   File,
   FileCode2,
+  FileSearch,
   Folder,
   FolderOpen,
   GitBranch,
@@ -21,6 +22,10 @@ import type { Attachment, GitChange, WorkspaceEntry } from './types';
 import { baseName, errorText, request } from './lib';
 import { EmptyBox, IconButton, Modal, Spinner } from './components';
 import { useI18n } from './i18n';
+import DiffViewer from './DiffViewer';
+import ProjectFilePicker from './ProjectFilePicker';
+import { canPreviewOffice } from './office-preview-model';
+const OfficePreview = lazy(() => import('./OfficePreview'));
 type FileData = {
   path: string;
   text: string;
@@ -84,6 +89,10 @@ export default function Inspector({
   const [saving, setSaving] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [diff, setDiff] = useState<{ path: string; text: string } | null>(null);
+  const [officePath, setOfficePath] = useState<string | null>(null);
+  const [picker, setPicker] = useState<{ cwd: string; add: (file: Attachment) => void } | null>(
+    null,
+  );
   const contextRef = useRef<InspectorContext>({
     cwd,
     file: 0,
@@ -150,6 +159,8 @@ export default function Inspector({
     setSaving(false);
     setConfirmDiscard(false);
     setDiff(null);
+    setOfficePath(null);
+    setPicker(null);
     setTree({});
     setExpanded(new Set());
     setChanges(null);
@@ -207,9 +218,13 @@ export default function Inspector({
       if (isCurrent(context) && context.tree === version) notify(errorText(e));
     }
   }
-  async function openFile(path: string, line?: number) {
+  async function openFile(path: string, line?: number, asText = false) {
     const context = contextRef.current,
       version = ++context.file;
+    if (!asText && canPreviewOffice(path)) {
+      setOfficePath(path);
+      return;
+    }
     try {
       const data = await request<FileData>('workspace.read', { cwd: context.cwd, path });
       if (isCurrent(context) && context.file === version) {
@@ -331,26 +346,6 @@ export default function Inspector({
         {entry.isDirectory && expanded.has(entry.path) && renderTree(entry.path, depth + 1)}
       </div>
     ));
-  const diffRows = useMemo(() => {
-    let before: number | null = null,
-      after: number | null = /^(?:新文件 |New file )/.test(diff?.text || '') ? 1 : null;
-    return (diff?.text || '').split('\n').map((text) => {
-      const row: { text: string; before?: number; after?: number } = { text };
-      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
-      if (hunk) {
-        before = Number(hunk[1]);
-        after = Number(hunk[2]);
-      } else if (text.startsWith('+') && !text.startsWith('+++') && after !== null)
-        row.after = after++;
-      else if (text.startsWith('-') && !text.startsWith('---') && before !== null)
-        row.before = before++;
-      else if (text.startsWith(' ') && before !== null && after !== null) {
-        row.before = before++;
-        row.after = after++;
-      }
-      return row;
-    });
-  }, [diff]);
   function closeFile() {
     if (saving) return;
     if (dirty) {
@@ -433,6 +428,15 @@ export default function Inspector({
             <div className={`tree-heading ${embedded ? 'embedded-project-heading' : ''}`}>
               <FolderOpen size={14} />
               {baseName(cwd)}
+              {onAddContext && (
+                <IconButton
+                  className="workspace-search-button"
+                  label={t('搜索项目文件')}
+                  onClick={() => setPicker({ cwd, add: onAddContext })}
+                >
+                  <FileSearch size={15} />
+                </IconButton>
+              )}
             </div>
             {renderTree()}
             {!busy && tree['']?.length === 0 && (
@@ -677,35 +681,7 @@ export default function Inspector({
                 </button>
               )}
               {diff.text ? (
-                diffRows.map((line, index) => (
-                  <div
-                    key={index}
-                    className={
-                      line.text.startsWith('+')
-                        ? 'diff-add'
-                        : line.text.startsWith('-')
-                          ? 'diff-remove'
-                          : line.text.startsWith('@@')
-                            ? 'diff-header'
-                            : ''
-                    }
-                  >
-                    <span className="diff-line-number" aria-hidden="true">
-                      {line.before ?? ''}
-                    </span>
-                    <span className="diff-line-number" aria-hidden="true">
-                      {line.after ?? ''}
-                    </span>
-                    <span className="diff-line-content">
-                      {index === 0 &&
-                      (line.text === `新文件 ${diff.path}` || line.text === `New file ${diff.path}`)
-                        ? t('新文件 {path}', { path: diff.path })
-                        : ['… 内容已截断', '… Content truncated'].includes(line.text)
-                          ? t('… 内容已截断')
-                          : line.text || ' '}
-                    </span>
-                  </div>
-                ))
+                <DiffViewer text={diff.text} />
               ) : (
                 <EmptyBox icon={<GitCompareArrows size={22} />} heading={t('没有可显示的文本差异')}>
                   {t('该文件可能是二进制文件。')}
@@ -713,6 +689,43 @@ export default function Inspector({
               )}
             </div>
           </Modal>,
+        )}
+      {officePath &&
+        renderDialog(
+          <Modal
+            title={baseName(officePath)}
+            subtitle={officePath}
+            wide
+            onClose={() => setOfficePath(null)}
+          >
+            {/\.(?:csv|tsv)$/i.test(officePath) && (
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  const path = officePath;
+                  setOfficePath(null);
+                  void openFile(path, undefined, true);
+                }}
+              >
+                {t('以文本编辑')}
+              </button>
+            )}
+            <Suspense fallback={<Spinner />}>
+              <OfficePreview
+                path={cwd.replace(/[\\/]$/, '') + '/' + officePath}
+                name={baseName(officePath)}
+                onExternal={() => void openSystemFile(officePath, 'workspace-file')}
+              />
+            </Suspense>
+          </Modal>,
+        )}
+      {picker &&
+        renderDialog(
+          <ProjectFilePicker
+            cwd={picker.cwd}
+            onClose={() => setPicker(null)}
+            onSelect={(files) => files.forEach(picker.add)}
+          />,
         )}
     </aside>
   );

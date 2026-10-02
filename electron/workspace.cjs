@@ -43,6 +43,42 @@ async function listFiles({ cwd, path: relative = '', showHidden = false }) {
     );
 }
 
+async function searchFiles({ cwd, query = '', limit = 100 }) {
+  const root = resolveWorkspacePath(cwd);
+  const needle = String(query).trim().replaceAll('\\', '/').toLocaleLowerCase();
+  const count = Math.max(1, Math.min(100, Math.trunc(Number(limit)) || 100));
+  const directories = [root],
+    files = [];
+  let scanned = 0;
+  let incomplete = false;
+  // A broad/empty query is intentionally bounded. The result communicates an
+  // incomplete scan rather than suggesting the entire project was searched.
+  for (let index = 0; index < directories.length; index++) {
+    const directory = directories[index];
+    let handle;
+    try {
+      handle = await fs.opendir(directory);
+    } catch (error) {
+      if (directory === root) throw error;
+      incomplete = true;
+      continue;
+    }
+    for await (const entry of handle) {
+      if (++scanned > 20000) return { files, truncated: true };
+      if (entry.name.startsWith('.') || (entry.isDirectory() && HIDDEN.has(entry.name))) continue;
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) directories.push(filename);
+      else if (entry.isFile()) {
+        const relative = path.relative(root, filename).replaceAll('\\', '/');
+        if (!relative.toLocaleLowerCase().includes(needle)) continue;
+        if (files.length === count) return { files, truncated: true };
+        files.push({ name: relative, path: filename });
+      }
+    }
+  }
+  return { files, truncated: incomplete };
+}
+
 async function readFile({ cwd, path: relative }) {
   const filename = resolveWorkspacePath(cwd, relative);
   const file = await fs.open(filename, 'r');
@@ -188,4 +224,12 @@ async function gitDiff({ cwd, path: relative, staged = false }) {
   return { text: t('此文件没有可显示的文本差异。') };
 }
 
-module.exports = { resolveWorkspacePath, listFiles, readFile, saveFile, gitChanges, gitDiff };
+module.exports = {
+  resolveWorkspacePath,
+  listFiles,
+  searchFiles,
+  readFile,
+  saveFile,
+  gitChanges,
+  gitDiff,
+};

@@ -500,7 +500,7 @@ test('diff line numbers distinguish removed and added lines and restart at each 
   await page.locator('.change-row').click();
   await page.getByRole('dialog').waitFor();
   const rows = await page
-    .locator('.diff-view > div')
+    .locator('.diff-unified-row')
     .evaluateAll((elements) =>
       elements
         .filter((element) =>
@@ -519,4 +519,24 @@ test('diff line numbers distinguish removed and added lines and restart at each 
     ['40', ''],
     ['', '42'],
   ]);
+});
+
+test('CSV layout preview keeps the existing original-text editor available', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() =>
+    window.showInspector('C:/a', { openFile: { path: 'data.csv', requestId: 1 } }),
+  );
+  await page.getByRole('button', { name: '以文本编辑', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: '文件内容' });
+  await editor.waitFor();
+  assert.equal(await editor.getAttribute('readonly'), null);
+  assert.equal(await editor.inputValue(), 'C:/a content');
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.filter((c) => c.command === 'workspace.read' && c.payload.path === 'data.csv')
+          .length,
+    ),
+    1,
+  );
 });
