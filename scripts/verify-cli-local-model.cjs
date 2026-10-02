@@ -425,7 +425,7 @@ if (process.argv[2] === '--child') {
       assert.ok(
         Number.isSafeInteger(pid) && pid > 0 && Number.isSafeInteger(rootPid) && rootPid > 0,
       );
-      const result = await exec(
+      const operation = exec(
         powershell,
         [
           '-NoLogo',
@@ -440,6 +440,22 @@ if (process.argv[2] === '--child') {
         ],
         { env, cwd: dirs.cwd, windowsHide: true, timeout: 10000 },
       );
+      // This observer has no interactive input. Unlike the CLI tool under test,
+      // Windows PowerShell must see EOF on its redirected input immediately.
+      operation.child.stdin.end();
+      let result;
+      try {
+        result = await operation;
+      } catch (error) {
+        report.ancestryObserverFailure = {
+          code: error.code,
+          signal: error.signal,
+          killed: error.killed,
+          stderr: String(error.stderr || '').slice(-2000),
+          stdout: String(error.stdout || '').slice(-2000),
+        };
+        throw error;
+      }
       return JSON.parse(result.stdout);
     };
     const quote = (text) => `'${text.replaceAll("'", "''")}'`;
