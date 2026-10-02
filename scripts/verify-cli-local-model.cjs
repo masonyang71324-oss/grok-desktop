@@ -421,20 +421,26 @@ if (process.argv[2] === '--child') {
 `,
     );
     const powershell = path.join(systemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-    const processInfo = async (pid) => {
-      assert.ok(Number.isSafeInteger(pid) && pid > 0);
+    const processAncestry = async (pid, rootPid) => {
+      assert.ok(
+        Number.isSafeInteger(pid) && pid > 0 && Number.isSafeInteger(rootPid) && rootPid > 0,
+      );
       const result = await exec(
         powershell,
         [
           '-NoLogo',
           '-NoProfile',
           '-NonInteractive',
-          '-Command',
-          `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress`,
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          path.join(__dirname, 'read-process-ancestry.ps1'),
+          String(pid),
+          String(rootPid),
         ],
         { env, cwd: dirs.cwd, windowsHide: true, timeout: 10000 },
       );
-      return result.stdout.trim() ? JSON.parse(result.stdout) : null;
+      return JSON.parse(result.stdout);
     };
     const quote = (text) => `'${text.replaceAll("'", "''")}'`;
     for (const action of ['cancel', 'dispose']) {
@@ -458,6 +464,14 @@ if (process.argv[2] === '--child') {
         return fsSync.existsSync(readyPath);
       }, `${action}: descendant readiness`);
       const ready = JSON.parse(await fs.readFile(readyPath, 'utf8'));
+      assert.ok(
+        Number.isSafeInteger(ready.pid) &&
+          ready.pid > 0 &&
+          Number.isSafeInteger(ready.ppid) &&
+          ready.ppid > 0,
+      );
+      ownedHelperPids.add(ready.pid);
+      ownedHelperPids.add(ready.ppid);
       // Hosted Windows may provide an 8.3 TEMP alias while GetCurrentDirectory
       // reports its long name. Compare the actual directories, not spellings.
       assert.equal(
@@ -465,22 +479,14 @@ if (process.argv[2] === '--child') {
         (await fs.realpath(dirs.cwd)).toLowerCase(),
       );
       const cli = lifecycleHub.sessions.get(session.sessionId).client._proc;
-      const ancestry = [];
-      let pid = ready.pid;
-      while (pid && ancestry.length < 6) {
-        const info = await processInfo(pid);
-        assert.ok(info, `Readiness PID ${pid} must be alive`);
-        ancestry.push(info);
-        if (pid === cli.pid) break;
-        ownedHelperPids.add(pid);
-        pid = info.ParentProcessId;
-      }
+      const ancestry = await processAncestry(ready.pid, cli.pid);
       assert.equal(
         ancestry.at(-1).ProcessId,
         cli.pid,
         'Ready descendant must belong to this actual CLI',
       );
       assert.ok(ancestry.length >= 4, 'CLI -> PowerShell -> helper -> child must be real');
+      for (const process of ancestry.slice(0, -1)) ownedHelperPids.add(process.ProcessId);
       assert.equal(
         report.permissionRequests.length - permissionCount,
         1,

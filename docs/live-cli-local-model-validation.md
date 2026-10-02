@@ -50,7 +50,7 @@ api_backend = "chat_completions"
 
 每次收到真实 ACP `session/request_permission` 后，仅当 `rawInput.command` 与预先构造的完整命令完全相同，才选择 `allow_once`。没有开启 auto/yolo，没有接受 `allow_always`，其他命令一律拒绝。取消和关闭场景各实际收到并批准 1 次请求。
 
-读到 readiness 文件后，脚本用精确 PID 查询 Windows 进程信息，逐级确认 `grok.exe → powershell.exe -NoProfile -NonInteractive → node.exe → node.exe` 关系，并确认两层 Node 都存活，才发出取消/关闭动作。
+读到 readiness 文件后，脚本用精确 PID 查询 Windows 进程信息，逐级确认 `grok.exe → powershell.exe → node.exe → node.exe` 关系，并确认两层 Node 都存活，才发出取消/关闭动作。最初本机记录使用CIM；后续云端CIM观察步骤失败后，脚本改用只读的Windows内核进程快照（`scripts/read-process-ancestry.ps1`，`CreateToolhelp32Snapshot`/`Process32FirstW`），继续核对相同父子链，不依赖WMI服务或扩大等待期限。模型/CLI行为和退出断言不变。
 
 | 动作                                        | 动作前确认的真实 PID 链                                        | 结果                                   |
 | ------------------------------------------- | -------------------------------------------------------------- | -------------------------------------- |
@@ -66,3 +66,5 @@ api_backend = "chat_completions"
 最终命令退出码为 `0`，J02、J05 cancel、J05 dispose 三个场景均通过。输出记录确认所有本轮 CLI 和已观察到的后代均退出、本地 HTTP 服务关闭、临时根目录已删除；临时 `GROK_HOME` 未生成 `auth.json`。只保留上述可复查脚本、此报告以及忽略目录中的结果 JSON。
 
 没有据此新增产品修复，没有跑全套测试，没有提交或推送。本报告补足两个指定的运行时验证点，付费服务、多轮模型效果、真实设备码登录、完整 Windows 首装及其他工具类别继续按各自证据范围描述。
+
+云端增补时还发现测试目录可能采用`RUNNER~1`短名，而Node返回`runneradmin`长名；验证现比较`fs.realpath`后的同一目录，未降低cwd归属检查。工具readiness中的两个自有PID会立即记录，确保观察步骤失败时仍清理已启动的工具。内核快照版本在本机重跑后，J02、J05取消与关闭再次通过，所有自有进程和临时目录退出/清理正常。

@@ -8,6 +8,7 @@ on:
       - 'scripts/verify-clean-cli-install.cjs'
       - 'electron/cli-installer.cjs'
       - 'scripts/verify-cli-local-model.cjs'
+      - 'scripts/read-process-ancestry.ps1'
 permissions:
   contents: read
 jobs:
