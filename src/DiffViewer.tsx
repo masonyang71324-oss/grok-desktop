@@ -102,7 +102,7 @@ export default function DiffViewer({ text }: { text: string }) {
       <div className={`structured-diff-lines diff-${mode}`}>
         {mode === 'unified' ? (
           rows.map((row) => (
-            <div className={`diff-unified-row diff-${row.kind}`} key={row.id}>
+            <div className={`diff-unified-row diff-${row.kind}`} key={`${row.kind}-${row.id}`}>
               <span className="diff-line-number" aria-hidden="true">
                 {row.before ?? ''}
               </span>
@@ -120,7 +120,10 @@ export default function DiffViewer({ text }: { text: string }) {
             </div>
             {splitRows(rows).map((pair) =>
               pair.shared ? (
-                <div className={`diff-shared diff-${pair.left?.kind}`} key={pair.id}>
+                <div
+                  className={`diff-shared diff-${pair.left?.kind}`}
+                  key={`${pair.left?.kind}-${pair.id}`}
+                >
                   {pair.left && lineText(pair.left)}
                 </div>
               ) : (

@@ -100,7 +100,11 @@ function createTerminalManager({ spawnPty, emit = () => {}, platform = process.p
     entries.set(entry.id, entry);
     byDirectory.set(cwd, entry.id);
     child.onData((data) => {
-      entry.log = (entry.log + data).slice(-200000);
+      const log = entry.log + data;
+      let start = Math.max(0, log.length - 200000);
+      // Keep a trimmed snapshot from starting halfway through an astral character.
+      if (start > 0 && /[\uDC00-\uDFFF]/.test(log[start])) start++;
+      entry.log = log.slice(start);
       entry.pending += data;
       entry.sequence++;
       if (entry.pending.length >= 32768) flush(entry);

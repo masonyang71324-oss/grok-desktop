@@ -4,6 +4,8 @@ const path = require('node:path');
 const { buildSync } = require('esbuild');
 const { launchBrowser } = require('../scripts/browser-launch.cjs');
 const JSZip = require('jszip');
+const fs = require('node:fs/promises');
+const os = require('node:os');
 let browser, bundle;
 before(async () => {
   bundle = buildSync({
@@ -50,6 +52,32 @@ test('split diff shows paired changed words and context expands without altering
   assert.equal(await page.locator('.diff-split-row mark').count(), 2);
   await page.getByRole('button', { name: /展开 .* 行上下文/ }).click();
   assert.ok((await page.locator('.diff-split-row').count()) >= 12);
+});
+test('diff fold markers keep distinct row identity through mode and folding changes', async (t) => {
+  const page = await fixture(t);
+  const warnings = [];
+  page.on('console', (message) => {
+    if (/same key|unique.*key/i.test(message.text())) warnings.push(message.text());
+  });
+  const text =
+    '@@ -1,11 +1,11 @@\n' +
+    Array.from({ length: 10 }, (_, index) => ` context-${index}`).join('\n') +
+    '\n-old\n+new';
+  await page.evaluate((text) => window.show('diff', { text }), text);
+  await page.getByRole('button', { name: /展开 .* 行上下文/ }).waitFor();
+  assert.equal(await page.locator('.diff-context').count(), 6);
+  await page.getByRole('button', { name: '并排', exact: true }).click();
+  await page.getByLabel('折叠上下文').uncheck();
+  assert.equal(await page.locator('.diff-split-row').count(), 11);
+  await page.getByLabel('折叠上下文').check();
+  await page.getByRole('button', { name: /展开 .* 行上下文/ }).click();
+  assert.equal(await page.locator('.diff-split-row').count(), 11);
+  await page.getByRole('button', { name: '统一', exact: true }).click();
+  assert.deepEqual(
+    await page.locator('.diff-context .diff-line-content').allTextContents(),
+    Array.from({ length: 10 }, (_, index) => ` context-${index}`),
+  );
+  assert.deepEqual(warnings, []);
 });
 test('picker ignores late prior-project search and attaches multiple files with captured owner', async (t) => {
   const page = await fixture(t);
@@ -188,6 +216,11 @@ test('picker clears selections when a different session uses the same project', 
 
 test('DOCX renders paragraphs tables and images in an isolated readonly document', async (t) => {
   const page = await fixture(t);
+  const network = [];
+  await page.route('https://office-canary.invalid/**', (route) => {
+    network.push(route.request().url());
+    return route.abort();
+  });
   const zip = new JSZip();
   zip.file(
     '[Content_Types].xml',
@@ -212,8 +245,34 @@ test('DOCX renders paragraphs tables and images in an isolated readonly document
       'base64',
     ),
   );
-  const { buildOfficePreview } = require('../electron/office-preview-model.cjs');
-  const model = await buildOfficePreview(await zip.generateAsync({ type: 'nodebuffer' }), '.docx');
+  zip.file(
+    'word/document.xml',
+    (await zip.file('word/document.xml').async('string')).replace(
+      '</w:body>',
+      '<w:p><w:hyperlink r:id="external"><w:r><w:t>External canary</w:t></w:r></w:hyperlink></w:p><w:altChunk r:id="html"/></w:body>',
+    ),
+  );
+  zip.file(
+    'word/_rels/document.xml.rels',
+    (await zip.file('word/_rels/document.xml.rels').async('string')).replace(
+      '</Relationships>',
+      '<Relationship Id="external" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="https://office-canary.invalid/link"/><Relationship Id="html" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk" Target="canary.html"/></Relationships>',
+    ),
+  );
+  zip.file(
+    'word/canary.html',
+    '<script>parent.officeCanary="executed";parent.desktop.request("CANARY_NO_SUCH_COMMAND")</script>',
+  );
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-docx-boundary-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const filename = path.join(directory, 'canary.docx');
+  const bytes = await zip.generateAsync({ type: 'nodebuffer' });
+  await fs.writeFile(filename, bytes);
+  const { previewOffice } = require('../electron/office-preview.cjs');
+  const model = await previewOffice({ path: filename });
+  assert.equal(model.readOnly, true);
+  assert.ok(model.notices.includes('embedded-html-omitted'));
+  assert.deepEqual(await fs.readFile(filename), bytes);
   await page.evaluate(() => window.show('office', { path: 'C:/preview.docx' }));
   await page.waitForFunction(() => window.pending.length === 1);
   await page.evaluate((model) => window.pending[0].resolve({ ok: true, data: model }), model);
@@ -228,6 +287,14 @@ test('DOCX renders paragraphs tables and images in an isolated readonly document
     await page.locator('.office-docx-frame').getAttribute('sandbox'),
     'allow-same-origin',
   );
+  await frame.getByText('External canary', { exact: true }).waitFor();
+  await frame.locator('a').evaluate((anchor) => anchor.click());
+  assert.equal(await page.evaluate(() => window.officeCanary), undefined);
+  assert.deepEqual(await page.evaluate(() => window.calls.map((call) => call.command)), [
+    'office.preview',
+  ]);
+  assert.deepEqual(network, []);
+  assert.equal(await frame.getByText('Paragraph preview', { exact: true }).count(), 1);
 });
 
 test('PPTX placeholder fallback remains visible instead of an empty slide canvas', async (t) => {
@@ -257,4 +324,81 @@ test('PPTX placeholder fallback remains visible instead of an empty slide canvas
       .count(),
     1,
   );
+});
+
+test('Office worker sheet and slide canaries stay literal, readonly and never load external relationships', async (t) => {
+  const page = await fixture(t);
+  const network = [];
+  await page.route('https://office-canary.invalid/**', (route) => {
+    network.push(route.request().url());
+    return route.abort();
+  });
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-office-canaries-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const XLSX = require('xlsx');
+  const book = XLSX.utils.book_new();
+  const canary = '<script>window.officeCanary="executed"</script>';
+  const sheet = XLSX.utils.aoa_to_sheet([[canary]]);
+  sheet.B1 = { t: 'n', f: 'WEBSERVICE("https://office-canary.invalid/formula")' };
+  sheet['!ref'] = 'A1:B1';
+  XLSX.utils.book_append_sheet(book, sheet, 'Canary');
+  const zip = new JSZip();
+  zip.file(
+    'ppt/presentation.xml',
+    '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="slide"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/></p:presentation>',
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    '<Relationships><Relationship Id="slide" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>',
+  );
+  const geometry = '<a:xfrm><a:off x="0" y="0"/><a:ext cx="9144000" cy="914400"/></a:xfrm>';
+  zip.file(
+    'ppt/slides/slide1.xml',
+    `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld><p:spTree><p:sp><p:spPr>${geometry}</p:spPr><p:txBody><a:p><a:r><a:t>&lt;script&gt;window.officeCanary="executed"&lt;/script&gt;</a:t></a:r></a:p></p:txBody></p:sp><p:pic><p:blipFill><a:blip r:embed="external"/></p:blipFill><p:spPr>${geometry}</p:spPr></p:pic></p:spTree></p:cSld></p:sld>`,
+  );
+  zip.file(
+    'ppt/slides/_rels/slide1.xml.rels',
+    '<Relationships><Relationship Id="external" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" TargetMode="External" Target="https://office-canary.invalid/image.png"/></Relationships>',
+  );
+  const inputs = [
+    ['canary.xlsx', XLSX.write(book, { type: 'buffer', bookType: 'xlsx' })],
+    ['canary.pptx', await zip.generateAsync({ type: 'nodebuffer' })],
+  ];
+  const { previewOffice } = require('../electron/office-preview.cjs');
+  for (const [name, bytes] of inputs) {
+    const filename = path.join(directory, name);
+    await fs.writeFile(filename, bytes);
+    const model = await previewOffice({ path: filename });
+    assert.equal(model.readOnly, true);
+    assert.deepEqual(await fs.readFile(filename), bytes);
+    await page.evaluate((path) => window.show('office', { path }), filename);
+    await page.waitForFunction(
+      (path) => window.pending.some((item) => item.payload.path === path),
+      filename,
+    );
+    await page.evaluate(
+      ({ filename, model }) =>
+        window.pending
+          .find((item) => item.payload.path === filename)
+          .resolve({ ok: true, data: model }),
+      { filename, model },
+    );
+    await page.getByText(canary, { exact: true }).waitFor();
+    assert.equal(
+      await page
+        .locator(
+          '.office-preview script,.office-preview a,.office-preview img,.office-preview input,.office-preview textarea,.office-preview [contenteditable="true"]',
+        )
+        .count(),
+      0,
+    );
+    if (name.endsWith('.xlsx'))
+      assert.equal(await page.locator('td[data-address="B1"]').innerText(), '');
+    assert.equal(await page.evaluate(() => window.officeCanary), undefined);
+  }
+  assert.deepEqual(network, []);
+  assert.deepEqual(await page.evaluate(() => window.calls.map((item) => item.command)), [
+    'office.preview',
+    'office.preview',
+  ]);
 });

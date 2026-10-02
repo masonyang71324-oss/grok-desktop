@@ -30,6 +30,46 @@ async function fixture(t) {
   return page;
 }
 
+test('Markdown content cannot execute canaries and only explicit safe link and code controls request host actions', async (t) => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    window.calls = [];
+    window.desktop = {
+      request: async (command, payload) => {
+        window.calls.push({ command, payload });
+        return { ok: true };
+      },
+    };
+    const { React, createRoot, flushSync, Markdown } = window.ui;
+    flushSync(() =>
+      createRoot(document.getElementById('root')).render(
+        React.createElement(Markdown, {
+          text: '<script>window.markdownCanary="executed"</script>\n\n<a href="javascript:window.markdownCanary=1">Blocked canary</a>\n\n[External canary](https://markdown-canary.invalid/link)\n\n```text\nCANARY_CODE_EXACT\n```',
+        }),
+      ),
+    );
+  });
+  assert.equal(
+    await page
+      .locator('.markdown script,.markdown [onclick],.markdown a[href^="javascript:"]')
+      .count(),
+    0,
+  );
+  await page.getByText('Blocked canary', { exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.calls), []);
+  assert.equal(await page.evaluate(() => window.markdownCanary), undefined);
+  await page.getByRole('link', { name: 'External canary' }).click();
+  await page.getByRole('button', { name: '复制代码', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.calls), [
+    {
+      command: 'system.open',
+      payload: { target: 'url', url: 'https://markdown-canary.invalid/link' },
+    },
+    { command: 'clipboard.write', payload: { text: 'CANARY_CODE_EXACT\n' } },
+  ]);
+  assert.equal(page.url(), 'about:blank');
+});
+
 test('math renders complete inline/block expressions while code, currency, invalid and incomplete source stay readable', async (t) => {
   const page = await fixture(t);
   await page.evaluate(() => {

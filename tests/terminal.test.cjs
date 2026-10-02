@@ -107,3 +107,24 @@ test('terminal bounds retained output and invalid input/resize cannot reach the 
   assert.equal(children[0].writes.length, 0);
   await manager.dispose();
 });
+
+test('terminal retained output never truncates through a Unicode surrogate pair', async (t) => {
+  const { manager, children, events } = fixture();
+  t.after(() => manager.dispose());
+  const entry = manager.open({ cwd: 'C:/unicode' });
+  children[0].data('😀' + '中'.repeat(199998));
+  assert.equal(manager.state({ id: entry.id }).log.startsWith('😀'), true);
+
+  children[0].data('文');
+  const retained = manager.state({ id: entry.id }).log;
+  assert.equal(retained.isWellFormed(), true);
+  assert.equal(retained, '中'.repeat(199998) + '文');
+  assert.equal(manager.open({ cwd: entry.cwd }).log, retained);
+  assert.equal(
+    events
+      .filter((event) => event.type === 'terminal-data')
+      .map((event) => event.data)
+      .join(''),
+    '😀' + '中'.repeat(199998) + '文',
+  );
+});

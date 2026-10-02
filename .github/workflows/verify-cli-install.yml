@@ -2,10 +2,12 @@ name: Verify clean Windows CLI installation
 on:
   workflow_dispatch:
   push:
+    branches: ['**']
     paths:
       - '.github/workflows/verify-cli-install.yml'
       - 'scripts/verify-clean-cli-install.cjs'
       - 'electron/cli-installer.cjs'
+      - 'scripts/verify-cli-local-model.cjs'
 permissions:
   contents: read
 jobs:
@@ -29,4 +31,15 @@ jobs:
         with:
           name: clean-windows-cli-install-report
           path: test-results/clean-cli-install.json
+          if-no-files-found: warn
+      - name: Verify real CLI history and owned tool lifetime with a local model
+        run: |
+          $report = Get-Content test-results/clean-cli-install.json -Raw | ConvertFrom-Json
+          node scripts/verify-cli-local-model.cjs $report.installation.executable
+      - name: Preserve local-model lifecycle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-cli-local-model-report
+          path: test-results/cli-local-model.json
           if-no-files-found: warn
