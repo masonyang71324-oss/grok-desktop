@@ -14,7 +14,7 @@ node scripts/verify-cli-local-model.cjs
 
 默认可执行文件是此前从官方分发下载的 `test-results/cli-install-probe/grok.exe`；也可把官方 CLI 的绝对路径作为第一个参数。脚本仅在 Windows 运行。原始结果保存到忽略目录下的 `test-results/cli-local-model.json`，含模型请求路径、批准请求、PID 父子关系、恢复结果和清理状态。
 
-脚本为每次运行创建独立临时根目录，其中 `GROK_HOME`、`USERPROFILE`、`HOME`、`APPDATA`、`LOCALAPPDATA`、`TEMP`、`TMP` 和会话 cwd 均为空的新目录。子进程环境从操作系统变量白名单构造，不复制完整 `process.env`，没有继承真实 API key，也没有读取用户的认证/config 文件。唯一模型凭据为固定假值 `LOCAL_AUDIT_KEY=audit-fake-local-key`；本地服务逐次核对收到的 Authorization 和模型名称。没有启动、操作或退出用户正在运行的 Desktop。
+脚本为每次运行创建独立临时根目录，其中 `GROK_HOME`、`USERPROFILE`、`HOME`、`APPDATA`、`LOCALAPPDATA`、`TEMP`、`TMP` 和会话 cwd 均为空的新目录。官方CLI与工具子进程环境从操作系统变量白名单构造，不复制完整 `process.env`，没有继承真实 API key，也没有读取用户的认证/config 文件。唯一模型凭据为固定假值 `LOCAL_AUDIT_KEY=audit-fake-local-key`；本地服务逐次核对收到的 Authorization 和模型名称。单独的操作系统观察器只运行固定内核PID查询，通过正常系统环境启动PowerShell/.NET，不调用CLI、模型或用户配置，不输出环境变量。没有启动、操作或退出用户正在运行的 Desktop。
 
 模型配置依据该官方 CLI 随包生成的 `11-custom-models.md`、`05-configuration.md`、`26-config-reference.md`，采用：
 
@@ -68,3 +68,9 @@ api_backend = "chat_completions"
 没有据此新增产品修复，没有跑全套测试，没有提交或推送。本报告补足两个指定的运行时验证点，付费服务、多轮模型效果、真实设备码登录、完整 Windows 首装及其他工具类别继续按各自证据范围描述。
 
 云端增补时还发现测试目录可能采用`RUNNER~1`短名，而Node返回`runneradmin`长名；验证现比较`fs.realpath`后的同一目录，未降低cwd归属检查。工具readiness中的两个自有PID会立即记录，确保观察步骤失败时仍清理已启动的工具。内核快照版本在本机重跑后，J02、J05取消与关闭再次通过，所有自有进程和临时目录退出/清理正常。
+
+## 一次性Windows增补结果
+
+[运行37059264430](https://github.com/masonyang71324-oss/grok-desktop/actions/runs/37059264430)在Windows10.0.26100上同时完成真实安装、J02及J05。取消18ms后3个工具后代退出且CLI存活；dispose56ms后CLI和3个工具后代退出。后台最终回复由新官方CLI恢复；无外部代理请求，临时目录、本地服务及所有自有进程已清理。证据为该运行的`official-cli-local-model-report`附件。
+
+前几次云端观察器错误与短路径比较、错误使用已退出进程的可复用PID，以及在模型隔离环境里启动PowerShell/.NET观察器有关。修复的是验证器：记录真实child退出状态、清退已退出PID、只读内核快照、关闭非交互stdin并保留正常OS观察器环境；CLI与模型隔离保持不变，没有放宽退出或归属断言。诊断曾停在`Add-Type`就绪前，切回正常OS观察器环境后在原期限内通过；没有据此修改产品进程管理。

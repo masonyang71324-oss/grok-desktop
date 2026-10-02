@@ -1,5 +1,11 @@
 # Changes
 
+## 1.7.2
+
+- Fix duplicated context lines after repeated diff layout/folding changes and preserve Unicode character boundaries in retained terminal logs.
+- Add scoped Office/Markdown/web isolation checks, real CLI metadata/configuration and localhost model lifecycle verification, and disposable Windows official installation/cancellation coverage.
+- Complete the49-finding applicability mapping with explicit evidence boundaries; improve verification cleanup and Windows process-observation reliability without extending product timeouts.
+
 ## 1.7.1
 
 - Publish the sixteen improvements from the 1.7.0 candidate after correcting the CI-detected settings timing issue.
