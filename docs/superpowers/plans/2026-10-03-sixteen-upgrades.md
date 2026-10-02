@@ -31,10 +31,10 @@ Files: new `src/ConversationNavigation.tsx`, `src/conversation-navigation.mjs`, 
 
 Interfaces: navigation consumes `{sessionId, rows, turnError, onNavigate}`; target is `{kind:'row',rowId}` or `{kind:'error'}`. Message roots expose `data-row-id`. Formatted copy sends `{text,html}` through existing `clipboard.write`. Root provides jump expansion/scroll behavior and toolbar entry.
 
-- [ ] Write and run failing tests for Chinese/tool/error hits, outline attachment titles, exact source copying and math/code/currency boundaries.
-- [ ] Implement navigation + formatting and local math; add translations; run focused tests.
-- [ ] Benchmark 100/500 messages + streamed tail, apply measured retained-DOM/parse improvement, verify selection/scroll/jump.
-- [ ] Review module diff and report exact integration needs.
+- [x] Write and run failing tests for Chinese/tool/error hits, outline attachment titles, exact source copying and math/code/currency boundaries.
+- [x] Implement navigation + formatting and local math; add translations; run focused tests.
+- [x] Benchmark 100/500 messages + streamed tail, apply measured retained-DOM/parse improvement, verify selection/scroll/jump.
+- [x] Review module diff and report exact integration needs.
 
 ## B. Workspace (5, 6, 7, 13)
 
@@ -42,9 +42,9 @@ Files: `src/diff-model.mjs`, `src/DiffViewer.tsx`, modify `src/Inspector.tsx` an
 
 Interfaces: `workspace.search({cwd,query,limit:100}) -> {files:Attachment[],truncated}`; `office.preview({path})` returns a typed readonly model with kind, notice and format-specific data. Diff receives raw text only. Resize handle passes constrained pixel values and commit callback.
 
-- [ ] Write failing tests for multi-hunk diff, hidden/limited file search and supported Office models including uncached formula.
-- [ ] Implement readable diff, scoped picker, readonly viewers and keyboard/pointer resizing; run focused tests.
-- [ ] Verify legacy/complex format limitations, zero write-back, root integration contracts.
+- [x] Write failing tests for multi-hunk diff, hidden/limited file search and supported Office models including uncached formula.
+- [x] Implement readable diff, scoped picker, readonly viewers and keyboard/pointer resizing; run focused tests.
+- [x] Verify legacy/complex format limitations, zero write-back, root integration contracts.
 
 ## C. Runtime (4, 10, 12, 15)
 
@@ -52,9 +52,9 @@ Files: `electron/cli-installer.cjs`, `electron/providers.cjs`, `electron/session
 
 Interfaces: installer state/start/cancel, public provider list/save/remove with text-baseline conflict detection, session idle collector with explicit protected-state predicate and lazy reactivation; wizard/provider components use dedicated request commands root registers.
 
-- [ ] Write failing install cancellation/version verification, TOML preservation/conflict/secret omission, idle protection/reactivation and offline upstream fixture tests.
-- [ ] Implement official installer and forms, idle lifecycle and upstream check; verify isolated fixtures.
-- [ ] Document supported official schema/source URLs and root command/event/type contracts.
+- [x] Write failing install cancellation/version verification, TOML preservation/conflict/secret omission, idle protection/reactivation and offline upstream fixture tests.
+- [x] Implement official installer and forms, idle lifecycle and upstream check; verify isolated fixtures.
+- [x] Document supported official schema/source URLs and root command/event/type contracts.
 
 ## D. Terminal, preview, dictation (8, 9, 16)
 
@@ -62,14 +62,14 @@ Files: new `electron/terminal.cjs`, `electron/web-preview.cjs`, `electron/dictat
 
 Interfaces: terminal open/input/resize/close/state using explicit terminal id and cwd; preview open/navigate/state/capture/close using explicit preview identity and original draft owner. Capture returns a standard image Attachment. Dictation launches only the Windows hotkey after composer focus.
 
-- [ ] Write lifecycle/input/invalid-URL/screenshot-owner tests and isolated native PTY smoke.
-- [ ] Implement ConPTY/xterm and isolated visible web preview, preserving external open options and truthful status.
-- [ ] Implement dictation launcher and button with system-managed state; test generated key sequence via injected executor, not real microphone.
+- [x] Write lifecycle/input/invalid-URL/screenshot-owner tests and isolated native PTY smoke.
+- [x] Implement ConPTY/xterm and isolated visible web preview, preserving external open options and truthful status.
+- [x] Implement dictation launcher and button with system-managed state; test generated key sequence via injected executor, not real microphone.
 
 ## E. Integration and delivery
 
-- [ ] Wire lazy components, all request allowlists/handlers, locale maps, settings sizes and scoped attachment/preview actions in App/main/preload/types.
-- [ ] Add mock Electron end-to-end coverage for new UI in both languages, resize/IME, capture-to-correct-draft, onboarding/provider forms and real terminal output.
-- [ ] Run focused regressions, then full tests/format/build/source E2E. Review whole changeset; fix demonstrated failures.
-- [ ] Build installer/portable and run packaged E2E/native-module smoke, visually inspect Chinese/English/small-window layouts.
+- [x] Wire lazy components, all request allowlists/handlers, locale maps, settings sizes and scoped attachment/preview actions in App/main/preload/types.
+- [x] Add mock Electron end-to-end coverage for new UI in both languages, resize/IME, capture-to-correct-draft, onboarding/provider forms and real terminal output.
+- [x] Run focused regressions, then full tests/format/build/source E2E. Review whole changeset; fix demonstrated failures.
+- [x] Build installer/portable and run packaged E2E/native-module smoke, visually inspect Chinese/English/small-window layouts.
 - [ ] Document all sixteen actual implementations and limitations, version release, publish and safely update local installed app after idle check.

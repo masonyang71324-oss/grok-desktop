@@ -1,19 +1,15 @@
 const path = require('node:path');
 const { runProcess } = require('./process.cjs');
 const { translate: t } = require('./i18n.cjs');
-async function launchDictation({ platform = process.platform, run = runProcess } = {}) {
+async function launchDictation({
+  platform = process.platform,
+  run = runProcess,
+  scriptPath = path.join(__dirname, 'voice-typing.ps1'),
+} = {}) {
   if (platform !== 'win32') throw new Error(t('此语音入口需要 Windows 语音输入。'));
   const result = await run(
     'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      path.join(__dirname, 'voice-typing.ps1'),
-    ],
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
     { timeout: 10000, maxBytes: 4000 },
   );
   if (result.exitCode !== 0)

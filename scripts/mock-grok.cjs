@@ -62,6 +62,7 @@ let state = { sessions: [], clientVersion: '' },
   turn = null;
 const permissions = new Map();
 let stateLocked = false;
+const transactionOutput = [];
 // Every synchronous fixture transaction reloads shared state. Stream callbacks
 // participate too, so concurrent session processes never overwrite each other.
 function withState(action) {
@@ -85,6 +86,9 @@ function withState(action) {
     stateLocked = false;
     fs.closeSync(fd);
     fs.unlinkSync(lock);
+    // A client may restart immediately after a reply. Release this fixture's
+    // shared-state lock before publishing committed replies and notifications.
+    for (const line of transactionOutput.splice(0)) process.stdout.write(line);
   }
 }
 const save = () => {
@@ -106,8 +110,11 @@ const log = (type, method, status, detail = {}) => {
       }) + '\n',
     );
 };
-const write = (message) =>
-  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+const write = (message) => {
+  const line = JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n';
+  if (stateLocked) transactionOutput.push(line);
+  else process.stdout.write(line);
+};
 const reply = (request, result) => write({ id: request.id, result });
 const fail = (request, code) => write({ id: request.id, error: { code: -32602, message: code } });
 const sessionFor = (id) => state.sessions.find((session) => session.sessionId === id);

@@ -13,6 +13,7 @@ const {
   screen,
   session: electronSession,
   clipboard,
+  ClipboardItem,
 } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -458,12 +459,21 @@ const handlers = {
   'preview.close': (payload) => previews.close(payload),
   'dictation.start': () => {
     win?.focus();
-    return launchDictation();
+    return launchDictation({
+      scriptPath: app.isPackaged ? path.join(process.resourcesPath, 'voice-typing.ps1') : undefined,
+    });
   },
   'settings.save': saveSettings,
   'clipboard.write': ({ text, html }) => {
     if (typeof text !== 'string') throw new Error(t('复制内容无效。'));
-    return typeof html === 'string' ? clipboard.write({ text, html }) : clipboard.writeText(text);
+    return typeof html === 'string'
+      ? clipboard.write([
+          new ClipboardItem({
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+            'text/html': new Blob([html], { type: 'text/html' }),
+          }),
+        ])
+      : clipboard.writeText(text);
   },
   'clipboard.image': async () => {
     const items = await clipboard.read();

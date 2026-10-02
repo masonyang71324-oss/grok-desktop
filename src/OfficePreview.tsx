@@ -215,7 +215,11 @@ export default function OfficePreview({
           {t('正在加载排版预览')}
         </p>
       )}
-      {error && <div className="inline-error">{error}</div>}
+      {error && (
+        <div className="inline-error" role="alert">
+          {error}
+        </div>
+      )}
       {model?.notices.map((notice) => (
         <p className="preview-notice" key={notice}>
           {t(noticeKeys[notice] || notice)}

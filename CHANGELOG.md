@@ -1,5 +1,11 @@
 # Changes
 
+## 1.7.0
+
+- Deliver the sixteen audited workflow improvements: search/outline, rich copy, first-run setup, enhanced diffs, file references, Office previews, web capture, interactive terminal, provider forms, rendering/idle resource improvements, resizable panels, math, upstream checks and Windows voice typing.
+- Preserve attachment and turn metadata across idle reconnection; keep original copying, document sending, external tools, approvals, queues, drafts and checkpoints.
+- Validate actual ClipboardItem, ConPTY, isolated webpage module execution and draft routing through source and packaged Electron workflows. See [release notes](docs/release-1.7.0.md) and [validation](docs/upgrade-1.7.0-validation.md).
+
 ## 1.6.1
 
 - Keep the editor open during in-flight saves, including when newer input matches the previous baseline, so closing cannot silently lose that input.

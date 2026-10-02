@@ -2619,7 +2619,7 @@ export default function App() {
           <ProviderSettings
             request={request}
             onClose={() => setDialog(null)}
-            onChanged={() => void initialize(true)}
+            onChanged={() => void initialize()}
           />
         )}
         {dialog === 'templates' && (

@@ -24,6 +24,11 @@ jobs:
       - run: npm run test:e2e
       - name: Build installers
         run: npx electron-builder --win nsis portable --x64 --publish never
+      - name: Test packaged desktop tools
+        shell: pwsh
+        run: |
+          $env:GROK_DESKTOP_TEST_EXE = (Resolve-Path "release/win-unpacked/Grok Desktop.exe").Path
+          npm run test:e2e:upgrades
       - name: Publish release
         shell: pwsh
         run: |

@@ -70,6 +70,9 @@ async function run(english) {
     await attach();
     await page.locator('.attachment-name').click();
     const preview = page.getByRole('dialog', { name, exact: true });
+    await preview
+      .getByRole('button', { name: english ? 'Text content' : '文字内容', exact: true })
+      .click();
     await preview.locator('.attachment-preview').filter({ hasText: 'Header test file' }).waitFor();
     await preview
       .locator('.attachment-notice')

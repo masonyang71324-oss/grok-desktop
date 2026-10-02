@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -14,7 +14,8 @@
     "start": "electron .",
     "build": "tsc --noEmit && vite build",
     "test": "node --test tests/*.test.cjs",
-    "test:e2e": "node tests/e2e-smoke.cjs && node tests/e2e-lifecycle.cjs && node tests/e2e-recovery.cjs && node tests/e2e-workflows.cjs && node tests/e2e-images.cjs && node tests/e2e-word.cjs && node tests/e2e-documents.cjs",
+    "test:e2e": "node tests/e2e-smoke.cjs && node tests/e2e-lifecycle.cjs && node tests/e2e-recovery.cjs && node tests/e2e-workflows.cjs && node tests/e2e-images.cjs && node tests/e2e-word.cjs && node tests/e2e-documents.cjs && node tests/e2e-upgrades.cjs",
+    "test:e2e:upgrades": "node tests/e2e-upgrades.cjs",
     "bench:markdown": "node scripts/bench-markdown.cjs",
     "bench:conversation": "node scripts/bench-conversation.cjs",
     "check:upstream": "node --use-env-proxy --use-system-ca scripts/check-upstream.cjs",
@@ -76,6 +77,13 @@
       "package.json"
     ],
     "asar": true,
+    "npmRebuild": false,
+    "extraResources": [
+      {
+        "from": "electron/voice-typing.ps1",
+        "to": "voice-typing.ps1"
+      }
+    ],
     "win": {
       "target": [
         "nsis",

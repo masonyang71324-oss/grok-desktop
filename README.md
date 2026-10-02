@@ -10,14 +10,20 @@
 
 ## 开始使用
 
-1. 按照 [Grok Build 官方说明](https://docs.x.ai/build/overview) 安装并登录 CLI。
-2. 从 [Releases](https://github.com/masonyang71324-oss/grok-desktop/releases) 下载并运行安装版（Setup.exe）或免安装版（Windows.exe）。
+1. 从 [Releases](https://github.com/masonyang71324-oss/grok-desktop/releases) 下载并运行安装版（Setup.exe）或免安装版（Windows.exe）。
+2. 首次引导可安装官方稳定版 CLI，也可选择已有的 grok.exe；在官方登录窗口完成登录后返回检查。也可按照 [Grok Build 官方说明](https://docs.x.ai/build/overview) 手动安装。
 3. 选择项目文件夹，在输入区描述任务。模型、推理深度与操作权限均可通过按钮选择。
 4. 在“设置 → 界面语言”选择“简体中文”或“English”。立即生效，重启后保留。
 
-程序会探测 GROK_HOME/bin、用户目录下的 .grok/bin、本地应用目录以及 PATH。官方 npm 安装也会在 Grok 主目录初始化原生程序。找不到 CLI 时会打开设置，可以点击“浏览程序…”选择 grok.exe，并查看官方安装说明。
+程序会探测 GROK_HOME/bin、用户目录下的 .grok/bin、本地应用目录以及 PATH。找不到 CLI 时打开首次使用引导。底栏的“Grok Build”菜单还可打开引导和模型来源配置；自定义模型引用环境变量中的密钥，不显示已有密钥内容。
 
 ## 主要功能
+
+- 当前会话全文搜索、提问目录、格式化复制、数学公式和长对话渲染优化。
+- 输入区可搜索引用项目文件、调用 Windows 语音输入；侧栏/文件栏/输入区可拖动调整并记住尺寸。
+- DOCX、工作表、PPTX提供只读排版预览，差异支持左右对照、词级标记与上下文折叠；复杂内容会明确说明限制，保留文字及默认程序打开入口。
+- 内置 PowerShell 交互终端；隔离网页预览窗口的截图可回到原会话草稿，均按需打开。
+- 回收完全空闲的引擎连接并保留会话；官方 CLI/ACP 变动有独立维护检查。完整范围见 [1.7.0 更新说明](docs/release-1.7.0.md) 和 [验证记录](docs/upgrade-1.7.0-validation.md)。
 
 - 左侧“会话 / 文件 / 任务”统一导航，底栏常驻连接、额度、上下文和两个软件的版本入口；面板切换保留草稿与文件编辑。
 - 项目会话、草稿自动保存、重启恢复；尚未选择项目的输入也会保存。

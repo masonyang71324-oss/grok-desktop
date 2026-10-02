@@ -156,6 +156,12 @@ async function run(english) {
     ]) {
       await names.nth(index).click();
       preview = page.getByRole('dialog', { name: path.basename(files[index]), exact: true });
+      await preview.waitFor();
+      const textTab = preview.getByRole('button', {
+        name: english ? 'Text content' : '文字内容',
+        exact: true,
+      });
+      if (await textTab.count()) await textTab.click();
       await preview.locator('.attachment-preview').filter({ hasText: expected }).waitFor();
       await preview
         .locator('.attachment-notice')

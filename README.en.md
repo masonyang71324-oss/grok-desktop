@@ -10,14 +10,20 @@ An **unofficial**, Windows desktop interface for Grok Build. It is not an xAI pr
 
 ## Getting started
 
-1. Install and sign in to the official [Grok Build CLI](https://docs.x.ai/build/overview).
-2. Download and run the installer (Setup.exe) or portable executable (Windows.exe) from [Releases](https://github.com/masonyang71324-oss/grok-desktop/releases).
+1. Download and run the installer (Setup.exe) or portable executable (Windows.exe) from [Releases](https://github.com/masonyang71324-oss/grok-desktop/releases).
+2. Use the first-run wizard to install the official stable CLI or choose an existing grok.exe, then sign in through its official login window and recheck. Manual [CLI installation](https://docs.x.ai/build/overview) is also supported.
 3. Open a project and describe your task. Use the controls below the composer to choose the model, reasoning effort and approval mode.
 4. Choose **English** or **简体中文** in **Settings → Language** (设置 → 界面语言). The change applies immediately and is remembered after restart.
 
-The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and PATH for grok.exe. Official npm installations also initialize the native executable in the Grok home directory. If discovery fails, Settings provides a file picker and a link to the official installation instructions.
+The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and PATH for grok.exe. If discovery fails, it opens the setup wizard. The footer's Grok Build menu also opens setup and model provider settings; custom models reference secrets in environment variables without exposing existing secret values.
 
 ## Features
+
+- Current-conversation full-text search, question outline, formatted copying, math and measured long-conversation rendering improvements.
+- Search project files from the composer, launch Windows voice typing, and resize/remember navigation and composer dimensions.
+- Read-only DOCX/sheet/PPTX layout previews, split diffs, word marks and collapsed context. Complex content has explicit limitations and retains text/external-opening options.
+- An on-demand interactive PowerShell terminal and isolated web preview with screenshots returned to the originating conversation draft.
+- Fully idle CLI connection reclamation with session preservation, plus official CLI/ACP maintenance checks. See the [1.7.0 notes](docs/release-1.7.0.md) and [validation scope](docs/upgrade-1.7.0-validation.md).
 
 - Unified Chats / Files / Tasks navigation and a persistent footer for connection, usage, context and both app/engine versions. Switching panels preserves drafts and file editing.
 - Project conversations, local drafts and restart recovery.

@@ -45,6 +45,15 @@
   margin: -10px 0 4px;
   opacity: 0.6;
 }
+.composer > .resize-vertical::before {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 3px;
+  margin: 2px auto;
+  border-radius: 3px;
+  background: var(--border);
+}
 .composer > textarea {
   max-height: 360px !important;
 }
