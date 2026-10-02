@@ -458,7 +458,12 @@ if (process.argv[2] === '--child') {
         return fsSync.existsSync(readyPath);
       }, `${action}: descendant readiness`);
       const ready = JSON.parse(await fs.readFile(readyPath, 'utf8'));
-      assert.equal(ready.cwd.toLowerCase(), dirs.cwd.toLowerCase());
+      // Hosted Windows may provide an 8.3 TEMP alias while GetCurrentDirectory
+      // reports its long name. Compare the actual directories, not spellings.
+      assert.equal(
+        (await fs.realpath(ready.cwd)).toLowerCase(),
+        (await fs.realpath(dirs.cwd)).toLowerCase(),
+      );
       const cli = lifecycleHub.sessions.get(session.sessionId).client._proc;
       const ancestry = [];
       let pid = ready.pid;
