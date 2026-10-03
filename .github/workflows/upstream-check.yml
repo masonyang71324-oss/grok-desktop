@@ -17,7 +17,7 @@ jobs:
         run: node --use-env-proxy --use-system-ca scripts/check-upstream.cjs --output upstream-report.json
       - name: Preserve maintenance report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: upstream-metadata-report
           path: upstream-report.json

@@ -28,7 +28,7 @@ jobs:
           GROK_DESKTOP_DISPOSABLE_WINDOWS: '1'
       - name: Preserve sanitized installer report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clean-windows-cli-install-report
           path: test-results/clean-cli-install.json
@@ -39,7 +39,7 @@ jobs:
           node scripts/verify-cli-local-model.cjs $report.installation.executable
       - name: Preserve local-model lifecycle report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: official-cli-local-model-report
           path: test-results/cli-local-model.json
