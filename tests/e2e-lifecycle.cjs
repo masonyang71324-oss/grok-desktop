@@ -204,6 +204,17 @@ async function closeAndWait(discard) {
         (event) => event.type === 'turn-end' && event.result?.stopReason === 'cancelled',
       ),
     );
+    // CLI turn-end arrives before checkpoint finalization releases the task lock.
+    await page.waitForFunction(
+      (sessionId) =>
+        window.lifecycleEvents.some(
+          (event) =>
+            event.type === 'task-finished' &&
+            event.sessionId === sessionId &&
+            event.status === 'cancelled',
+        ),
+      sessionId,
+    );
     const log = (await fs.readFile(path.join(directory, 'mock-events.jsonl'), 'utf8'))
       .trim()
       .split('\n')
