@@ -56,6 +56,23 @@ test('a project symlink cannot silently authorize files outside the selected fol
   );
 });
 
+test('a natively selected project alias authorizes its children and retains read-only execution', async (t) => {
+  const { directory, project, outside, access } = await fixture(t);
+  const alias = path.join(directory, 'selected-alias');
+  await fs.symlink(project, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  await access.grantProject(alias, false);
+  assert.equal(
+    await access.file(path.join(alias, 'source.txt')),
+    await fs.realpath(path.join(project, 'source.txt')),
+  );
+  assert.throws(() => access.execution(path.join(alias, 'run.cmd')), /信任|trust/);
+  const escape = path.join(alias, 'external');
+  await fs.symlink(outside, escape, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(access.file(path.join(escape, 'private.txt')), /选择|selected/);
+  await access.grantProject(alias, true);
+  assert.equal(access.execution(path.join(alias, 'run.cmd')).trusted, true);
+});
+
 test('IPC payload validation rejects malformed paths, requests and controls before services run', () => {
   const { validateRequest } = require('../electron/request-validation.cjs');
   for (const [command, payload] of [

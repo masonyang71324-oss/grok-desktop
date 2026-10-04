@@ -29,9 +29,9 @@ function createAccessPolicy() {
   }
   function containing(filename) {
     const target = key(filename);
-    return [...projects.values()]
-      .sort((a, b) => b.cwd.length - a.cwd.length)
-      .find((entry) => inside(key(entry.cwd), target));
+    return [...projects.entries()]
+      .sort(([a], [b]) => b.length - a.length)
+      .find(([root]) => inside(root, target))?.[1];
   }
   async function file(filename, write = false) {
     absolute(filename);
