@@ -223,6 +223,10 @@ async function run(english) {
         exact: true,
       })
       .click();
+    await page
+      .locator('.attachment-list')
+      .getByRole('button', { name: '论文.caj', exact: true })
+      .waitFor();
     await page.locator('.composer > textarea').fill('Keep document draft');
     await page
       .getByRole('button', { name: english ? 'Send message' : '发送消息', exact: true })

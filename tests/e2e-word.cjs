@@ -121,6 +121,8 @@ async function run(english) {
     // A conversion error must not submit a second prompt or discard the draft.
     await fs.writeFile(file, 'not a Word document');
     await attach();
+    // Clicking opens an asynchronous native selection/registration operation.
+    await page.locator('.attachment-list').getByRole('button', { name, exact: true }).waitFor();
     const input = page.locator('.composer > textarea');
     await input.fill('Keep document draft');
     await send();
@@ -142,6 +144,49 @@ async function run(english) {
       `PASS Word ${english ? 'DOCX English' : 'DOC Chinese'} attach, preview, worker extraction, send and failure draft retention`,
     );
   } catch (error) {
+    if (page) {
+      const diagnosis = await page
+        .evaluate(async () => {
+          const response = await window.desktop.request('tasks.list');
+          return {
+            statuses: [...document.querySelectorAll('[role="status"]')].map(
+              (node) => node.textContent,
+            ),
+            composerLength: document.querySelector('.composer > textarea')?.value.length,
+            attachmentCount: document.querySelectorAll('.attachment-list > span').length,
+            turnEnds: (window.wordTurns || []).map(({ sessionId, turnId, result }) => ({
+              sessionId,
+              turnId,
+              stopReason: result?.stopReason,
+            })),
+            taskFinished: (window.wordFinished || []).map(({ sessionId, turnId, status }) => ({
+              sessionId,
+              turnId,
+              status,
+            })),
+            tasks: response.ok
+              ? response.data.map((task) => ({
+                  sessionId: task.sessionId,
+                  status: task.status,
+                  turnId: task.turnId,
+                  finishing: task.finishing,
+                  queuedCount: task.queued?.length,
+                  error: task.error,
+                  lastTurn: task.lastTurn && {
+                    turnId: task.lastTurn.turnId,
+                    status: task.lastTurn.status,
+                    error: task.lastTurn.error,
+                  },
+                }))
+              : { error: response.error },
+          };
+        })
+        .catch((cause) => ({ diagnosisError: cause.message }));
+      console.error(
+        'WORD_FAILURE_STATE',
+        JSON.stringify({ language: english ? 'en' : 'zh-CN', diagnosis }, null, 2),
+      );
+    }
     if (page) await page.screenshot({ path: path.join(directory, 'failure.png') }).catch(() => {});
     throw error;
   } finally {
