@@ -179,14 +179,27 @@ async function run(english) {
     }
     await page.evaluate(() => {
       window.documentTurns = [];
+      window.documentFinished = [];
       window.desktop.onEvent((e) => {
         if (e.type === 'turn-end') window.documentTurns.push(e);
+        if (e.type === 'task-finished') window.documentFinished.push(e);
       });
     });
     await page
       .getByRole('button', { name: english ? 'Send message' : '发送消息', exact: true })
       .click();
     await page.waitForFunction(() => window.documentTurns.length > 0);
+    // Wait for checkpoint finalization so the CAJ failure exercises a direct
+    // send rather than being accepted into the preceding turn's queue.
+    await page.waitForFunction(() => {
+      const turn = window.documentTurns[0];
+      return window.documentFinished.some(
+        (event) =>
+          event.sessionId === turn.sessionId &&
+          event.turnId === turn.turnId &&
+          event.status === 'completed',
+      );
+    });
     const events = () =>
       fs
         .readFile(path.join(directory, 'events.jsonl'), 'utf8')

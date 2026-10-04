@@ -1,5 +1,10 @@
 # Changes
 
+## 1.8.1
+
+- Gate composer input and attachment pick/paste/drop while restoring the workspace or conversation, so early input cannot land in a hidden startup draft.
+- Wait for checkpoint finalization before sequential document failure scenarios in desktop tests, with unchanged deadlines.
+
 ## 1.8.0
 
 - Compact adjacent history updates, build replay linearly, batch frame updates, and virtualize conversation/session lists while preserving search, native selection, full copy and current turns.

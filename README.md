@@ -19,7 +19,7 @@
 
 ## 主要功能
 
-最新升级：[1.8.0 审阅建议补全](docs/implementation-1.8.0.md)与[可复现性能记录](docs/performance-1.8.0.md)。此前修补：[1.7.4 独立审阅问题处理](docs/review-response-1.7.4.md)。[文档入口](docs/README.md)保留历史证据。
+最新补丁：[1.8.1 启动输入修正](docs/release-1.8.1.md)。完整升级：[1.8.0 审阅建议补全](docs/implementation-1.8.0.md)与[可复现性能记录](docs/performance-1.8.0.md)。此前修补：[1.7.4 独立审阅问题处理](docs/review-response-1.7.4.md)。[文档入口](docs/README.md)保留历史证据。
 
 - 当前会话全文搜索、提问目录、格式化复制、数学公式和长对话渲染优化。
 - 输入区可搜索引用项目文件、调用 Windows 语音输入；侧栏/文件栏/输入区可拖动调整并记住尺寸。

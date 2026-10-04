@@ -19,7 +19,7 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 
 ## Features
 
-Latest upgrade: [1.8.0 review completion](docs/implementation-1.8.0.md) and [reproducible performance results](docs/performance-1.8.0.md). Previous fixes: [1.7.4 review response](docs/review-response-1.7.4.md). The [documentation index](docs/README.md) preserves historical evidence.
+Latest patch: [1.8.1 startup input fix](docs/release-1.8.1.md). Full upgrade: [1.8.0 review completion](docs/implementation-1.8.0.md) and [reproducible performance results](docs/performance-1.8.0.md). Previous fixes: [1.7.4 review response](docs/review-response-1.7.4.md). The [documentation index](docs/README.md) preserves historical evidence.
 
 - Current-conversation full-text search, question outline, formatted copying, math and measured long-conversation rendering improvements.
 - Search project files from the composer, launch Windows voice typing, and resize/remember navigation and composer dimensions.

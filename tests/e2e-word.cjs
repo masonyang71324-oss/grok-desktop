@@ -92,12 +92,25 @@ async function run(english) {
     await page.keyboard.press('Escape');
     await page.evaluate(() => {
       window.wordTurns = [];
+      window.wordFinished = [];
       window.desktop.onEvent((e) => {
         if (e.type === 'turn-end') window.wordTurns.push(e);
+        if (e.type === 'task-finished') window.wordFinished.push(e);
       });
     });
     await send();
     await page.waitForFunction(() => window.wordTurns.length > 0);
+    // Raw CLI turn-end precedes checkpoint finalization. The invalid-file case
+    // must exercise a new direct send, not enqueue behind the finishing turn.
+    await page.waitForFunction(() => {
+      const turn = window.wordTurns[0];
+      return window.wordFinished.some(
+        (event) =>
+          event.sessionId === turn.sessionId &&
+          event.turnId === turn.turnId &&
+          event.status === 'completed',
+      );
+    });
     assert.equal(await page.locator('.attachment-list > span').count(), 0);
     const events = (await fs.readFile(path.join(directory, 'events.jsonl'), 'utf8'))
       .trim()

@@ -50,7 +50,7 @@ const storageFixture = () => {
 
 async function fixture(
   storage = storageFixture(),
-  { filterEmptySessions = false, lastProject = cwd, modelState = models } = {},
+  { filterEmptySessions = false, lastProject = cwd, modelState = models, projectOpenGate } = {},
 ) {
   let listener,
     index = 0,
@@ -199,8 +199,13 @@ async function fixture(
         commands: [],
       };
     }
-    if (command === 'project.open')
+    if (command === 'project.open') {
+      await projectOpenGate;
       return { cwd: payload.cwd, sessions: await client.listSessions(payload) };
+    }
+    if (command === 'dialog.attach') return [{ name: 'picked.txt', path: 'C:\\picked.txt' }];
+    if (command === 'clipboard.image')
+      return { name: 'pasted.png', path: 'C:\\pasted.png', kind: 'image' };
     if (command === 'sessions.list') return client.listSessions(payload);
     if (command === 'tasks.list') return [];
     if (command === 'session.enqueue') return { queueId: 'queued-1' };
@@ -274,7 +279,7 @@ async function fixture(
   const returnStatement = appFunction.body.statements.find(ts.isReturnStatement);
   const source =
     original.slice(0, returnStatement.getStart(sourceFile)) +
-    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, pending, cancelling, stop, permissions, tasks, appUpdate, currentEffort, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
+    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, pending, cancelling, stop, permissions, tasks, appUpdate, currentEffort, initializing, loadingSession, notice, attach, pasteImage, dropFiles, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -286,6 +291,10 @@ async function fixture(
     window: {
       localStorage: storage,
       desktop: {
+        async pathsForFiles(files) {
+          requests.push({ command: 'native.files', payload: files });
+          return files;
+        },
         onEvent(fn) {
           listener = fn;
           return () => (listener = null);
@@ -327,6 +336,106 @@ async function fixture(
     },
   };
 }
+
+async function attemptLoadingAttachments(f) {
+  let prevented = 0;
+  await f.view.attach();
+  await f.view.pasteImage({
+    clipboardData: { items: [{ type: 'image/png' }] },
+    preventDefault() {
+      prevented++;
+    },
+  });
+  await f.view.dropFiles({
+    dataTransfer: { files: [{ name: 'dropped.txt', path: 'C:\\dropped.txt' }] },
+    preventDefault() {
+      prevented++;
+    },
+  });
+  await settle();
+  assert.equal(prevented, 2);
+  assert.equal(
+    f.requests.filter((item) =>
+      ['dialog.attach', 'clipboard.image', 'native.files'].includes(item.command),
+    ).length,
+    0,
+    'loading must not open a native picker, capture clipboard data or authorize dropped files',
+  );
+  assert.equal(f.view.attachments.length, 0);
+  assert.match(f.view.notice, /准备|prepar/i);
+}
+
+test('first-project initialization blocks attachment entry until the composer has its project', async () => {
+  let releaseProject;
+  const projectOpenGate = new Promise((resolve) => {
+    releaseProject = resolve;
+  });
+  const storage = storageFixture();
+  const f = await fixture(storage, { projectOpenGate });
+  try {
+    assert.equal(f.view.connection, 'ready');
+    assert.equal(f.view.initializing, true);
+    assert.equal(f.view.cwd, '');
+    await attemptLoadingAttachments(f);
+    const stored = JSON.parse(storage.getItem('grok-desktop-drafts'));
+    assert.equal(Object.keys(stored?.drafts || {}).length, 0);
+    releaseProject();
+    await settle();
+    assert.equal(f.view.initializing, false);
+    assert.equal(f.view.cwd, cwd);
+    await f.view.attach();
+    await settle();
+    assert.equal(f.view.attachments[0].name, 'picked.txt');
+  } finally {
+    releaseProject();
+    f.close();
+  }
+});
+
+test('session restoration blocks attachment entry and enables it again after the load completes', async () => {
+  const f = await fixture();
+  let releaseLoad, loading;
+  try {
+    f.setLoadOverride(
+      (payload) =>
+        new Promise((resolve) => {
+          releaseLoad = () => resolve(f.client.loadSession(payload));
+        }),
+    );
+    loading = f.view.loadConversation(summaries[0]);
+    await settle();
+    assert.equal(f.view.loadingSession, 'session-a');
+    await attemptLoadingAttachments(f);
+    releaseLoad();
+    releaseLoad = undefined;
+    await loading;
+    await settle();
+    assert.equal(f.view.loadingSession, '');
+    await f.view.attach();
+    await settle();
+    assert.equal(f.view.attachments[0].name, 'picked.txt');
+  } finally {
+    if (releaseLoad) {
+      releaseLoad();
+      await loading;
+      await settle();
+    }
+    f.close();
+  }
+});
+
+test('attachment entry remains available without a project once startup is complete', async () => {
+  const f = await fixture(undefined, { lastProject: '' });
+  try {
+    assert.equal(f.view.initializing, false);
+    assert.equal(f.view.cwd, '');
+    await f.view.attach();
+    await settle();
+    assert.equal(f.view.attachments[0].name, 'picked.txt');
+  } finally {
+    f.close();
+  }
+});
 
 test('stop during send preparation cancels the correct session before turn-start and preserves draft', async () => {
   const f = await fixture();

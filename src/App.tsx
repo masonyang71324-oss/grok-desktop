@@ -1206,6 +1206,10 @@ export default function App() {
     );
   }
   async function attach() {
+    if (initializing || loadingSession) {
+      notify(t('正在准备会话，请稍后添加附件。'));
+      return;
+    }
     const owner = { ...composerRef.current };
     try {
       const selected = await request<Attachment[]>('dialog.attach');
@@ -1290,6 +1294,10 @@ export default function App() {
     if (!Array.from(event.clipboardData.items).some((item) => item.type.startsWith('image/')))
       return;
     event.preventDefault();
+    if (initializing || loadingSession) {
+      notify(t('正在准备会话，请稍后添加附件。'));
+      return;
+    }
     const owner = { ...composerRef.current };
     try {
       const file = await request<Attachment | null>('clipboard.image');
@@ -1333,6 +1341,10 @@ export default function App() {
   async function dropFiles(event: React.DragEvent) {
     event.preventDefault();
     setDragging(false);
+    if (initializing || loadingSession) {
+      notify(t('正在准备会话，请稍后添加附件。'));
+      return;
+    }
     const owner = { ...composerRef.current };
     try {
       const files = await window.desktop.pathsForFiles(Array.from(event.dataTransfer.files));
@@ -2326,6 +2338,7 @@ export default function App() {
             <textarea
               ref={draftRef}
               value={draft}
+              disabled={initializing || !!loadingSession}
               onChange={(e) => setDraft(e.target.value)}
               onPaste={(event) => void pasteImage(event)}
               onKeyDown={(event) => {
@@ -2348,7 +2361,11 @@ export default function App() {
             />
             <div className="composer-toolbar">
               <div className="composer-tools">
-                <IconButton label={t('添加文件或图片')} onClick={() => void attach()}>
+                <IconButton
+                  label={t('添加文件或图片')}
+                  onClick={() => void attach()}
+                  disabled={initializing || !!loadingSession}
+                >
                   <Paperclip size={18} />
                 </IconButton>
                 <IconButton

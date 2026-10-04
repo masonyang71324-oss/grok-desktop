@@ -1,4 +1,5 @@
 export const accessCompletion: Record<string, string> = {
+  '正在准备会话，请稍后添加附件。': 'Preparing the conversation. Please add attachments shortly.',
   重新选择原附件并恢复预览: 'Reselect the original attachment and restore preview',
   '请先点击项目的“只看文件”，信任后再发送任务。':
     'Click the project’s Files only control and trust it before sending tasks.',

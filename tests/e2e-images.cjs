@@ -73,6 +73,8 @@ async function run(native) {
       ]);
     });
     const input = page.locator('.composer > textarea');
+    // Synthetic paste bypasses the browser's disabled-input behavior.
+    await page.locator('.composer > textarea:not(:disabled)').waitFor();
     await page.evaluate(() => {
       window.imageTurns = [];
       window.desktop.onEvent((event) => {
