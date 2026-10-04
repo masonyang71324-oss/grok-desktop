@@ -154,9 +154,8 @@ test('a failed atomic replacement preserves original content and cleans up the s
   const filename = path.join(cwd, 'source.txt');
   await fs.writeFile(filename, 'original complete content');
   const workspace = await workspaceWith({
-    'node:fs/promises': {
-      ...fs,
-      rename: async () => {
+    './file-retry.cjs': {
+      renameWithRetry: async () => {
         throw new Error('simulated file in use');
       },
     },

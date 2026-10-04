@@ -2,6 +2,7 @@ const { translate: t } = require('./i18n.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { renameWithRetry } = require('./file-retry.cjs');
 const { TextDecoder } = require('node:util');
 const { runProcess, runChecked } = require('./process.cjs');
 const HIDDEN = new Set([
@@ -136,7 +137,12 @@ async function saveFile({ cwd, path: relative, text, eol = 'lf', expectedMtimeMs
     });
     // chmod also restores permission bits that the process umask may remove on creation.
     await fs.chmod(temporary, current.mode & 0o7777);
-    await fs.rename(temporary, filename);
+    await renameWithRetry(temporary, filename, {
+      beforeRetry: async () => {
+        if (Math.abs((await fs.stat(filename)).mtimeMs - current.mtimeMs) > 1)
+          throw new Error(t('文件已被 Grok 或其他应用修改，请重新打开后再保存。'));
+      },
+    });
     return { mtimeMs: (await fs.stat(filename)).mtimeMs };
   } finally {
     await fs.rm(temporary, { force: true }).catch(() => {});
@@ -175,10 +181,10 @@ async function gitChanges({ cwd }) {
     if (state === '??') {
       if (filename) changes.push({ path: filename, status: '?', staged: false });
     } else {
-      for (const [column, staged] of [
+      for (const [column, staged] of /** @type {[number, boolean][]} */ ([
         [0, true],
         [1, false],
-      ]) {
+      ])) {
         const code = state[column];
         if (code === ' ') continue;
         if (code === 'R' || code === 'C') {

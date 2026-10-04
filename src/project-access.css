@@ -1,0 +1,15 @@
+.project-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  background: transparent;
+  white-space: nowrap;
+}
+.project-access.restricted {
+  color: var(--accent);
+}

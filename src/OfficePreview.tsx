@@ -178,6 +178,15 @@ export default function OfficePreview({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(true),
     [sheetIndex, setSheetIndex] = useState(0);
+  const [authorization, setAuthorization] = useState(0);
+  useEffect(
+    () =>
+      window.desktop.onEvent?.((event) => {
+        if (event.type === 'attachment-authorization-changed' && event.paths.includes(path))
+          setAuthorization((value) => value + 1);
+      }),
+    [path],
+  );
   useEffect(() => {
     let active = true;
     setModel(null);
@@ -197,7 +206,7 @@ export default function OfficePreview({
     return () => {
       active = false;
     };
-  }, [path]);
+  }, [path, authorization]);
   return (
     <div className="office-preview" aria-label={name || t('Office 只读预览')}>
       <div className="office-preview-toolbar">

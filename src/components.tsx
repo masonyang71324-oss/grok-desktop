@@ -314,14 +314,34 @@ export const Message = memo(function Message({
   onRetry,
   notify,
   onOpenFile,
+  expanded,
+  onExpandedChange,
 }: {
   row: TimelineRow;
   onRetry: (text: string, attachments?: { name: string; path: string }[]) => void;
   notify: (message: string) => void;
   onOpenFile?: OpenFile;
+  expanded?: boolean;
+  onExpandedChange?: (open: boolean) => void;
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(row.kind === 'thought' && row.streaming);
+  const previousStreaming = useRef(row.streaming);
+  useEffect(() => {
+    if (previousStreaming.current === row.streaming) return;
+    previousStreaming.current = row.streaming;
+    if (row.kind === 'thought') {
+      setDetailOpen(row.streaming);
+      onExpandedChange?.(row.streaming);
+    }
+  }, [row.kind, row.streaming]);
+  const open = expanded ?? detailOpen;
+  const toggleDetail = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
+    const next = event.currentTarget.open;
+    setDetailOpen(next);
+    onExpandedChange?.(next);
+  };
   const contentRoot = useRef<HTMLDivElement>(null);
   async function copyMessage(formatted = false) {
     try {
@@ -342,15 +362,17 @@ export const Message = memo(function Message({
   }
   if (row.kind === 'thought')
     return (
-      <details className="thought" open={row.streaming} data-row-id={row.id}>
+      <details className="thought" open={open} onToggle={toggleDetail} data-row-id={row.id}>
         <summary>
           <span className={`thinking-dot ${row.streaming ? 'pulsing' : ''}`} />
           {t(row.streaming ? '正在思考' : '思考过程')}
           <ChevronDown size={13} />
         </summary>
-        <div className="thought-body">
-          <Markdown text={row.text} notify={notify} />
-        </div>
+        {open && (
+          <div className="thought-body">
+            <Markdown text={row.text} notify={notify} />
+          </div>
+        )}
       </details>
     );
   if (row.kind === 'tool')
@@ -358,6 +380,8 @@ export const Message = memo(function Message({
       <details
         className={`tool-row ${row.status === 'failed' ? 'failed' : ''}`}
         data-row-id={row.id}
+        open={open}
+        onToggle={toggleDetail}
       >
         <summary>
           {['pending', 'in_progress'].includes(row.status || '') ? (
@@ -384,7 +408,7 @@ export const Message = memo(function Message({
           </span>
           <ChevronDown size={13} />
         </summary>
-        <ToolOutput row={row} onOpenFile={onOpenFile} />
+        {open && <ToolOutput row={row} onOpenFile={onOpenFile} />}
       </details>
     );
   return (

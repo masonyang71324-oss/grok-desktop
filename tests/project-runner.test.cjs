@@ -68,7 +68,12 @@ test('runs existing scripts in paths with spaces, bounds logs and stops its proc
   await runner.start({ cwd, script: 'fail' });
   await until(() => runner.state({ cwd }).status === 'error');
   assert.match(runner.state({ cwd }).error, /7/);
-  assert.ok(events.every((event) => event.name === 'runner-changed' && event.payload.cwd === cwd));
+  assert.ok(
+    events.every(
+      (event) =>
+        ['runner-changed', 'runner-output'].includes(event.name) && event.payload.cwd === cwd,
+    ),
+  );
 });
 
 test('Electron main process can run npm using installed Node instead of its own executable', async (t) => {

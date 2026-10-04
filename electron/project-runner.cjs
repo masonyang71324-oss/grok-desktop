@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 const { translate: t } = require('./i18n.cjs');
 const { resolvePathExecutable, windowsSystemExecutable } = require('./system-launch.cjs');
 
@@ -36,14 +37,47 @@ async function npmCommand() {
   throw new Error(t('未找到 npm，请安装 Node.js 并重新打开桌面应用。'));
 }
 
+/**
+ * @typedef {{status: string, script: string | null, log: string, runId?: string, sequence?: number, url?: string, error?: string}} ProjectRunnerState
+ * @typedef {{cwd: string, state: ProjectRunnerState} | {cwd: string, runId: string, sequence: number, data: string, url?: string}} ProjectRunnerEvent
+ */
+/** @param {{emit?: (type: 'runner-changed' | 'runner-output', event: ProjectRunnerEvent) => void}} [options] */
 function createProjectRunner({ emit = () => {} } = {}) {
   const projects = new Map();
   const key = (cwd) =>
     process.platform === 'win32' ? path.resolve(cwd).toLowerCase() : path.resolve(cwd);
   const stopped = () => ({ status: 'stopped', script: null, log: '' });
-  const state = ({ cwd }) => ({ ...(projects.get(key(cwd))?.state || stopped()) });
-  const publish = (project) =>
+  const tail = (text) => {
+    const bytes = Buffer.from(text);
+    if (bytes.length <= 65536) return text;
+    let start = bytes.length - 65536;
+    while ((bytes[start] & 0xc0) === 0x80) start++;
+    return bytes.toString('utf8', start);
+  };
+  const flush = (project) => {
+    clearTimeout(project.outputTimer);
+    project.outputTimer = null;
+    if (!project.pendingOutput || projects.get(key(project.cwd)) !== project) return;
+    project.state.sequence++;
+    emit('runner-output', {
+      cwd: project.cwd,
+      runId: project.state.runId,
+      sequence: project.state.sequence,
+      data: project.pendingOutput,
+      ...(project.state.url ? { url: project.state.url } : {}),
+    });
+    project.pendingOutput = '';
+  };
+  const state = ({ cwd }) => {
+    const project = projects.get(key(cwd));
+    if (project) flush(project);
+    return { ...(project?.state || stopped()) };
+  };
+  const publish = (project) => {
+    if (projects.get(key(project.cwd)) !== project) return;
+    flush(project);
     emit('runner-changed', { cwd: project.cwd, state: { ...project.state } });
+  };
   async function inspect({ cwd }) {
     let manifest;
     try {
@@ -71,9 +105,11 @@ function createProjectRunner({ emit = () => {} } = {}) {
     if (projects.get(key(cwd))?.child) throw new Error(t('项目正在运行，请先停止再重新运行。'));
     const project = {
       cwd,
-      state: { status: 'running', script, log: '' },
+      state: { status: 'running', script, log: '', runId: randomUUID(), sequence: 0 },
       child: null,
       stopping: false,
+      pendingOutput: '',
+      outputTimer: null,
     };
     const child = spawn(command.executable, [...command.args, 'run', '--', script], {
       cwd,
@@ -91,6 +127,7 @@ function createProjectRunner({ emit = () => {} } = {}) {
         publish(project);
       });
       child.once('close', (code, signal) => {
+        flush(project);
         project.child = null;
         if (project.stopping) project.state.status = 'stopped';
         else if (code !== 0 && !project.state.error) {
@@ -105,12 +142,13 @@ function createProjectRunner({ emit = () => {} } = {}) {
     for (const stream of [child.stdout, child.stderr]) {
       stream.setEncoding('utf8');
       stream.on('data', (chunk) => {
-        project.state.log = (project.state.log + chunk.replace(/\x1b\[[0-9;]*m/g, '')).slice(
-          -65536,
-        );
+        if (!project.child || projects.get(key(cwd)) !== project) return;
+        const data = chunk.replace(/\x1b\[[0-9;]*m/g, '');
+        project.state.log = tail(project.state.log + data);
+        project.pendingOutput = tail(project.pendingOutput + data);
         const url = extractLocalUrl(project.state.log);
         if (url) project.state.url = url;
-        publish(project);
+        if (!project.outputTimer) project.outputTimer = setTimeout(() => flush(project), 30);
       });
     }
     publish(project);

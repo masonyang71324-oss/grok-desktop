@@ -27,11 +27,16 @@ const commands = new Set([
   'clipboard.write',
   'clipboard.image',
   'attachment.preview',
+  'attachment.reauthorize',
   'settings.save',
   'drafts.flush',
   'dialog.project',
   'dialog.attach',
   'project.open',
+  'project.trust',
+  'project.access',
+  'attachments.storage',
+  'attachments.removeMany',
   'sessions.list',
   'session.new',
   'session.load',
@@ -73,10 +78,16 @@ const commands = new Set([
 ]);
 
 contextBridge.exposeInMainWorld('desktop', {
-  pathsForFiles: (files) =>
-    Array.from(files)
+  pathsForFiles: async (files) => {
+    const selected = Array.from(files)
       .map((file) => ({ name: file.name, path: webUtils.getPathForFile(file) }))
-      .filter((file) => file.path),
+      .filter((file) => file.path);
+    // This route is deliberately absent from request()'s public command list.
+    // Paths originate from native File objects, not arbitrary renderer strings.
+    const result = await ipcRenderer.invoke('desktop:files-selected', selected);
+    if (!result.ok) throw new Error(result.error);
+    return result.data;
+  },
   request: (command, payload) => {
     if (!commands.has(command)) return Promise.resolve({ ok: false, error: '不支持的操作。' });
     return ipcRenderer.invoke('desktop:request', command, payload);

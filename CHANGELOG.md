@@ -1,5 +1,15 @@
 # Changes
 
+## 1.8.0
+
+- Compact adjacent history updates, build replay linearly, batch frame updates, and virtualize conversation/session lists while preserving search, native selection, full copy and current turns.
+- Index checkpoint metadata, show request summaries and optional empty records, stream project logs as ordered deltas, and add protected cleanup for app-owned screenshots.
+- Register native project/file selections, add files-only project mode and explicit trust, validate IPC payloads, and retain prior projects and attachments across restart.
+- Move ConPTY to Electron Utility Process; enable ASAR integrity and disable RunAsNode/NodeOptions. Verify the final binary and native process tree.
+- Clean owned command trees on timeout/overflow, retry brief Windows file locks with conflict checks, and give local engine health/reinstall guidance after failed updates.
+- Check all Electron backend modules with TypeScript and ESLint; extract session/engine UI, pin Actions, and archive old reports. Add signed-build configuration awaiting publisher credentials.
+- Validate real stdio MCP invocation/disposal with an isolated official CLI and localhost model, and draft recovery after forced termination of the owned desktop tree. See [implementation](docs/implementation-1.8.0.md) and [performance](docs/performance-1.8.0.md).
+
 ## 1.7.4
 
 - Escape raw model HTML so it cannot restyle approvals or overlay the desktop UI; retain Markdown, code, math and copying.
@@ -31,7 +41,7 @@
 
 - Deliver the sixteen audited workflow improvements: search/outline, rich copy, first-run setup, enhanced diffs, file references, Office previews, web capture, interactive terminal, provider forms, rendering/idle resource improvements, resizable panels, math, upstream checks and Windows voice typing.
 - Preserve attachment and turn metadata across idle reconnection; keep original copying, document sending, external tools, approvals, queues, drafts and checkpoints.
-- Validate actual ClipboardItem, ConPTY, isolated webpage module execution and draft routing through source and packaged Electron workflows. See [release notes](docs/release-1.7.0.md) and [validation](docs/upgrade-1.7.0-validation.md).
+- Validate actual ClipboardItem, ConPTY, isolated webpage module execution and draft routing through source and packaged Electron workflows. See [release notes](docs/archive/releases/release-1.7.0.md) and [validation](docs/upgrade-1.7.0-validation.md).
 
 ## 1.6.1
 

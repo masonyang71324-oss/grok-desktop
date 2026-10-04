@@ -22,6 +22,7 @@ function isNewerVersion(candidate, current) {
   return false;
 }
 
+/** @param {{currentVersion: string, mode: 'development'|'portable'|'installer', autoUpdater?: import('electron-updater').AppUpdater, emit?: (event: {type: 'app-update', state: object}) => void, openExternal?: (url: string) => Promise<unknown>, fetchFn?: typeof fetch, requestInstall?: () => unknown, logger?: {log: (event: string, metadata: Record<string, string>) => void}}} options */
 function createAppUpdater({
   currentVersion,
   mode,

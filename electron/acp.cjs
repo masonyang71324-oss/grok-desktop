@@ -3,6 +3,7 @@ const { translate: t } = require('./i18n.cjs');
 const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { randomUUID } = require('node:crypto');
+const { appendHistoryUpdate } = require('./history-updates.cjs');
 
 const RPC_TIMEOUT = 30_000;
 const SESSION_LOAD_TIMEOUT = 120_000;
@@ -204,6 +205,7 @@ class GrokClient {
     this._pending.delete(message.id);
     clearTimeout(pending.timer);
     if (message.error) {
+      /** @type {Error & { code?: string | number, data?: unknown }} */
       const error = new Error(
         message.error.message || t('Grok 请求失败：{method}', { method: pending.method }),
       );
@@ -246,7 +248,8 @@ class GrokClient {
       return;
     }
     if (method === '_x.ai/session_notification' && params.update) {
-      if (this._loading?.sessionId === params.sessionId) this._loading.updates.push(params.update);
+      if (this._loading?.sessionId === params.sessionId)
+        appendHistoryUpdate(this._loading.updates, params.update);
       else {
         this._applyUpdate(params.sessionId, params.update);
         this.emit({
@@ -270,10 +273,10 @@ class GrokClient {
     const { sessionId, update } = params;
     if (typeof sessionId !== 'string' || !update || typeof update.sessionUpdate !== 'string')
       throw new Error(t('session/update 内容不完整'));
-    // Parsed notifications are owned by this transport. Snapshot construction
-    // copies replay once; publishing separately protects it from callers.
+    // Coalesce retained replay as it arrives; publishing still copies history
+    // separately so callers cannot change the transport's session snapshot.
     if (this._loading?.sessionId === sessionId) {
-      this._loading.updates.push(update);
+      appendHistoryUpdate(this._loading.updates, update);
       return;
     }
     this._applyUpdate(sessionId, update);
@@ -354,6 +357,13 @@ class GrokClient {
     } else delete session.contextWindow;
   }
 
+  /**
+   * @param {{id: string | number, method: string, params?: {
+   *   sessionId?: string,
+   *   options?: {optionId: string, kind: string, name?: string}[],
+   *   toolCall?: unknown
+   * }}} request
+   */
   _serverRequest({ id, method, params = {} }) {
     if (method !== 'session/request_permission') {
       this._write({
@@ -397,6 +407,7 @@ class GrokClient {
     return { sessionId, permissionMode };
   }
 
+  /** @param {{requestId: string | number, optionId?: string, cancelled?: boolean}} response */
   respondPermission({ requestId, optionId, cancelled = false }) {
     const permission = this._permissions.get(requestId);
     if (!permission) throw new Error(t('此权限请求已处理或已失效'));

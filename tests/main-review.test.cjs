@@ -24,6 +24,11 @@ test('both system file routes confirm executable targets before opening them', a
     path,
     isExecutableOpenTarget,
     validCwd: async (cwd) => cwd,
+    access: {
+      project: (cwd) => ({ cwd, trusted: true }),
+      file: async (filename) => filename,
+      execution: () => ({ trusted: true }),
+    },
     workspace: { resolveWorkspacePath: (cwd, file) => path.resolve(cwd, file) },
     fs: { stat: async () => ({ isFile: () => true }) },
     win: null,
@@ -68,6 +73,107 @@ test('both system file routes confirm executable targets before opening them', a
     decision = 0;
   }
 });
+
+test('project preparation prevents trust downgrade until its owned operation settles', async () => {
+  const { projectKey } = require('../electron/access-policy.cjs');
+  const cwd = path.resolve('.');
+  let trusted = true,
+    prompts = 0,
+    release;
+  const context = {
+    projectKey,
+    pendingProjectOperations: new Map(),
+    externalProjectTerminals: new Set(),
+    access: {
+      project: () => ({ cwd, trusted }),
+      setProjectTrust: (_, next) => ({ cwd, trusted: (trusted = next) }),
+    },
+    client: { listTasks: () => [], sessions: new Map() },
+    terminals: { state: () => ({ status: 'exited' }) },
+    runner: { state: () => ({ status: 'stopped' }) },
+    dialog: {
+      showMessageBox: async () => {
+        prompts++;
+        return { response: 0 };
+      },
+    },
+    win: null,
+    t: (value) => value,
+    settings: { projectTrust: {} },
+    saveSettings: async () => {},
+    emit() {},
+  };
+  vm.createContext(context);
+  for (const name of ['projectOperation', 'selectProjectTrust'])
+    vm.runInContext(
+      ast.statements
+        .find((node) => ts.isFunctionDeclaration(node) && node.name?.text === name)
+        .getText(ast),
+      context,
+    );
+  const preparing = context.projectOperation(
+    cwd,
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  await assert.rejects(context.selectProjectTrust(cwd), /停止/);
+  assert.equal(trusted, true);
+  assert.equal(prompts, 0);
+  release();
+  await preparing;
+  assert.equal((await context.selectProjectTrust(cwd)).trusted, false);
+});
+
+test('a live owned external project terminal blocks trust downgrade until its exit', async () => {
+  const { EventEmitter } = require('node:events');
+  const { projectKey } = require('../electron/access-policy.cjs');
+  const cwd = path.resolve('.');
+  let trusted = true;
+  const child = new EventEmitter();
+  Object.assign(child, { exitCode: null, signalCode: null, unref() {} });
+  const context = {
+    path,
+    Buffer,
+    projectKey,
+    pendingProjectOperations: new Map(),
+    externalProjectTerminals: new Set(),
+    access: {
+      project: () => ({ cwd, trusted }),
+      setProjectTrust: (_, next) => ({ cwd, trusted: (trusted = next) }),
+    },
+    settings: { lastProject: cwd, grokPath: 'mock.exe', projectTrust: {} },
+    client: { listTasks: () => [], sessions: new Map() },
+    terminals: { state: () => ({ status: 'exited' }) },
+    runner: { state: () => ({ status: 'stopped' }) },
+    resolveGrok: () => 'mock.exe',
+    windowsPowerShellPath: () => 'powershell.exe',
+    spawn: () => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    dialog: { showMessageBox: async () => ({ response: 0 }) },
+    win: null,
+    t: (value) => value,
+    saveSettings: async () => {},
+    emit() {},
+  };
+  vm.createContext(context);
+  for (const name of ['openSystem', 'selectProjectTrust'])
+    vm.runInContext(
+      ast.statements
+        .find((node) => ts.isFunctionDeclaration(node) && node.name?.text === name)
+        .getText(ast),
+      context,
+    );
+  await context.openSystem({ target: 'terminal', cwd });
+  await assert.rejects(context.selectProjectTrust(cwd), /停止/);
+  assert.equal(trusted, true);
+  child.exitCode = 0;
+  child.emit('exit', 0);
+  assert.equal((await context.selectProjectTrust(cwd)).trusted, false);
+});
 test('main send registers session ownership before asynchronous preparation so early cancellation cannot be lost', async () => {
   let releaseValidation,
     releasePreparation,
@@ -93,6 +199,10 @@ test('main send registers session ownership before asynchronous preparation so e
   entry.snapshot = { sessionId: entry.sessionId, cwd: entry.cwd, updates: [] };
   const activity = new RuntimeActivity({ isForegroundBusy: () => !!hub.activeTurn });
   const send = vm.runInNewContext(handler('session.send'), {
+    sessionAccess: (sessionId) => {
+      assert.equal(sessionId, entry.sessionId);
+      return entry;
+    },
     activity,
     client: hub,
     validCwd: () => validation,

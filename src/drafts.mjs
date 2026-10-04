@@ -51,6 +51,13 @@ export function createDraftStore(storage, onError = () => {}, onPersist = () => 
     };
   };
   return {
+    attachmentPaths: () => [
+      ...new Set(
+        Object.values(state.drafts).flatMap((draft) =>
+          (draft.attachments || []).map((file) => file.path).filter(Boolean),
+        ),
+      ),
+    ],
     flush: write,
     read(cwd, sessionId) {
       const value = state.drafts[keyFor(cwd, sessionId)];

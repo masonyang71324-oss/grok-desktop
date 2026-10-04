@@ -13,6 +13,8 @@ import { desktopTools } from './locales/desktop-tools';
 import { recovery } from './locales/recovery';
 import { checkpointReview } from './locales/checkpoint-review';
 import { reviewFixes } from './locales/review-fixes';
+import { storageCompletion } from './locales/storage-completion';
+import { accessCompletion } from './locales/access-completion';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
@@ -31,6 +33,8 @@ const english: Record<string, string> = {
   ...recovery,
   ...checkpointReview,
   ...reviewFixes,
+  ...storageCompletion,
+  ...accessCompletion,
 };
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';

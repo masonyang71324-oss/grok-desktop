@@ -1,0 +1,7 @@
+.windowed-list {
+  overflow-anchor: none;
+}
+.windowed-list-row {
+  display: flow-root;
+  min-width: 0;
+}

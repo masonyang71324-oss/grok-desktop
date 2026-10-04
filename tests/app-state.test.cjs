@@ -245,9 +245,21 @@ async function fixture(
       fromReplay: () => [],
       finalizeTurn: (rows) => rows,
       appendUpdate: (rows) => rows,
+      appendUpdates: (rows) => rows,
       createFrameBuffer: () => ({ flush() {}, dispose() {}, push() {} }),
     },
   };
+  // Execute the extracted production hook with this harness's same hook slots
+  // and protocol-backed request function; do not replace its behavior with a stub.
+  const engineExports = {};
+  vm.runInNewContext(
+    ts.transpileModule(fs.readFileSync(path.join(root, 'src/useEngine.ts'), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText,
+    { exports: engineExports, require: (id) => modules[id] || {} },
+    { filename: 'useEngine.review.transpiled.cjs' },
+  );
+  modules['./useEngine'] = engineExports;
   const original = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
   const sourceFile = ts.createSourceFile(
     'App.tsx',

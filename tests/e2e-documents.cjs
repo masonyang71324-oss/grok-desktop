@@ -80,7 +80,11 @@ async function run(english) {
       // Exercise each worker's packaged dependency graph through the real IPC.
       const rtf = path.join(project, 'body.rtf');
       await fs.writeFile(rtf, '{\\rtf1 packaged reader 46800}');
-      const ppt = path.join(root, 'tests/fixtures/documents/structured-legacy/54880_chinese.ppt');
+      const ppt = path.join(project, 'legacy-sample.ppt');
+      await fs.copyFile(
+        path.join(root, 'tests/fixtures/documents/structured-legacy/54880_chinese.ppt'),
+        ppt,
+      );
       const epub = new JSZip();
       epub.file('mimetype', 'application/epub+zip');
       epub.file(

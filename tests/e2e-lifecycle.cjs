@@ -47,6 +47,9 @@ async function launch() {
     if (dialog.type() !== 'beforeunload') void dialog.dismiss();
   });
   await page.locator('.sidebar-status').filter({ hasText: 'Grok 已连接' }).waitFor();
+  // Catalog transport readiness precedes restoring the saved conversation.
+  // Idle-close checks must wait for initialization/session loading to finish.
+  await page.locator('.new-conversation:not(:disabled)').waitFor();
   await page.evaluate(() => {
     window.lifecycleEvents = [];
     window.desktop.onEvent((event) => window.lifecycleEvents.push(event));

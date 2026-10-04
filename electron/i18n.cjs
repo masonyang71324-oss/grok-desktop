@@ -1,6 +1,8 @@
 // Only application-owned copy belongs here. Never translate server output or user content.
 let locale = 'zh-CN';
 const english = {
+  ...require('./storage-completion-i18n.cjs'),
+  ...require('./access-completion-i18n.cjs'),
   ...require('./recovery-i18n.cjs'),
   ...require('./checkpoint-review-i18n.cjs'),
   ...require('./review-fixes-i18n.cjs'),

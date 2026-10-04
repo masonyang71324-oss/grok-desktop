@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { renameWithRetry } = require('./file-retry.cjs');
 const { translate: t } = require('./i18n.cjs');
 
 const SKIP_LABELS = {
@@ -35,10 +36,15 @@ function equal(a, b) {
   return a === b || (!!a && !!b && a.content === b.content && a.mode === b.mode);
 }
 
+/** @param {{directory: string}} options */
 function createCheckpointStore({ directory }) {
   directory = path.resolve(directory);
+  /** @type {Promise<unknown>} */
   let queue = Promise.resolve();
   const active = new Set();
+  const indexFile = path.join(directory, 'metadata-index');
+  let metadataCache = null;
+  /** @template T @param {() => T | Promise<T>} fn @returns {Promise<T>} */
   const serial = (fn) => {
     const result = queue.then(fn);
     queue = result.catch(() => {});
@@ -66,7 +72,12 @@ function createCheckpointStore({ directory }) {
       );
     const temp = `${location(entry.id)}.tmp`;
     await fs.writeFile(temp, data);
-    await fs.rename(temp, location(entry.id));
+    await renameWithRetry(temp, location(entry.id));
+    if (metadataCache) {
+      const stat = await fs.stat(location(entry.id));
+      metadataCache[entry.id] = indexed(entry, stat);
+      await persistIndex();
+    }
   }
   async function snapshot(cwd) {
     const files = Object.create(null),
@@ -166,7 +177,77 @@ function createCheckpointStore({ directory }) {
       })),
     };
   }
+  function indexed(entry, stat) {
+    if (
+      !entry ||
+      typeof entry.id !== 'string' ||
+      typeof entry.cwd !== 'string' ||
+      typeof entry.createdAt !== 'string' ||
+      typeof entry.status !== 'string' ||
+      !Array.isArray(entry.files) ||
+      !entry.files.every(
+        (file) => file && typeof file.path === 'string' && typeof file.status === 'string',
+      ) ||
+      (entry.skipped !== undefined && !Array.isArray(entry.skipped))
+    )
+      throw new Error('Unreadable checkpoint');
+    const metadata = {
+      id: entry.id,
+      cwd: entry.cwd,
+      sessionId: entry.sessionId,
+      turnId: entry.turnId,
+      createdAt: entry.createdAt,
+      status: entry.status,
+      ...(typeof entry.summary === 'string' ? { summary: entry.summary } : {}),
+      files: entry.files.map((file) => ({ path: file.path, status: file.status })),
+      skipped: entry.skipped || [],
+    };
+    publicEntry(metadata, false);
+    return { id: entry.id, bytes: stat.size, mtimeMs: stat.mtimeMs, entry: metadata };
+  }
+  async function persistIndex() {
+    // The index is disposable: a failed cache write must not undo a saved checkpoint.
+    try {
+      await fs.mkdir(directory, { recursive: true });
+      await fs.writeFile(
+        `${indexFile}.tmp`,
+        JSON.stringify({ version: 1, records: metadataCache }),
+      );
+      await renameWithRetry(`${indexFile}.tmp`, indexFile);
+    } catch {}
+  }
   async function records() {
+    if (!metadataCache) {
+      try {
+        const saved = JSON.parse(await fs.readFile(indexFile, 'utf8'));
+        if (
+          saved.version !== 1 ||
+          !saved.records ||
+          typeof saved.records !== 'object' ||
+          Array.isArray(saved.records)
+        )
+          throw new Error('Invalid checkpoint index');
+        for (const [id, record] of Object.entries(saved.records)) {
+          if (
+            record.id !== id ||
+            !Number.isFinite(record.bytes) ||
+            !Number.isFinite(record.mtimeMs)
+          )
+            throw new Error('Invalid checkpoint index');
+          if (record.entry) {
+            if (record.entry.id !== id) throw new Error('Invalid checkpoint index');
+            saved.records[id] = indexed(record.entry, {
+              size: record.bytes,
+              mtimeMs: record.mtimeMs,
+            });
+          } else if (typeof record.createdAt !== 'string')
+            throw new Error('Invalid checkpoint index');
+        }
+        metadataCache = saved.records;
+      } catch {
+        metadataCache = {};
+      }
+    }
     let names;
     try {
       names = await fs.readdir(directory);
@@ -174,26 +255,39 @@ function createCheckpointStore({ directory }) {
       if (error.code === 'ENOENT') return [];
       throw error;
     }
-    const result = [];
+    const result = [],
+      seen = new Set();
+    let changed = false;
     for (const name of names.filter((name) => /^[a-f0-9-]{36}\.json$/.test(name))) {
       const id = name.slice(0, -5);
       const stat = await fs.stat(location(id));
+      seen.add(id);
+      const cached = metadataCache[id];
+      if (cached && cached.bytes === stat.size && cached.mtimeMs === stat.mtimeMs) {
+        result.push(cached);
+        continue;
+      }
       try {
         const entry = await read(id);
-        if (
-          !entry ||
-          typeof entry.cwd !== 'string' ||
-          typeof entry.createdAt !== 'string' ||
-          !Array.isArray(entry.files) ||
-          (entry.skipped !== undefined && !Array.isArray(entry.skipped))
-        )
-          throw new Error('Unreadable checkpoint');
-        publicEntry(entry, false);
-        result.push({ id, bytes: stat.size, entry });
+        if (entry.id !== id) throw new Error('Unreadable checkpoint');
+        metadataCache[id] = indexed(entry, stat);
       } catch {
-        result.push({ id, bytes: stat.size, createdAt: stat.mtime.toISOString() });
+        metadataCache[id] = {
+          id,
+          bytes: stat.size,
+          mtimeMs: stat.mtimeMs,
+          createdAt: stat.mtime.toISOString(),
+        };
       }
+      changed = true;
+      result.push(metadataCache[id]);
     }
+    for (const id of Object.keys(metadataCache))
+      if (!seen.has(id)) {
+        delete metadataCache[id];
+        changed = true;
+      }
+    if (changed) await persistIndex();
     return result;
   }
   async function current(cwd, name) {
@@ -277,61 +371,64 @@ function createCheckpointStore({ directory }) {
         await save(entry);
         return publicEntry(entry);
       }).finally(() => active.delete(id)),
-    list: async ({ cwd, sessionId }) => {
-      await queue;
-      const resolved = (await fs.realpath(cwd)).toLowerCase();
-      const entries = (await records())
-        .filter((record) => record.entry)
-        .map((record) => record.entry);
-      return entries
-        .filter(
-          (entry) =>
-            entry.cwd.toLowerCase() === resolved && (!sessionId || entry.sessionId === sessionId),
-        )
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map((entry) => publicEntry(entry, false));
-    },
+    list: ({ cwd, sessionId }) =>
+      serial(async () => {
+        const resolved = (await fs.realpath(cwd)).toLowerCase();
+        const entries = (await records())
+          .filter((record) => record.entry)
+          .map((record) => record.entry);
+        return entries
+          .filter(
+            (entry) =>
+              entry.cwd.toLowerCase() === resolved && (!sessionId || entry.sessionId === sessionId),
+          )
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map((entry) => publicEntry(entry, false));
+      }),
     detail: async ({ id }) => {
       await queue;
       return publicEntry(await read(id));
     },
-    storage: async () => {
-      await queue;
-      const items = await records();
-      return {
-        bytes: items.reduce((sum, record) => sum + record.bytes, 0),
-        limitBytes: STORE_BYTES,
-        records: items
-          .map(({ id, bytes, entry, createdAt }) =>
-            entry
-              ? {
-                  id,
-                  bytes,
-                  cwd: entry.cwd,
-                  sessionId: entry.sessionId,
-                  createdAt: entry.createdAt,
-                  status:
-                    entry.status === 'recording' && !active.has(id) ? 'interrupted' : entry.status,
-                  fileCount: entry.files.length,
-                  kind:
-                    typeof entry.turnId === 'string' && entry.turnId.startsWith('restore:')
-                      ? 'restore'
-                      : 'turn',
-                }
-              : {
-                  id,
-                  bytes,
-                  cwd: '',
-                  sessionId: '',
-                  createdAt,
-                  status: 'unreadable',
-                  fileCount: null,
-                  kind: 'unreadable',
-                },
-          )
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      };
-    },
+    storage: () =>
+      serial(async () => {
+        const items = await records();
+        return {
+          bytes: items.reduce((sum, record) => sum + record.bytes, 0),
+          limitBytes: STORE_BYTES,
+          records: items
+            .map(({ id, bytes, entry, createdAt }) =>
+              entry
+                ? {
+                    id,
+                    bytes,
+                    cwd: entry.cwd,
+                    sessionId: entry.sessionId,
+                    createdAt: entry.createdAt,
+                    ...(entry.summary ? { summary: entry.summary } : {}),
+                    status:
+                      entry.status === 'recording' && !active.has(id)
+                        ? 'interrupted'
+                        : entry.status,
+                    fileCount: entry.files.length,
+                    kind:
+                      typeof entry.turnId === 'string' && entry.turnId.startsWith('restore:')
+                        ? 'restore'
+                        : 'turn',
+                  }
+                : {
+                    id,
+                    bytes,
+                    cwd: '',
+                    sessionId: '',
+                    createdAt,
+                    status: 'unreadable',
+                    fileCount: null,
+                    kind: 'unreadable',
+                  },
+            )
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        };
+      }),
     removeMany: ({ ids }) =>
       serial(async () => {
         if (!Array.isArray(ids)) throw new Error(t('检查点编号无效。'));
@@ -412,7 +509,15 @@ function createCheckpointStore({ directory }) {
               try {
                 await fs.writeFile(temporary, file.before.content);
                 await fs.chmod(temporary, file.before.mode);
-                await fs.rename(temporary, absolute);
+                await renameWithRetry(temporary, absolute, {
+                  beforeRetry: async () => {
+                    if (!equal(await current(entry.cwd, file.path), file.after))
+                      throw Object.assign(
+                        new Error(t('这些文件在本轮之后已变更：{paths}', { paths: file.path })),
+                        { code: 'CHECKPOINT_CONFLICT', paths: [file.path] },
+                      );
+                  },
+                });
               } finally {
                 await fs.rm(temporary, { force: true }).catch(() => {});
               }

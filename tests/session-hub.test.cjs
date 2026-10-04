@@ -192,6 +192,91 @@ test('two sessions isolate permission IDs, cancellation and live reload snapshot
   assert.equal(hub.listTasks()[1].status, 'waiting');
 });
 
+test('cached text compaction preserves live deltas, turn boundaries, attachments and session isolation', async (t) => {
+  const { hub, clients, events } = fixture();
+  t.after(() => hub.dispose());
+  const a = await hub.newSession({ cwd: '/a' });
+  const b = await hub.newSession({ cwd: '/b' });
+  const attachments = [
+    { name: 'note.txt', path: '/a/note.txt', kind: 'text', text: 'attachment body' },
+  ];
+  const first = await hub.send({ ...a, text: 'first question', attachments });
+  await hub.send({ ...b, text: 'other question' });
+  clients[1].update('first ');
+  const earlier = await hub.loadSession(a);
+  for (let i = 0; i < 1024; i++) clients[1].update('🙂');
+  clients[2].update('other answer');
+  const firstSnapshot = await hub.loadSession(a);
+  assert.equal(firstSnapshot.updates.length, 2);
+  assert.equal(firstSnapshot.updates[1].content.text, 'first ' + '🙂'.repeat(1024));
+  assert.equal(earlier.updates[1].content.text, 'first ');
+  assert.deepEqual(firstSnapshot.updates[0]._desktopAttachments, attachments);
+  assert.equal(firstSnapshot.runtime.activeTurnStartIndex, 0);
+  assert.equal(firstSnapshot.updates[1]._desktopTurnId, first.turnId);
+  assert.equal((await hub.loadSession(b)).updates[1].content.text, 'other answer');
+  assert.deepEqual(
+    events
+      .filter((event) => event.type === 'update' && event.sessionId === a.sessionId)
+      .map((event) => event.update.content.text),
+    ['first ', ...Array(1024).fill('🙂')],
+  );
+  clients[1].finish();
+  await tick();
+  const second = await hub.send({ ...a, text: 'second question' });
+  clients[1].update('second ');
+  clients[1].update('answer');
+  const snapshot = await hub.loadSession(a);
+  assert.deepEqual(
+    snapshot.updates.map((update) => update.content.text),
+    ['first question', 'first ' + '🙂'.repeat(1024), 'second question', 'second answer'],
+  );
+  assert.equal(snapshot.runtime.activeTurnStartIndex, 2);
+  assert.equal(
+    snapshot.updates[snapshot.runtime.activeTurnStartIndex]._desktopTurnId,
+    second.turnId,
+  );
+  assert.equal(snapshot.updates[3]._desktopTurnId, second.turnId);
+});
+
+test('cached compaction keeps incompatible metadata and nontext events as replay boundaries', async (t) => {
+  const { hub, clients, events } = fixture();
+  t.after(() => hub.dispose());
+  const session = await hub.newSession({ cwd: '/project' });
+  const first = {
+    sessionUpdate: 'agent_message_chunk',
+    _desktopTurnId: 'one',
+    _meta: { source: 'one' },
+    content: { type: 'text', text: 'a', annotations: { priority: 1 } },
+  };
+  const updates = [
+    first,
+    { ...structuredClone(first), content: { ...first.content, text: 'b' } },
+    { ...structuredClone(first), _desktopTurnId: 'two' },
+    { ...structuredClone(first), _meta: { source: 'two' } },
+    {
+      ...structuredClone(first),
+      content: { type: 'text', text: 'c', annotations: { priority: 0 } },
+    },
+    {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'resource_link', uri: 'file:///report.txt', name: 'report.txt' },
+    },
+    { sessionUpdate: 'tool_call', toolCallId: 'one', status: 'completed' },
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'user one' } },
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'user two' } },
+  ];
+  for (const update of updates) clients[1].publish({ type: 'update', update });
+  const snapshot = await hub.loadSession(session);
+  assert.deepEqual(snapshot.updates, [
+    { ...first, content: { ...first.content, text: 'ab' } },
+    ...updates.slice(2),
+  ]);
+  first.content.annotations.priority = 99;
+  events.find((event) => event.type === 'update').update.content.text = 'external mutation';
+  assert.equal((await hub.loadSession(session)).updates[0].content.text, 'ab');
+  assert.equal((await hub.loadSession(session)).updates[0].content.annotations.priority, 1);
+});
+
 test('switching conversations preserves live mode and configuration updates in the cached snapshot', async () => {
   const { hub, clients } = fixture();
   const a = await hub.newSession({ cwd: '/a' });
@@ -967,8 +1052,13 @@ for (const bad of [
     const backup = hub.recoveryWarnings[0].backupPath;
     assert.match(backup, /corrupt/);
     assert.equal(fs.readFileSync(backup, 'utf8'), bad);
-    await hub.newSession({ cwd: directory });
-    assert.deepEqual(JSON.parse(fs.readFileSync(storageFile, 'utf8')), []);
+    const session = await hub.newSession({ cwd: directory });
+    const saved = JSON.parse(fs.readFileSync(storageFile, 'utf8'));
+    assert.equal(saved[0].sessionId, session.sessionId);
+    assert.deepEqual(
+      saved.map(({ cwd, queue, active }) => ({ cwd, queue, active })),
+      [{ cwd: directory, queue: [], active: undefined }],
+    );
     assert.equal(fs.readFileSync(backup, 'utf8'), bad);
     assert.equal(hub.recoveryWarnings.length, 1);
   });

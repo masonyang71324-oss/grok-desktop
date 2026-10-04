@@ -8,6 +8,8 @@ on:
       - 'scripts/verify-clean-cli-install.cjs'
       - 'electron/cli-installer.cjs'
       - 'scripts/verify-cli-local-model.cjs'
+      - 'scripts/verify-cli-mcp-lifecycle.cjs'
+      - 'scripts/fixtures/mcp-owned-server.cjs'
       - 'scripts/read-process-ancestry.ps1'
 permissions:
   contents: read
@@ -16,8 +18,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -28,7 +30,7 @@ jobs:
           GROK_DESKTOP_DISPOSABLE_WINDOWS: '1'
       - name: Preserve sanitized installer report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: clean-windows-cli-install-report
           path: test-results/clean-cli-install.json
@@ -39,8 +41,19 @@ jobs:
           node scripts/verify-cli-local-model.cjs $report.installation.executable
       - name: Preserve local-model lifecycle report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: official-cli-local-model-report
           path: test-results/cli-local-model.json
+          if-no-files-found: warn
+      - name: Verify real stdio MCP call and owned service disposal
+        run: |
+          $report = Get-Content test-results/clean-cli-install.json -Raw | ConvertFrom-Json
+          node scripts/verify-cli-mcp-lifecycle.cjs $report.installation.executable
+      - name: Preserve MCP lifecycle report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: official-cli-mcp-report
+          path: test-results/cli-mcp-lifecycle.json
           if-no-files-found: warn

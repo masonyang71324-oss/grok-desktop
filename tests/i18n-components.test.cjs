@@ -137,6 +137,7 @@ test('English tool labels leave raw tool titles, file paths and diff content unt
       setLocale('en');
       root.render(
         React.createElement(Message, {
+          expanded: true,
           row: {
             id: 'tool',
             kind: 'tool',

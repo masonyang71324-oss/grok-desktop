@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { projectKey } = require('./access-policy.cjs');
+const { renameWithRetry } = require('./file-retry.cjs');
 const { readJsonWithRecovery, assertJsonWritable, isObject } = require('./json-recovery.cjs');
 
 const defaults = {
@@ -13,6 +15,8 @@ const defaults = {
   effort: '',
   permissionMode: 'ask',
   recentProjects: [],
+  projectTrust: {},
+  selectedAttachments: [],
   lastProject: '',
   notifications: true,
   promptTemplates: [],
@@ -28,6 +32,20 @@ function normalizeSettings(input = {}) {
     modelId: typeof input.modelId === 'string' ? input.modelId : '',
     effort: typeof input.effort === 'string' ? input.effort : '',
     permissionMode: input.permissionMode === 'auto' ? 'auto' : 'ask',
+    projectTrust: Object.fromEntries(
+      Object.entries(isObject(input.projectTrust) ? input.projectTrust : {})
+        .filter(([key, value]) => path.isAbsolute(key) && typeof value === 'boolean')
+        .map(([key, value]) => [projectKey(key), value]),
+    ),
+    selectedAttachments: [
+      ...new Set(
+        Array.isArray(input.selectedAttachments)
+          ? input.selectedAttachments.filter(
+              (value) => typeof value === 'string' && path.isAbsolute(value),
+            )
+          : [],
+      ),
+    ],
     recentProjects: [
       ...new Set(
         Array.isArray(input.recentProjects)
@@ -88,11 +106,13 @@ function normalizeSettings(input = {}) {
   };
 }
 
+/** @param {string} filename @param {(warning: {kind: string, message: string, sourcePath: string, backupPath?: string, recoveryFailed?: boolean}) => void} [onRecovery] */
 function loadSettings(filename, onRecovery) {
   const saved = readJsonWithRecovery(filename, { kind: 'settings', isValid: isObject, onRecovery });
   return saved ? normalizeSettings(saved) : structuredClone(defaults);
 }
 
+/** @param {string} filename */
 async function writeSettings(filename, settings) {
   assertJsonWritable(filename);
   await fsp.mkdir(path.dirname(filename), { recursive: true });
@@ -102,10 +122,11 @@ async function writeSettings(filename, settings) {
     encoding: 'utf8',
     flush: true,
   });
-  await fsp.rename(temporary, filename);
+  await renameWithRetry(temporary, filename);
   return normalized;
 }
 
+/** @param {string} [supplied] */
 function resolveGrok(supplied) {
   if (supplied) {
     if (!fs.statSync(supplied, { throwIfNoEntry: false })?.isFile())

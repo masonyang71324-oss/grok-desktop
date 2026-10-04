@@ -8,6 +8,7 @@ const { decodeText } = require('./document-text.cjs');
 
 const MB = 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+/** @param {Buffer} bytes */
 function imageMime(bytes) {
   if (
     bytes.length >= 8 &&
@@ -26,7 +27,18 @@ function imageMime(bytes) {
   return null;
 }
 
+/**
+ * @typedef {{name?: string, path?: string, kind?: string, text?: string, mimeType?: string}} PromptAttachment
+ * @typedef {{type: 'text', text: string} | {type: 'image', mimeType: string, data: string} | {type: 'resource', resource: {uri: string, mimeType: string, text: string}}} PromptContent
+ */
+/**
+ * @param {string} text
+ * @param {PromptAttachment[]} [attachments]
+ * @param {{image?: boolean, embeddedContext?: boolean}} [capabilities]
+ * @returns {Promise<PromptContent[]>}
+ */
 async function preparePrompt(text, attachments = [], capabilities = {}) {
+  /** @type {PromptContent[]} */
   const content = text?.trim() ? [{ type: 'text', text }] : [];
   let textBytes = 0,
     imageBytes = 0,
@@ -152,6 +164,7 @@ async function preparePrompt(text, attachments = [], capabilities = {}) {
   return content;
 }
 
+/** @param {Buffer} bytes @param {string} directory */
 async function storeClipboardImage(bytes, directory) {
   if (!bytes?.length) return null;
   if (bytes.length > 10 * MB) throw new Error(t('图片单个不得超过 10 MB，总计不得超过 20 MB。'));
@@ -163,6 +176,7 @@ async function storeClipboardImage(bytes, directory) {
   return { name, path: filename, kind: 'image', mimeType: 'image/png' };
 }
 
+/** @param {{path: string}} attachment */
 async function previewAttachment({ path: filename }) {
   const content = await preparePrompt('', [{ name: path.basename(filename), path: filename }], {
     image: true,

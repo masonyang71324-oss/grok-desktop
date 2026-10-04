@@ -9,6 +9,8 @@ export interface Settings {
   permissionMode: PermissionMode;
   recentProjects: string[];
   lastProject: string;
+  projectTrust?: Record<string, boolean>;
+  selectedAttachments?: string[];
   notifications?: boolean;
   promptTemplates?: { id: string; name: string; text: string }[];
   ui?: {
@@ -210,7 +212,18 @@ export type DesktopEvent =
   | { type: 'checkpoints-changed'; cwd: string; sessionId?: string }
   | { type: 'checkpoint-storage-request'; cwd: string; sessionId?: string }
   | { type: 'tasks-changed'; tasks: TaskSummary[] }
-  | { type: 'runner-changed'; cwd: string; state: RunnerState };
+  | { type: 'runner-changed'; cwd: string; state: RunnerState }
+  | {
+      type: 'runner-output';
+      cwd: string;
+      runId: string;
+      sequence: number;
+      data: string;
+      url?: string;
+    }
+  | { type: 'project-access'; cwd: string; trusted: boolean }
+  | { type: 'attachment-authorization-changed'; paths: string[] };
+
 export interface TaskPermission {
   requestId: string | number;
   sessionId: string;
@@ -256,6 +269,8 @@ export interface TaskTurnResult {
   checkpointSkipped?: boolean;
 }
 export interface RunnerState {
+  runId?: string;
+  sequence?: number;
   status: string;
   script?: string;
   log: string;
@@ -263,6 +278,7 @@ export interface RunnerState {
   error?: string;
 }
 export interface Checkpoint {
+  summary?: string;
   id: string;
   cwd: string;
   sessionId: string;
@@ -273,6 +289,7 @@ export interface Checkpoint {
   skipped?: { path: string; reason: string }[];
 }
 export interface CheckpointStorageRecord {
+  summary?: string;
   id: string;
   cwd: string;
   sessionId: string;
@@ -288,6 +305,7 @@ export interface CheckpointStorage {
   records: CheckpointStorageRecord[];
 }
 export interface Bootstrap {
+  projects?: { cwd: string; trusted: boolean }[];
   recoveryWarnings?: {
     kind: 'settings' | 'queue';
     message: string;
@@ -336,7 +354,7 @@ export interface ManagementResult {
   exitCode?: number;
 }
 export interface DesktopApi {
-  pathsForFiles(files: File[]): Attachment[];
+  pathsForFiles(files: File[]): Promise<Attachment[]>;
   request<T = unknown>(command: string, payload?: any): Promise<Result<T>>;
   onEvent(callback: (event: DesktopEvent) => void): () => void;
 }

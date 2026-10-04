@@ -29,6 +29,10 @@ export function appendUpdate(
   update: AcpUpdate,
   turnId?: string,
 ): TimelineRow[];
+export function appendUpdates(
+  rows: TimelineRow[],
+  updates: { update: AcpUpdate; turnId?: string }[],
+): TimelineRow[];
 export function finalizeTurn(rows: TimelineRow[], turnId: string, failed?: boolean): TimelineRow[];
 export function fromReplay(
   updates: AcpUpdate[],

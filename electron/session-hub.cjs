@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { GrokClient } = require('./acp.cjs');
+const { appendHistoryUpdate } = require('./history-updates.cjs');
 const { RuntimeActivity } = require('./background.cjs');
 const { translate: t } = require('./i18n.cjs');
 const { readJsonWithRecovery, assertJsonWritable, isObject } = require('./json-recovery.cjs');
@@ -65,7 +66,10 @@ function isIdleEntry(entry) {
 class SessionHub {
   constructor({
     emit,
-    createClient,
+    createClient = /** @type {((publish: ConstructorParameters<typeof GrokClient>[0]['emit']) => GrokClient) | undefined} */ (
+      undefined
+    ),
+    getExecutable,
     storageFile,
     beforeTurn,
     afterTurn,
@@ -74,7 +78,7 @@ class SessionHub {
   }) {
     this.emit = emit;
     this.createClient =
-      createClient || ((publish) => new GrokClient({ ...options, emit: publish }));
+      createClient || ((publish) => new GrokClient({ ...options, getExecutable, emit: publish }));
     this.storageFile = storageFile;
     this.beforeTurn = beforeTurn;
     this.afterTurn = afterTurn;
@@ -211,17 +215,15 @@ class SessionHub {
   _persist() {
     if (!this.storageFile || this.closed) return;
     assertJsonWritable(this.storageFile);
-    const records = [...this.sessions.values()]
-      .filter((entry) => entry.queue.length || entry.running || entry.lastTurn)
-      .map((entry) => ({
-        sessionId: entry.sessionId,
-        cwd: entry.cwd,
-        title: entry.title,
-        status: entry.status,
-        queue: entry.queue,
-        active: entry.running?.item,
-        lastTurn: entry.lastTurn,
-      }));
+    const records = [...this.sessions.values()].map((entry) => ({
+      sessionId: entry.sessionId,
+      cwd: entry.cwd,
+      title: entry.title,
+      status: entry.status,
+      queue: entry.queue,
+      active: entry.running?.item,
+      lastTurn: entry.lastTurn,
+    }));
     const data = JSON.stringify(records);
     if (data === this.lastPersistedData) return;
     fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
@@ -352,7 +354,8 @@ class SessionHub {
         });
       }
     }
-    if (event.type === 'update' && entry.snapshot) entry.snapshot.updates.push(copy(event.update));
+    if (event.type === 'update' && entry.snapshot)
+      appendHistoryUpdate(entry.snapshot.updates, event.update);
     const update =
       event.type === 'update' ? event.update : event.type === 'notification' ? event.payload : null;
     if (entry.snapshot && update) {

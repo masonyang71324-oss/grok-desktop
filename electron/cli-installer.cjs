@@ -29,6 +29,7 @@ async function killOwnedTree(child) {
   });
 }
 class CliInstaller {
+  /** @param {{emit?: (event: {type: 'cli-install-state', state: {status: string, log: string, error?: string, path?: string, version?: string}}) => void, binDir?: string, spawnFn?: typeof spawn, killTree?: typeof killOwnedTree, timeout?: number}} [options] */
   constructor({
     emit = () => {},
     binDir = path.join(os.homedir(), '.grok', 'bin'),
@@ -112,6 +113,7 @@ class CliInstaller {
   }
   async _run(op) {
     try {
+      /** @type {NodeJS.ProcessEnv} */
       const env = { ...process.env, GROK_CHANNEL: 'stable', GROK_BIN_DIR: this.binDir };
       // Explicit stable release ignores an inherited version pin / deployment configuration.
       delete env.GROK_VERSION;

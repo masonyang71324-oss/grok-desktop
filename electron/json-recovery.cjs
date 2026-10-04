@@ -7,6 +7,11 @@ const { translate: t } = require('./i18n.cjs');
 const blockedWrites = new Map();
 const isObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
 
+/**
+ * @typedef {{kind: 'settings'|'queue', message: string, sourcePath: string, backupPath?: string, recoveryFailed?: true}} RecoveryWarning
+ * @param {string} filename
+ * @param {{kind: 'settings'|'queue', isValid: (value: unknown) => boolean, onRecovery?: (warning: RecoveryWarning) => void}} options
+ */
 function readJsonWithRecovery(filename, { kind, isValid, onRecovery = () => {} }) {
   const resolved = path.resolve(filename);
   const label = t(kind === 'settings' ? '设置' : '任务队列');

@@ -19,13 +19,13 @@ The app searches GROK_HOME/bin, ~/.grok/bin, the local application directory and
 
 ## Features
 
-Latest fixes: [1.7.4 independent review response](docs/review-response-1.7.4.md). Previous audit: [1.7.3 findings and validation](docs/audit-followup-summary.md), with per-finding evidence, official CLI checks and a disposable Windows installation run.
+Latest upgrade: [1.8.0 review completion](docs/implementation-1.8.0.md) and [reproducible performance results](docs/performance-1.8.0.md). Previous fixes: [1.7.4 review response](docs/review-response-1.7.4.md). The [documentation index](docs/README.md) preserves historical evidence.
 
 - Current-conversation full-text search, question outline, formatted copying, math and measured long-conversation rendering improvements.
 - Search project files from the composer, launch Windows voice typing, and resize/remember navigation and composer dimensions.
 - Read-only DOCX/sheet/PPTX layout previews, split diffs, word marks and collapsed context. Complex content has explicit limitations and retains text/external-opening options.
 - An on-demand interactive PowerShell terminal and isolated web preview with screenshots returned to the originating conversation draft.
-- Fully idle CLI connection reclamation with session preservation, plus official CLI/ACP maintenance checks. See the [1.7.1 notes](docs/release-1.7.1.md) and [validation scope](docs/upgrade-1.7.1-validation.md).
+- Fully idle CLI connection reclamation with session preservation, plus official CLI/ACP maintenance checks. See the [1.7.1 notes](docs/archive/releases/release-1.7.1.md) and [validation scope](docs/upgrade-1.7.1-validation.md).
 
 - Unified Chats / Files / Tasks navigation and a persistent footer for connection, usage, context and both app/engine versions. Switching panels preserves drafts and file editing.
 - Project conversations, local drafts and restart recovery.
@@ -73,4 +73,4 @@ Text attachments are limited to 1 MB each / 4 MB total, and images to 10 MB each
 
 The home screen also displays the Grok Build version and actual sign-in status. Its engine entry opens native login, catalog refresh and engine update controls. Catalog refresh preserves current conversations and background work; engine updates require idle tasks. The composer offers advertised per-session context windows. Real Grok Build 1.0.46 configuration checks verified Grok 4.7's 256K/500K choices. Model access depends on the signed-in account.
 
-Builds are unsigned and the source remains UNLICENSED. The package's private field prevents accidental npm publication; this GitHub repository is public. See [architecture](docs/architecture.md), [changes](CHANGELOG.md), the [1.1.0 historical review](docs/review-response-1.1.0.md) and the [GitHub publishing guide](docs/github-publishing.md).
+Builds are unsigned and the source remains UNLICENSED. The package's private field prevents accidental npm publication; this GitHub repository is public. See [architecture](docs/architecture.md), [changes](CHANGELOG.md), the [1.1.0 historical review](docs/archive/reviews/review-response-1.1.0.md) and the [GitHub publishing guide](docs/github-publishing.md).

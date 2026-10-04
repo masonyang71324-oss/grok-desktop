@@ -44,6 +44,10 @@ const { createWebPreviewManager } = require('./web-preview.cjs');
 const { launchDictation } = require('./dictation.cjs');
 const { windowsPowerShellPath, isExecutableOpenTarget } = require('./system-launch.cjs');
 const { createCheckpointTurnHooks } = require('./checkpoint-turns.cjs');
+const { createAccessPolicy, projectKey } = require('./access-policy.cjs');
+const { validateRequest } = require('./request-validation.cjs');
+const { createAttachmentStorage } = require('./attachment-storage.cjs');
+const { withUpdateHealth } = require('./update-health.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -56,12 +60,43 @@ const settingsRecoveryWarnings = [];
 let settings = loadSettings(settingsFile, (warning) => settingsRecoveryWarnings.push(warning)),
   settingsQueue = Promise.resolve();
 setLocale(settings.language);
+const access = createAccessPolicy();
+const listedSessions = new Map();
+const pendingProjectOperations = new Map();
+/** @type {Set<{cwd:string,child:import('node:child_process').ChildProcess}>} */
+const externalProjectTerminals = new Set();
+const attachmentsDirectory = path.join(app.getPath('userData'), 'attachments');
+const accessReady = (async () => {
+  await fs.mkdir(attachmentsDirectory, { recursive: true });
+  await access.grantManagedRoot(attachmentsDirectory);
+  for (const cwd of new Set([...settings.recentProjects, settings.lastProject].filter(Boolean))) {
+    try {
+      const canonical = await fs.realpath(cwd);
+      await access.grantProject(cwd, settings.projectTrust?.[projectKey(canonical)] !== false);
+    } catch {
+      /* Missing old folders can be selected again. */
+    }
+  }
+  for (const filename of settings.selectedAttachments || []) {
+    try {
+      await access.grantFile(filename);
+    } catch {
+      /* A moved attachment is not silently reauthorized. */
+    }
+  }
+  try {
+    await access.grantExecutable(resolveGrok(settings.grokPath));
+  } catch {
+    /* First-run picker/installer supplies the executable. */
+  }
+})();
 let win = null,
   quitting = false,
   exitDialogOpen = false,
   installUpdateRequested = false;
 let engineState = { authStatus: 'unknown' };
 let draftFlushTimer = null;
+let draftAttachmentPaths = [];
 const activity = new RuntimeActivity({
   isForegroundBusy: () => !!client.activeTurn,
 });
@@ -101,6 +136,16 @@ const runner = createProjectRunner({ emit: (type, data) => emit({ type, ...data 
 const terminals = createTerminalManager({ spawnPty: spawnHostedPty, emit });
 const cliInstaller = new CliInstaller({ emit });
 const providers = new ProviderStore();
+const attachmentStorage = createAttachmentStorage({
+  directory: attachmentsDirectory,
+  referencedPaths: async () => {
+    const paths = [...draftAttachmentPaths];
+    for (const entry of client.sessions.values())
+      for (const item of [...entry.queue, ...(entry.running ? [entry.running.item] : [])])
+        for (const file of item.payload.attachments || []) if (file.path) paths.push(file.path);
+    return paths;
+  },
+});
 const previews = createWebPreviewManager({
   BrowserWindow,
   WebContentsView,
@@ -126,23 +171,25 @@ const client = new SessionHub({
   getExecutable: () => resolveGrok(settings.grokPath),
   emit,
   clientVersion: app.getVersion(),
-  ...createCheckpointTurnHooks({
-    store: checkpoints,
-    emit,
-    chooseWithoutCheckpoint: async ({ cwd, sessionId }) => {
-      const result = await dialog.showMessageBox(win, {
-        type: 'warning',
-        title: t('检查点空间已满'),
-        message: t('本轮无法创建检查点。继续发送后，本轮文件改动将无法通过检查点恢复。'),
-        detail: cwd,
-        buttons: [t('取消并清理'), t('继续发送（无检查点）')],
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (result.response !== 1) emit({ type: 'checkpoint-storage-request', cwd, sessionId });
-      return result.response === 1;
-    },
-  }),
+  ...secureTurnHooks(
+    createCheckpointTurnHooks({
+      store: checkpoints,
+      emit,
+      chooseWithoutCheckpoint: async ({ cwd, sessionId }) => {
+        const result = await dialog.showMessageBox(win, {
+          type: 'warning',
+          title: t('检查点空间已满'),
+          message: t('本轮无法创建检查点。继续发送后，本轮文件改动将无法通过检查点恢复。'),
+          detail: cwd,
+          buttons: [t('取消并清理'), t('继续发送（无检查点）')],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (result.response !== 1) emit({ type: 'checkpoint-storage-request', cwd, sessionId });
+        return result.response === 1;
+      },
+    }),
+  ),
   ...(process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
     ? {
         spawnFn: (executable, args, options) =>
@@ -155,12 +202,186 @@ const client = new SessionHub({
     : {}),
 });
 
+function secureTurnHooks(hooks) {
+  return {
+    beforeTurn: async (input) => {
+      access.project(input.cwd, true);
+      const missing = [];
+      for (const file of input.payload?.attachments || [])
+        if (typeof file.text !== 'string') {
+          try {
+            await access.file(file.path);
+          } catch (error) {
+            if (error.code === 'FILE_ACCESS_NOT_REGISTERED') missing.push(file.path);
+            else throw error;
+          }
+        }
+      if (missing.length && !(await reauthorizeAttachmentPaths(missing)))
+        throw new Error(t('原附件尚未重新授权，已取消本轮发送。'));
+      return hooks.beforeTurn(input);
+    },
+    afterTurn: hooks.afterTurn,
+  };
+}
+function sessionAccess(sessionId, write = true) {
+  const entry =
+    client.sessions.get(sessionId) ||
+    (listedSessions.has(sessionId) ? { cwd: listedSessions.get(sessionId) } : null);
+  if (!entry) throw new Error(t('请先打开该会话。'));
+  access.project(entry.cwd, write);
+  return entry;
+}
+async function listProjectSessions(cwd) {
+  const project = access.project(cwd);
+  if (!project.trusted) return [];
+  const sessions = await client.listSessions({ cwd: project.cwd });
+  for (const item of sessions) listedSessions.set(item.sessionId, project.cwd);
+  return sessions;
+}
+function projectOperation(cwd, run) {
+  const project = access.project(cwd, true),
+    id = projectKey(project.cwd);
+  pendingProjectOperations.set(id, (pendingProjectOperations.get(id) || 0) + 1);
+  const release = () => {
+    const count = (pendingProjectOperations.get(id) || 1) - 1;
+    if (count) pendingProjectOperations.set(id, count);
+    else pendingProjectOperations.delete(id);
+  };
+  try {
+    return Promise.resolve(run(project.cwd)).finally(release);
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+async function projectManifest(cwd) {
+  const directory = await validCwd(cwd);
+  try {
+    await access.file(path.join(directory, 'package.json'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  return directory;
+}
+async function selectProjectTrust(cwd) {
+  const current = access.project(cwd);
+  const active = () =>
+    (pendingProjectOperations.get(projectKey(current.cwd)) || 0) > 0 ||
+    [...externalProjectTerminals].some(
+      (record) =>
+        projectKey(record.cwd) === projectKey(current.cwd) &&
+        record.child.exitCode === null &&
+        record.child.signalCode === null,
+    ) ||
+    client
+      .listTasks()
+      .some(
+        (task) =>
+          task.cwd === current.cwd &&
+          (task.turnId ||
+            task.finishing ||
+            task.queued.length ||
+            ['running', 'waiting', 'background'].includes(task.status)),
+      ) ||
+    terminals.state({ cwd: current.cwd })?.status === 'running' ||
+    ['running', 'stopping'].includes(runner.state({ cwd: current.cwd }).status);
+  if (active()) throw new Error(t('请先停止此项目的任务并清空队列，再更改信任设置。'));
+  const result = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: t('是否信任此项目？'),
+    message: t('信任后可运行 Grok、终端和项目脚本，并修改项目文件。不了解来源时可先只看文件。'),
+    detail: current.cwd,
+    buttons: [t('只看文件'), t('信任并启用'), t('取消')],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (result.response === 2) return { ...current, cancelled: true };
+  if (result.response === 0 && active())
+    throw new Error(t('请先停止此项目的任务并清空队列，再更改信任设置。'));
+  // This project already has a validated canonical identity. Change its in-memory
+  // authority synchronously after the final active check, before persisting it.
+  const grant = access.setProjectTrust(current.cwd, result.response === 1);
+  await saveSettings({
+    projectTrust: { ...settings.projectTrust, [projectKey(grant.cwd)]: grant.trusted },
+  });
+  if (!grant.trusted)
+    for (const entry of client.sessions.values())
+      if (entry.cwd === grant.cwd) entry.client.dispose();
+  emit({ type: 'project-access', ...grant });
+  return grant;
+}
+async function registerAttachments(files) {
+  const selected = [];
+  for (const file of files) selected.push({ ...file, path: await access.grantFile(file.path) });
+  await saveSettings({
+    selectedAttachments: [
+      ...new Set([...(settings.selectedAttachments || []), ...selected.map((file) => file.path)]),
+    ],
+  });
+  return selected;
+}
+async function reauthorizeAttachmentPaths(paths) {
+  if (
+    !Array.isArray(paths) ||
+    !paths.length ||
+    paths.some((filename) => typeof filename !== 'string' || !path.isAbsolute(filename))
+  )
+    throw new Error(t('操作参数无效。'));
+  const originals = [...new Set(paths)];
+  const selected = await dialog.showOpenDialog(win, {
+    title: t('重新选择原附件以恢复授权'),
+    defaultPath: originals[0],
+    properties: ['openFile', 'multiSelections'],
+  });
+  if (selected.canceled || !selected.filePaths.length) return false;
+  const nativePaths = await Promise.all(
+    selected.filePaths.map((filename) => fs.realpath(filename)),
+  );
+  const nativeKeys = new Set(nativePaths.map(projectKey));
+  for (const original of originals) {
+    const resolved = await fs.realpath(original);
+    if (!nativeKeys.has(projectKey(resolved)))
+      throw new Error(t('请选择原附件；若文件已移动，请重新添加附件后发送。'));
+  }
+  // Only aliases proven to refer to the actual native selection gain authority.
+  for (const original of originals) await access.grantFile(original);
+  await saveSettings({
+    selectedAttachments: [
+      ...new Set([...(settings.selectedAttachments || []), ...originals, ...nativePaths]),
+    ],
+  });
+  emit({ type: 'attachment-authorization-changed', paths: originals });
+  return true;
+}
+
 function saveSettings(patch) {
   if (patch.grokPath !== undefined && patch.grokPath !== settings.grokPath)
     activity.assertSessionAllowed();
   const operation = settingsQueue.then(async () => {
     const changedPath = patch.grokPath !== undefined && patch.grokPath !== settings.grokPath;
     const save = async () => {
+      let target;
+      if (changedPath) {
+        try {
+          target = resolveGrok(patch.grokPath || undefined);
+        } catch (error) {
+          if (patch.grokPath) throw error;
+        }
+      }
+      if (changedPath && target && !access.hasExecutable(target)) {
+        const picked = await dialog.showOpenDialog(win, {
+          title: t('确认要使用的 Grok Build 程序'),
+          defaultPath: target,
+          properties: ['openFile'],
+          filters: [{ name: t('Windows 程序'), extensions: ['exe'] }],
+        });
+        if (picked.canceled || !picked.filePaths[0]) throw new Error(t('已取消选择程序。'));
+        const selected = await access.grantExecutable(picked.filePaths[0]);
+        patch = {
+          ...patch,
+          grokPath: !patch.grokPath && projectKey(selected) === projectKey(target) ? '' : selected,
+        };
+      }
       if (changedPath && patch.grokPath) resolveGrok(String(patch.grokPath).trim());
       settings = await writeSettings(settingsFile, {
         ...settings,
@@ -172,12 +393,17 @@ function saveSettings(patch) {
       nativeTheme.themeSource = settings.theme;
       if (!settings.notifications) notifications.clear();
       if (changedPath) await client.restart();
-      return settings;
+      return publicSettings();
     };
     return changedPath ? activity.runMutation(save) : save();
   });
   settingsQueue = operation.catch(() => {});
   return operation;
+}
+
+function publicSettings() {
+  const { projectTrust, selectedAttachments, ...result } = settings;
+  return result;
 }
 
 function runGrokDiagnostic(executable, args, options) {
@@ -205,15 +431,34 @@ async function refreshEngine() {
   return bootstrap();
 }
 
-async function validCwd(cwd) {
+async function validCwd(cwd, trusted = false) {
+  access.project(cwd, trusted);
   if (typeof cwd !== 'string' || !path.isAbsolute(cwd))
     throw new Error(t('请选择有效的项目目录。'));
   const stat = await fs.stat(cwd).catch(() => null);
   if (!stat?.isDirectory()) throw new Error(t('项目目录不存在或无法访问，请重新选择。'));
-  return fs.realpath(cwd);
+  const resolved = await fs.realpath(cwd);
+  access.project(resolved, trusted);
+  return resolved;
 }
 
 async function bootstrap() {
+  await accessReady;
+  for (const entry of client.sessions.values()) {
+    try {
+      access.project(entry.cwd);
+    } catch {
+      try {
+        const canonical = await fs.realpath(entry.cwd);
+        await access.grantProject(
+          entry.cwd,
+          settings.projectTrust?.[projectKey(canonical)] !== false,
+        );
+      } catch {
+        /* Missing historical projects stay unavailable. */
+      }
+    }
+  }
   let cliPath = '',
     version = '',
     error;
@@ -228,7 +473,8 @@ async function bootstrap() {
     error = e.message;
   }
   return {
-    settings,
+    settings: publicSettings(),
+    projects: access.projects(),
     recoveryWarnings: [...settingsRecoveryWarnings, ...(client.recoveryWarnings || [])],
     version: app.getVersion(),
     update: appUpdater.status(),
@@ -245,7 +491,15 @@ async function bootstrap() {
   };
 }
 
+/** @param {{target:string,cwd?:string,path?:string,url?:string}} input */
 async function openSystem({ target, cwd, path: filepath, url }) {
+  if (target === 'attachments' || target === 'data') {
+    const error = await shell.openPath(
+      target === 'attachments' ? attachmentsDirectory : app.getPath('userData'),
+    );
+    if (error) throw new Error(error);
+    return;
+  }
   if (target === 'logs') {
     await fs.mkdir(logger.directory, { recursive: true });
     const error = await shell.openPath(logger.directory);
@@ -253,9 +507,10 @@ async function openSystem({ target, cwd, path: filepath, url }) {
     return;
   }
   if (target === 'workspace-file' || target === 'workspace-reveal') {
+    access.project(cwd);
     const destination = workspace.resolveWorkspacePath(await validCwd(cwd), filepath);
     if (target === 'workspace-reveal') shell.showItemInFolder(destination);
-    else return openLocalPath(destination);
+    else return openLocalPath(await access.file(destination));
     return;
   }
   if (target === 'url') {
@@ -265,7 +520,10 @@ async function openSystem({ target, cwd, path: filepath, url }) {
     return;
   }
   if (target === 'terminal' || target === 'grok-login') {
-    const directory = await validCwd(cwd || settings.lastProject || os.homedir());
+    const directory =
+      target === 'grok-login'
+        ? os.homedir()
+        : access.project(cwd || settings.lastProject, true).cwd;
     const exe = resolveGrok(settings.grokPath);
     const code = `& '${exe.replaceAll("'", "''")}'${target === 'grok-login' ? ' login' : ''}`;
     const child = spawn(
@@ -273,6 +531,12 @@ async function openSystem({ target, cwd, path: filepath, url }) {
       ['-NoLogo', '-NoExit', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')],
       { cwd: directory, detached: true, stdio: 'ignore', windowsHide: false },
     );
+    if (target === 'terminal') {
+      const record = { cwd: directory, child };
+      externalProjectTerminals.add(record);
+      child.once('exit', () => externalProjectTerminals.delete(record));
+      child.once('error', () => externalProjectTerminals.delete(record));
+    }
     await new Promise((resolve, reject) => {
       child.once('spawn', resolve);
       child.once('error', reject);
@@ -287,11 +551,18 @@ async function openSystem({ target, cwd, path: filepath, url }) {
         ? path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'config.toml')
         : filepath;
   if (!destination || !path.isAbsolute(destination)) throw new Error(t('请选择有效的文件或目录。'));
-  return openLocalPath(destination);
+  return openLocalPath(
+    target === 'config'
+      ? destination
+      : target === 'project'
+        ? access.project(destination).cwd
+        : await access.file(destination),
+  );
 }
 
 async function openLocalPath(destination) {
   if (isExecutableOpenTarget(destination) && (await fs.stat(destination)).isFile()) {
+    access.execution(destination);
     const result = await dialog.showMessageBox(win, {
       type: 'warning',
       title: t('此文件可能会执行程序'),
@@ -302,12 +573,14 @@ async function openLocalPath(destination) {
       cancelId: 0,
     });
     if (result.response !== 1) return { cancelled: true };
+    access.execution(destination);
   }
   const error = await shell.openPath(destination);
   if (error) throw new Error(error);
 }
 
 async function exportSession({ cwd, sessionId }) {
+  sessionAccess(sessionId);
   const result = await dialog.showSaveDialog(win, {
     title: t('导出会话'),
     defaultPath: path.join(app.getPath('downloads'), `Grok-${sessionId.slice(0, 8)}.md`),
@@ -324,7 +597,9 @@ async function exportSession({ cwd, sessionId }) {
   return { path: result.filePath };
 }
 
+/** @param {{action:string,cwd?:string,values?:{sessionId?:string,label?:string,copyMode?:string,gitRef?:string,[key:string]:unknown}}} input */
 async function management({ action, cwd, values = {} }) {
+  if (cwd && !action.startsWith('update-')) access.project(cwd, true);
   if (action === 'worktree-create') {
     return activity.runMutation(async () => {
       const directory = await validCwd(cwd);
@@ -353,6 +628,7 @@ async function management({ action, cwd, values = {} }) {
         gitRef: values.gitRef,
         label,
       });
+      await access.grantProject(result.path, true);
       return {
         text: t(result.existed ? '工作树已存在：{path}' : '工作树已创建：{path}', {
           path: result.path,
@@ -379,7 +655,7 @@ async function management({ action, cwd, values = {} }) {
   }
   const command = buildCommand(action, values);
   const run = async () => {
-    const directory = cwd ? await validCwd(cwd) : os.homedir();
+    const directory = cwd && !action.startsWith('update-') ? await validCwd(cwd) : os.homedir();
     const executable = resolveGrok(settings.grokPath);
     const beforeUpdate =
       action === 'update-install'
@@ -387,7 +663,13 @@ async function management({ action, cwd, values = {} }) {
         : null;
     if (beforeUpdate && !beforeUpdate.latestVersion)
       throw new Error(beforeUpdate.error || t('无法检查 Grok Build 更新，请检查网络后重试。'));
-    const result = await runManagement(executable, action, values, directory);
+    const runCommand = () => runManagement(executable, action, values, directory);
+    const result =
+      action === 'update-install'
+        ? await withUpdateHealth(executable, runCommand, (filename) =>
+            runGrokDiagnostic(filename, ['--version'], { timeout: 10000, maxBytes: 4096 }),
+          )
+        : await runCommand();
     if (beforeUpdate) {
       const updatedPath = await selectUpdatedCli(
         executable,
@@ -436,7 +718,10 @@ const handlers = {
   'cli.install.state': () => cliInstaller.state(),
   'cli.install.start': async () => {
     const result = await activity.runMutation(() => cliInstaller.start());
-    if (result.status === 'installed') await saveSettings({ grokPath: result.path });
+    if (result.status === 'installed') {
+      await access.grantExecutable(result.path);
+      await saveSettings({ grokPath: result.path });
+    }
     return result;
   },
   'cli.install.cancel': () => cliInstaller.cancel(),
@@ -460,11 +745,14 @@ const handlers = {
       await client.restart();
       return result;
     }),
-  'office.preview': previewOffice,
+  'office.preview': async (payload) =>
+    previewOffice({ ...payload, path: await access.file(payload.path) }),
   'workspace.search': async (payload) =>
     workspace.searchFiles({ ...payload, cwd: await validCwd(payload.cwd) }),
-  'terminal.open': async (payload) =>
-    terminals.open({ ...payload, cwd: await validCwd(payload.cwd) }),
+  'terminal.open': (payload) =>
+    projectOperation(payload.cwd, async (cwd) =>
+      terminals.open({ ...payload, cwd: await validCwd(cwd, true) }),
+    ),
   'terminal.state': (payload) => terminals.state(payload),
   'terminal.input': (payload) => terminals.write(payload),
   'terminal.resize': (payload) => terminals.resize(payload),
@@ -483,7 +771,8 @@ const handlers = {
     });
   },
   'settings.save': saveSettings,
-  'drafts.flush': () => {
+  'drafts.flush': ({ protectedPaths = [] }) => {
+    draftAttachmentPaths = protectedPaths;
     if (!draftFlushTimer)
       draftFlushTimer = setTimeout(() => {
         draftFlushTimer = null;
@@ -511,7 +800,13 @@ const handlers = {
       path.join(app.getPath('userData'), 'attachments'),
     );
   },
-  'attachment.preview': previewAttachment,
+  'attachment.preview': async (payload) =>
+    previewAttachment({ ...payload, path: await access.file(payload.path) }),
+  'attachment.reauthorize': async ({ path: filename }) => ({
+    authorized: await reauthorizeAttachmentPaths([filename]),
+  }),
+  'attachments.storage': (payload) => attachmentStorage.list(payload),
+  'attachments.removeMany': (payload) => attachmentStorage.removeMany(payload),
   'dialog.grok': async () => {
     const result = await dialog.showOpenDialog(win, {
       title: t('选择 Grok Build 程序'),
@@ -519,7 +814,7 @@ const handlers = {
       properties: ['openFile'],
       filters: [{ name: t('Windows 程序'), extensions: ['exe'] }],
     });
-    return result.canceled ? null : result.filePaths[0];
+    return result.canceled ? null : access.grantExecutable(result.filePaths[0]);
   },
   'dialog.project': async () => {
     const result = await dialog.showOpenDialog(win, {
@@ -527,7 +822,15 @@ const handlers = {
       defaultPath: settings.lastProject || undefined,
       properties: ['openDirectory', 'createDirectory'],
     });
-    return result.canceled ? null : result.filePaths[0];
+    if (result.canceled || !result.filePaths[0]) return null;
+    let project;
+    try {
+      project = access.project(result.filePaths[0]);
+    } catch {
+      project = await access.grantProject(result.filePaths[0], false);
+      if ((await selectProjectTrust(project.cwd)).cancelled) return null;
+    }
+    return project.cwd;
   },
   'dialog.attach': async () => {
     const result = await dialog.showOpenDialog(win, {
@@ -579,10 +882,12 @@ const handlers = {
     });
     return result.canceled
       ? []
-      : result.filePaths.map((filename) => ({
-          name: path.basename(filename),
-          path: filename,
-        }));
+      : registerAttachments(
+          result.filePaths.map((filename) => ({
+            name: path.basename(filename),
+            path: filename,
+          })),
+        );
   },
   'project.open': async ({ cwd }) => {
     const directory = await validCwd(cwd);
@@ -590,51 +895,109 @@ const handlers = {
       lastProject: directory,
       recentProjects: [directory, ...settings.recentProjects.filter((x) => x !== directory)],
     });
-    const sessions = await client.listSessions({ cwd: directory });
+    const grant = access.project(directory);
+    const sessions = await listProjectSessions(directory);
     workspaceWatcher.start(directory);
-    return { cwd: directory, sessions };
+    return { cwd: directory, sessions, trusted: grant.trusted };
   },
-  'sessions.list': async ({ cwd }) => client.listSessions({ cwd: await validCwd(cwd) }),
+  'project.access': ({ cwd }) => access.project(cwd),
+  'project.trust': ({ cwd }) => selectProjectTrust(cwd),
+  'sessions.list': async ({ cwd }) => listProjectSessions(await validCwd(cwd)),
   'session.new': (payload) =>
-    activity.runSession(async () => {
-      const snapshot = await client.newSession({
-        ...payload,
-        cwd: await validCwd(payload.cwd),
-        permissionMode: payload.permissionMode || settings.permissionMode,
-      });
-      client.setActiveSession(snapshot.sessionId);
-      return snapshot;
-    }),
+    projectOperation(payload.cwd, () =>
+      activity.runSession(async () => {
+        const snapshot = await client.newSession({
+          ...payload,
+          cwd: await validCwd(payload.cwd, true),
+          permissionMode: payload.permissionMode || settings.permissionMode,
+        });
+        client.setActiveSession(snapshot.sessionId);
+        return snapshot;
+      }),
+    ),
   'session.load': (payload) =>
-    activity.runSession(async () => {
-      const snapshot = await client.loadSession({ ...payload, cwd: await validCwd(payload.cwd) });
-      client.setActiveSession(snapshot.sessionId);
-      return snapshot;
-    }),
+    projectOperation(payload.cwd, () =>
+      activity.runSession(async () => {
+        const snapshot = await client.loadSession({
+          ...payload,
+          cwd: await validCwd(payload.cwd, true),
+        });
+        client.setActiveSession(snapshot.sessionId);
+        return snapshot;
+      }),
+    ),
   // Existing sessions already own a validated canonical cwd. Register the turn
   // synchronously so a cancel cannot arrive before the hub owns the pending send.
-  'session.send': (payload) => activity.runSession(() => client.send(payload)),
+  'session.send': (payload) => {
+    sessionAccess(payload.sessionId);
+    return activity.runSession(() => client.send(payload));
+  },
   'session.enqueue': (payload) =>
     activity.runSession(async () =>
-      client.enqueue({ ...payload, cwd: await validCwd(payload.cwd) }),
+      client.enqueue({ ...payload, cwd: await validCwd(payload.cwd, true) }),
     ),
   'tasks.list': () => client.listTasks(),
   'tasks.remove': (payload) => client.remove(payload),
-  'tasks.resume': (payload) => activity.runSession(() => client.resume(payload)),
-  'session.configure': (payload) => activity.runSession(() => client.configure(payload)),
+  'tasks.resume': (payload) => {
+    sessionAccess(payload.sessionId);
+    return activity.runSession(() => client.resume(payload));
+  },
+  'session.configure': (payload) => {
+    sessionAccess(payload.sessionId);
+    return activity.runSession(() => client.configure(payload));
+  },
   'session.cancel': (payload) => client.cancel(payload),
-  'session.permission': (payload) => client.respondPermission(payload),
-  'session.permissions': (payload) => client.setPermissionMode(payload),
-  'session.rename': (payload) => client.rename(payload),
-  'session.delete': (payload) => client.deleteSession(payload),
+  'session.permission': (payload) => {
+    sessionAccess(payload.sessionId);
+    return client.respondPermission(payload);
+  },
+  'session.permissions': (payload) => {
+    sessionAccess(payload.sessionId);
+    return client.setPermissionMode(payload);
+  },
+  'session.rename': (payload) => {
+    sessionAccess(payload.sessionId);
+    return client.rename(payload);
+  },
+  'session.delete': (payload) => {
+    sessionAccess(payload.sessionId);
+    return client.deleteSession(payload);
+  },
   'session.export': exportSession,
-  'session.usage': (payload) => client.usage(payload),
+  'session.usage': (payload) => {
+    sessionAccess(payload.sessionId);
+    return client.usage(payload);
+  },
   'account.usage': () => require('./account.cjs').readAccountUsage(client),
-  'workspace.list': workspace.listFiles,
-  'workspace.read': workspace.readFile,
-  'workspace.save': workspace.saveFile,
-  'workspace.changes': workspace.gitChanges,
-  'workspace.diff': workspace.gitDiff,
+  'workspace.list': async (payload) => {
+    access.project(payload.cwd);
+    await access.file(workspace.resolveWorkspacePath(payload.cwd, payload.path || ''));
+    return workspace.listFiles(payload);
+  },
+  'workspace.read': async (payload) => {
+    access.project(payload.cwd);
+    await access.file(workspace.resolveWorkspacePath(payload.cwd, payload.path));
+    return workspace.readFile(payload);
+  },
+  'workspace.save': async (payload) => {
+    access.project(payload.cwd, true);
+    await access.file(workspace.resolveWorkspacePath(payload.cwd, payload.path), true);
+    return workspace.saveFile(payload);
+  },
+  'workspace.changes': (payload) => {
+    access.project(payload.cwd);
+    return workspace.gitChanges(payload);
+  },
+  'workspace.diff': async (payload) => {
+    access.project(payload.cwd);
+    const filename = workspace.resolveWorkspacePath(payload.cwd, payload.path);
+    try {
+      await access.file(filename);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    return workspace.gitDiff(payload);
+  },
   'checkpoints.list': async ({ cwd, sessionId }) =>
     checkpoints.list({ cwd: await validCwd(cwd), sessionId }),
   'checkpoints.detail': (payload) => checkpoints.detail(payload),
@@ -643,7 +1006,7 @@ const handlers = {
   'checkpoints.removeMany': (payload) => checkpoints.removeMany(payload),
   'checkpoints.restore': async (payload) => {
     const checkpoint = await checkpoints.detail({ id: payload.id });
-    const cwd = await validCwd(checkpoint.cwd);
+    const cwd = await validCwd(checkpoint.cwd, true);
     return client.runWorkspaceMutation(cwd, async () => {
       const result = await checkpoints.restore(payload);
       emit({ type: 'workspace-changed', cwd });
@@ -651,9 +1014,12 @@ const handlers = {
       return result;
     });
   },
-  'runner.inspect': async ({ cwd }) => runner.inspect({ cwd: await validCwd(cwd) }),
+  'runner.inspect': async ({ cwd }) => runner.inspect({ cwd: await projectManifest(cwd) }),
   'runner.state': async ({ cwd }) => runner.state({ cwd: await validCwd(cwd) }),
-  'runner.start': async ({ cwd, script }) => runner.start({ cwd: await validCwd(cwd), script }),
+  'runner.start': ({ cwd, script }) =>
+    projectOperation(cwd, async (directory) =>
+      runner.start({ cwd: await projectManifest(directory), script }),
+    ),
   'runner.stop': async ({ cwd }) => runner.stop({ cwd: await validCwd(cwd) }),
   'update.status': () => appUpdater.status(),
   'update.check': () => appUpdater.check(),
@@ -664,14 +1030,40 @@ const handlers = {
 };
 
 ipcMain.handle('desktop:request', async (event, command, payload) => {
-  if (!win || event.sender !== win.webContents || !Object.hasOwn(handlers, command))
+  if (
+    !win ||
+    event.sender !== win.webContents ||
+    event.senderFrame !== win.webContents.mainFrame ||
+    !Object.hasOwn(handlers, command)
+  )
     return { ok: false, error: t('不支持的操作。') };
   try {
-    return { ok: true, data: await handlers[command](payload ?? {}) };
+    const checked = validateRequest(command, payload ?? {});
+    if (command === 'settings.save') {
+      if (checked.recentProjects)
+        checked.recentProjects = checked.recentProjects.map((cwd) => access.project(cwd).cwd);
+      if (checked.lastProject) checked.lastProject = access.project(checked.lastProject).cwd;
+    }
+    return { ok: true, data: await handlers[command](checked) };
   } catch (error) {
     const message = error?.message || String(error);
     logger.log('request-failed', { command, code: error.code || error.name || 'Error' });
     return { ok: false, error: message };
+  }
+});
+ipcMain.handle('desktop:files-selected', async (event, files) => {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
+    return { ok: false, error: t('不支持的操作。') };
+  try {
+    validateRequest('session.send', { sessionId: 'file-selection', attachments: files });
+    if (
+      !Array.isArray(files) ||
+      files.some((file) => typeof file.path !== 'string' || typeof file.name !== 'string')
+    )
+      throw new Error(t('操作参数无效。'));
+    return { ok: true, data: await registerAttachments(files) };
+  } catch (error) {
+    return { ok: false, error: error.message };
   }
 });
 
@@ -721,11 +1113,14 @@ function createWindow() {
   });
   win.on('focus', () => notifications.clear());
   win.on('closed', () => previews.dispose());
-  for (const name of ['resize', 'move', 'maximize', 'unmaximize'])
-    win.on(name, () => {
-      clearTimeout(windowSaveTimer);
-      windowSaveTimer = setTimeout(saveWindowState, 300);
-    });
+  const scheduleWindowSave = () => {
+    clearTimeout(windowSaveTimer);
+    windowSaveTimer = setTimeout(saveWindowState, 300);
+  };
+  win.on('resize', scheduleWindowSave);
+  win.on('move', scheduleWindowSave);
+  win.on('maximize', scheduleWindowSave);
+  win.on('unmaximize', scheduleWindowSave);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -817,7 +1212,12 @@ function updateMenu() {
           { role: 'zoomOut', label: t('缩小') },
           { type: 'separator' },
           ...(!app.isPackaged || process.env.GROK_DESKTOP_DEVTOOLS === '1'
-            ? [{ role: 'toggleDevTools', label: t('开发者工具') }]
+            ? [
+                /** @type {import('electron').MenuItemConstructorOptions} */ ({
+                  role: 'toggleDevTools',
+                  label: t('开发者工具'),
+                }),
+              ]
             : []),
         ],
       },

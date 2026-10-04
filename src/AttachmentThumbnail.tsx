@@ -6,6 +6,15 @@ import { request } from './lib';
 export default function AttachmentThumbnail({ file }: { file: Attachment }) {
   const isImage = file.kind === 'image' || /\.(png|jpe?g|gif|webp)$/i.test(file.path);
   const [preview, setPreview] = useState<{ path: string; url: string } | null>(null);
+  const [authorization, setAuthorization] = useState(0);
+  useEffect(
+    () =>
+      window.desktop.onEvent?.((event) => {
+        if (event.type === 'attachment-authorization-changed' && event.paths.includes(file.path))
+          setAuthorization((value) => value + 1);
+      }),
+    [file.path],
+  );
   useEffect(() => {
     if (!isImage || !file.path) return;
     let disposed = false;
@@ -20,7 +29,7 @@ export default function AttachmentThumbnail({ file }: { file: Attachment }) {
     return () => {
       disposed = true;
     };
-  }, [file.path, isImage]);
+  }, [file.path, isImage, authorization]);
   if (!isImage) return <Paperclip size={13} />;
   return preview?.path === file.path ? (
     <img className="attachment-thumbnail" src={preview.url} alt="" />

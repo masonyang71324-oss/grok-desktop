@@ -19,13 +19,13 @@
 
 ## 主要功能
 
-最新修补：[1.7.4 独立审阅问题处理](docs/review-response-1.7.4.md)。历史自查：[1.7.3 对照与验证总结](docs/audit-followup-summary.md)，包含49项逐条映射及真实CLI/一次性Windows证据。
+最新升级：[1.8.0 审阅建议补全](docs/implementation-1.8.0.md)与[可复现性能记录](docs/performance-1.8.0.md)。此前修补：[1.7.4 独立审阅问题处理](docs/review-response-1.7.4.md)。[文档入口](docs/README.md)保留历史证据。
 
 - 当前会话全文搜索、提问目录、格式化复制、数学公式和长对话渲染优化。
 - 输入区可搜索引用项目文件、调用 Windows 语音输入；侧栏/文件栏/输入区可拖动调整并记住尺寸。
 - DOCX、工作表、PPTX提供只读排版预览，差异支持左右对照、词级标记与上下文折叠；复杂内容会明确说明限制，保留文字及默认程序打开入口。
 - 内置 PowerShell 交互终端；隔离网页预览窗口的截图可回到原会话草稿，均按需打开。
-- 回收完全空闲的引擎连接并保留会话；官方 CLI/ACP 变动有独立维护检查。完整范围见 [1.7.1 更新说明](docs/release-1.7.1.md) 和 [验证记录](docs/upgrade-1.7.1-validation.md)。
+- 回收完全空闲的引擎连接并保留会话；官方 CLI/ACP 变动有独立维护检查。完整范围见 [1.7.1 更新说明](docs/archive/releases/release-1.7.1.md) 和 [验证记录](docs/upgrade-1.7.1-validation.md)。
 
 - 左侧“会话 / 文件 / 任务”统一导航，底栏常驻连接、额度、上下文和两个软件的版本入口；面板切换保留草稿与文件编辑。
 - 项目会话、草稿自动保存、重启恢复；尚未选择项目的输入也会保存。
@@ -78,6 +78,6 @@ E2E 使用本地假 Grok，不需要订阅或真实账号，运行实际 Electro
 
 安装包尚未配置发布者签名，源码保持 UNLICENSED。package 的 private 字段用于防止意外发布到 npm，不影响本 GitHub 仓库公开访问。
 
-参见 [架构说明](docs/architecture.md)、[版本记录](CHANGELOG.md) 和 [1.1.0 历史审阅处理结果](docs/review-response-1.1.0.md)。
+参见 [架构说明](docs/architecture.md)、[版本记录](CHANGELOG.md) 和 [1.1.0 历史审阅处理结果](docs/archive/reviews/review-response-1.1.0.md)。
 
 公开仓库与下载程序的准备方式见 [GitHub 发布说明](docs/github-publishing.md)。

@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from './components';
 import { errorText, request } from './lib';
 import { useI18n } from './i18n';
 import type { Checkpoint, CheckpointStorage, RunnerState } from './types';
+import StorageManagement from './StorageManagement';
+
+function logTail(text: string) {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= 65536) return text;
+  let start = bytes.length - 65536;
+  while ((bytes[start] & 0xc0) === 0x80) start++;
+  return new TextDecoder().decode(bytes.subarray(start));
+}
 
 export default function ProjectTools({
   cwd,
@@ -15,6 +24,7 @@ export default function ProjectTools({
   initialRestore,
   initialStorage = false,
   onRecordsChanged,
+  protectedAttachmentPaths = [],
 }: {
   cwd: string;
   sessionId?: string;
@@ -26,18 +36,34 @@ export default function ProjectTools({
   initialRestore?: boolean;
   initialStorage?: boolean;
   onRecordsChanged?: () => void;
+  protectedAttachmentPaths?: string[];
 }) {
   const { t } = useI18n();
   const [scripts, setScripts] = useState<{ name: string; command: string }[]>([]);
   const [script, setScript] = useState('');
   const [state, setState] = useState<RunnerState>({ status: 'stopped', log: '' });
+  const runnerState = useRef(state);
+  const runnerVersion = useRef(0);
+  function acceptRunner(next: RunnerState) {
+    runnerState.current = next;
+    setState(next);
+  }
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [detail, setDetail] = useState<Checkpoint | null>(null);
   const [paths, setPaths] = useState<string[]>([]);
   const [confirm, setConfirm] = useState(false);
   const [deleteRecord, setDeleteRecord] = useState<Checkpoint | null>(null);
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<'project' | 'storage'>(initialStorage ? 'storage' : 'project');
+  const [view, setView] = useState<'project' | 'storage' | 'attachments'>(
+    initialStorage ? 'storage' : 'project',
+  );
+  const [showEmpty, setShowEmpty] = useState(false);
+  const hiddenEmptyCount = checkpoints.filter(
+    (entry) => entry.status === 'ready' && !entry.files.length,
+  ).length;
+  const visibleCheckpoints = showEmpty
+    ? checkpoints
+    : checkpoints.filter((entry) => entry.status !== 'ready' || entry.files.length);
   const [storage, setStorage] = useState<CheckpointStorage | null>(null);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [confirmStorageDelete, setConfirmStorageDelete] = useState(false);
@@ -113,25 +139,88 @@ export default function ProjectTools({
   }
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      request<{ scripts: { name: string; command: string }[]; state: RunnerState }>(
-        'runner.inspect',
-        { cwd },
-      ),
-      request<Checkpoint[]>('checkpoints.list', { cwd, sessionId }),
-    ])
-      .then(([runner, list]) => {
+    let snapshotReceived = false,
+      syncing = false,
+      syncAgain = false;
+    const version = runnerVersion.current;
+    function resyncRunner() {
+      if (!active) return;
+      if (syncing) {
+        syncAgain = true;
+        return;
+      }
+      syncing = true;
+      const requestedVersion = runnerVersion.current;
+      void request<RunnerState>('runner.state', { cwd })
+        .then((next) => {
+          if (!active) return;
+          if (runnerVersion.current !== requestedVersion) {
+            syncAgain = true;
+            return;
+          }
+          snapshotReceived = true;
+          acceptRunner(next);
+        })
+        .catch((error) => {
+          if (active) notify(errorText(error));
+        })
+        .finally(() => {
+          syncing = false;
+          if (active && syncAgain) {
+            syncAgain = false;
+            resyncRunner();
+          }
+        });
+    }
+    void request<{ scripts: { name: string; command: string }[]; state: RunnerState }>(
+      'runner.inspect',
+      { cwd },
+    )
+      .then((runner) => {
         if (!active) return;
         setScripts(runner.scripts);
         setScript(runner.state.script || runner.scripts[0]?.name || '');
-        setState(runner.state);
-        setCheckpoints(list);
+        if (runnerVersion.current === version) {
+          snapshotReceived = true;
+          acceptRunner(runner.state);
+        } else if (!snapshotReceived) resyncRunner();
       })
       .catch((e) => {
         if (active) notify(errorText(e));
       });
+    void request<Checkpoint[]>('checkpoints.list', { cwd, sessionId })
+      .then((list) => {
+        if (active) setCheckpoints(list);
+      })
+      .catch((error) => {
+        if (active) notify(errorText(error));
+      });
     const unsub = window.desktop.onEvent((event) => {
-      if (event.type === 'runner-changed' && event.cwd === cwd) setState(event.state);
+      if (!active) return;
+      if (event.type === 'runner-changed' && event.cwd === cwd) {
+        runnerVersion.current++;
+        snapshotReceived = true;
+        acceptRunner(event.state);
+      }
+      if (event.type === 'runner-output' && event.cwd === cwd) {
+        if (!snapshotReceived) {
+          runnerVersion.current++;
+          resyncRunner();
+          return;
+        }
+        const previous = runnerState.current;
+        if (event.runId !== previous.runId || event.sequence <= (previous.sequence || 0)) return;
+        runnerVersion.current++;
+        if (event.sequence !== (previous.sequence || 0) + 1) {
+          resyncRunner();
+        } else
+          acceptRunner({
+            ...previous,
+            sequence: event.sequence,
+            log: logTail(previous.log + event.data),
+            ...(event.url ? { url: event.url } : {}),
+          });
+      }
       if (
         event.type === 'checkpoints-changed' &&
         event.cwd === cwd &&
@@ -153,8 +242,16 @@ export default function ProjectTools({
   async function run(action: 'start' | 'stop' | 'restart') {
     setBusy(true);
     try {
-      if (action !== 'start') setState(await request<RunnerState>('runner.stop', { cwd }));
-      if (action !== 'stop') setState(await request<RunnerState>('runner.start', { cwd, script }));
+      if (action !== 'start') {
+        const version = runnerVersion.current;
+        const next = await request<RunnerState>('runner.stop', { cwd });
+        if (runnerVersion.current === version) acceptRunner(next);
+      }
+      if (action !== 'stop') {
+        const version = runnerVersion.current;
+        const next = await request<RunnerState>('runner.start', { cwd, script });
+        if (runnerVersion.current === version) acceptRunner(next);
+      }
     } catch (e) {
       notify(errorText(e));
     } finally {
@@ -221,8 +318,18 @@ export default function ProjectTools({
         >
           {t('检查点存储管理')}
         </button>
+        <button
+          className="secondary-button"
+          aria-pressed={view === 'attachments'}
+          disabled={busy}
+          onClick={() => setView('attachments')}
+        >
+          {t('附件存储管理')}
+        </button>
       </div>
-      {view === 'storage' ? (
+      {view === 'attachments' ? (
+        <StorageManagement protectedPaths={protectedAttachmentPaths} notify={notify} />
+      ) : view === 'storage' ? (
         <section className="workflow-card">
           <h3>{t('所有项目的检查点存储')}</h3>
           <p className="muted">{t('检查点不会自动清理。只删除你选中的记录，项目文件保持不变。')}</p>
@@ -290,6 +397,7 @@ export default function ProjectTools({
               />
               <span style={{ minWidth: 0 }}>
                 <strong>{record.cwd || t('项目未知')}</strong>
+                {record.summary && <p>{record.summary}</p>}
                 <br />
                 <span>
                   {new Date(record.createdAt).toLocaleString()} · {t(storageKinds[record.kind])} ·{' '}
@@ -380,7 +488,20 @@ export default function ProjectTools({
               {t('刷新')}
             </button>
             {!checkpoints.length && <p>{t('暂无检查点')}</p>}
-            {checkpoints.map((entry) => (
+            {hiddenEmptyCount > 0 && (
+              <>
+                {!showEmpty && (
+                  <p className="muted">
+                    {t('已隐藏 {count} 条无可恢复文件的记录。', { count: hiddenEmptyCount })}
+                  </p>
+                )}
+                <button className="text-button" onClick={() => setShowEmpty((value) => !value)}>
+                  {t(showEmpty ? '隐藏无文件变更记录' : '显示全部检查点')}
+                </button>
+                <p className="muted">{t('没有可恢复文本文件不代表本轮没有改动，原记录会保留。')}</p>
+              </>
+            )}
+            {visibleCheckpoints.map((entry) => (
               <div className="workflow-actions" key={entry.id}>
                 <button
                   className="checkpoint-row"
@@ -388,6 +509,12 @@ export default function ProjectTools({
                   onClick={() => void inspect(entry.id)}
                 >
                   <span>
+                    {entry.summary && (
+                      <span>
+                        {entry.summary}
+                        <br />
+                      </span>
+                    )}
                     {new Date(entry.createdAt).toLocaleString()}
                     {entry.status === 'interrupted' ? ` · ${t('已中断')}` : ''}
                   </span>

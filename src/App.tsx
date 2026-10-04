@@ -18,7 +18,6 @@ import {
   Mic,
   GitCompareArrows,
   ListChecks,
-  History,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -46,12 +45,10 @@ import type {
   AppUpdateState,
   Attachment,
   Bootstrap,
-  CliStatus,
   Command,
   ConfigureResult,
   DesktopEvent,
   ModelsState,
-  ManagementResult,
   PermissionRequest,
   SessionSnapshot,
   SessionSummary,
@@ -60,14 +57,14 @@ import type {
   Checkpoint,
 } from './types';
 import {
-  appendUpdate,
+  appendUpdates,
   createFrameBuffer,
   finalizeTurn,
   fromReplay,
   type TimelineRow,
 } from './timeline.mjs';
-import { baseName, classifyFailure, errorText, readableDate, request } from './lib';
-import { Brand, IconButton, Message, Modal, Spinner } from './components';
+import { baseName, classifyFailure, errorText, request } from './lib';
+import { Brand, IconButton, Modal, Spinner } from './components';
 const ActionsDialog = lazy(() =>
   import('./Dialogs').then((module) => ({ default: module.ActionsDialog })),
 );
@@ -110,6 +107,11 @@ import PermissionControl from './PermissionControl';
 import TaskCenter from './TaskCenter';
 import ProjectTools from './ProjectTools';
 import AttachmentThumbnail from './AttachmentThumbnail';
+import ConversationTimeline, { type ConversationTimelineHandle } from './ConversationTimeline';
+import ProjectAccessBar from './ProjectAccessBar';
+import SessionList from './SessionList';
+import EngineDialog from './EngineDialog';
+import { useEngine } from './useEngine';
 import './workflows.css';
 import './enhancements.css';
 import { createDraftStore, sameDraft, type Draft } from './drafts.mjs';
@@ -152,9 +154,6 @@ export default function App() {
     NonNullable<Bootstrap['recoveryWarnings']>
   >([]);
   const [checkpointStorageRequested, setCheckpointStorageRequested] = useState(false);
-  const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
-  const [engineAction, setEngineAction] = useState('');
-  const [engineError, setEngineError] = useState('');
   const [appUpdate, setAppUpdate] = useState<AppUpdateState>({
     mode: 'development',
     status: 'unsupported',
@@ -164,6 +163,7 @@ export default function App() {
   const [connection, setConnection] = useState('connecting');
   const [connectionError, setConnectionError] = useState('');
   const [cwd, setCwd] = useState('');
+  const [projectTrusted, setProjectTrusted] = useState(true);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [models, setModels] = useState<ModelsState>({
@@ -198,9 +198,7 @@ export default function App() {
   >(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [search, setSearch] = useState('');
   const [projectMenu, setProjectMenu] = useState(false);
-  const [sessionMenu, setSessionMenu] = useState<SessionSummary | null>(null);
   const [permissionMenuRequest, setPermissionMenuRequest] = useState(0);
   const [topbarMenu, setTopbarMenu] = useState(false);
   const transitionRef = useRef(false);
@@ -267,6 +265,7 @@ export default function App() {
   settingsRef.current = settings;
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const timelineRef = useRef<ConversationTimelineHandle>(null);
   const stickToBottom = useRef(true);
   const [showScroll, setShowScroll] = useState(false);
   const noticeTimer = useRef<number | undefined>(undefined);
@@ -287,7 +286,10 @@ export default function App() {
           notify(t('草稿暂时无法保存到本机，请保留重要内容后再关闭应用。'));
         }
       },
-      () => request('drafts.flush').then(() => undefined),
+      () =>
+        request('drafts.flush', {
+          protectedPaths: draftStoreRef.current?.attachmentPaths() || [],
+        }).then(() => undefined),
     );
   const composerRef = useRef({ cwd: '', sessionId: '', draftKey: 'initial' });
   const draftAliases = useRef(new Map<string, PreviewOwner>());
@@ -459,7 +461,12 @@ export default function App() {
     restorePromiseRef.current = operation;
     return operation;
   }
-  async function applyProject(project: { cwd: string; sessions: SessionSummary[] }) {
+  async function applyProject(project: {
+    cwd: string;
+    sessions: SessionSummary[];
+    trusted?: boolean;
+  }) {
+    setProjectTrusted(project.trusted !== false);
     const lastSessionId = draftStoreRef.current!.selected(project.cwd);
     const incoming = !composerRef.current.cwd ? currentDraft() : null;
     const carryInput = !!incoming && (!!incoming.text || incoming.attachments.length > 0);
@@ -498,7 +505,12 @@ export default function App() {
       if (existing.text || existing.attachments.length)
         notify(t('两份未发送草稿已合并，原有会话草稿保持原样。'));
     }
-    if (!carryInput && lastSessionId && history.some((item) => item.sessionId === lastSessionId)) {
+    if (
+      project.trusted !== false &&
+      !carryInput &&
+      lastSessionId &&
+      history.some((item) => item.sessionId === lastSessionId)
+    ) {
       setLoadingSession(lastSessionId);
       try {
         applySnapshot(
@@ -598,9 +610,7 @@ export default function App() {
     const buffer = createFrameBuffer<{ update: AcpUpdate; turnId: string; sessionId: string }>(
       (buffered) => {
         const items = buffered.filter((item) => item.sessionId === sessionRef.current?.sessionId);
-        setRows((previous) =>
-          items.reduce((list, item) => appendUpdate(list, item.update, item.turnId), previous),
-        );
+        setRows((previous) => appendUpdates(previous, items));
         for (const item of items) {
           if (item.update.sessionUpdate === 'plan') setPlan(item.update.entries || []);
           updateContextWindow(item.update);
@@ -656,7 +666,16 @@ export default function App() {
         setPermissions(event.tasks.flatMap((task) => task.permissions));
         return;
       }
-      if (event.type === 'runner-changed') return;
+      if (
+        event.type === 'runner-changed' ||
+        event.type === 'runner-output' ||
+        event.type === 'attachment-authorization-changed'
+      )
+        return;
+      if (event.type === 'project-access') {
+        if (event.cwd === cwdRef.current) setProjectTrusted(event.trusted);
+        return;
+      }
       if (event.type === 'checkpoint-storage-request') {
         setCheckpointStorageRequested(true);
         setDialog('project-tools');
@@ -909,7 +928,6 @@ export default function App() {
     }
   }
   async function loadConversation(summary: SessionSummary) {
-    setSessionMenu(null);
     if (transitionRef.current) return;
     if (pending || (editorOpen && summary.cwd !== cwdRef.current)) {
       notify(t('请先完成当前操作并关闭文件编辑器。'));
@@ -1028,6 +1046,10 @@ export default function App() {
     }
   }
   async function send() {
+    if (!projectTrusted) {
+      notify(t('请先点击项目的“只看文件”，信任后再发送任务。'));
+      return;
+    }
     const submitted = currentDraft();
     const text = submitted.text.trim();
     if (/^\/always-approve(?:\s+(?:on|off))?$/i.test(text)) {
@@ -1276,16 +1298,14 @@ export default function App() {
       notify(errorText(e));
     }
   }
-  const navigateConversation = useCallback((target: ConversationTarget) => {
+  const navigateConversation = useCallback(async (target: ConversationTarget) => {
     stickToBottom.current = false;
     setShowScroll(true);
     const root = threadRef.current;
     const node =
       target.kind === 'error'
         ? root?.querySelector<HTMLElement>('[data-conversation-error]')
-        : [...(root?.querySelectorAll<HTMLElement>('[data-row-id]') || [])].find(
-            (item) => item.dataset.rowId === target.rowId,
-          );
+        : await timelineRef.current?.scrollToRow(target.rowId);
     if (!node) return;
     for (const details of node.querySelectorAll('details')) details.open = true;
     let ancestor: HTMLElement | null = node;
@@ -1310,15 +1330,13 @@ export default function App() {
       notify(errorText(error));
     }
   }
-  function dropFiles(event: React.DragEvent) {
+  async function dropFiles(event: React.DragEvent) {
     event.preventDefault();
     setDragging(false);
+    const owner = { ...composerRef.current };
     try {
-      const files = window.desktop.pathsForFiles(Array.from(event.dataTransfer.files));
-      setAttachments((previous) => [
-        ...previous,
-        ...files.filter((file) => !previous.some((item) => item.path === file.path)),
-      ]);
+      const files = await window.desktop.pathsForFiles(Array.from(event.dataTransfer.files));
+      appendFilesToDraft(files, owner);
     } catch (error) {
       notify(errorText(error));
     }
@@ -1375,7 +1393,6 @@ export default function App() {
     const handle = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setProjectMenu(false);
-        setSessionMenu(null);
         setTopbarMenu(false);
       }
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
@@ -1441,7 +1458,6 @@ export default function App() {
     }
   }
   async function exportSession(summary: SessionSummary) {
-    setSessionMenu(null);
     try {
       const result = await request<{ path: string } | null>('session.export', {
         cwd: summary.cwd || cwd,
@@ -1539,16 +1555,32 @@ export default function App() {
         task.queued.length > 0 ||
         task.permissions.length > 0,
     );
-  const engineAuthStatus = cliStatus?.authStatus || 'unknown';
-  const engineAuthLabel =
-    engineAuthStatus === 'authenticated'
-      ? t('已登录')
-      : engineAuthStatus === 'required'
-        ? t('需要登录')
-        : t('登录状态未知');
-  const filteredSessions = sessions.filter((item) =>
-    item.title.toLowerCase().includes(search.toLowerCase()),
-  );
+  const {
+    cliStatus,
+    setCliStatus,
+    engineAction,
+    engineError,
+    engineAuthStatus,
+    engineAuthLabel,
+    readEngineStatus,
+    runEngineAction,
+  } = useEngine({
+    getCwd: () => cwdRef.current,
+    isUpdateBlocked: () => engineBusy || transitionRef.current,
+    hasSession: () => !!sessionRef.current,
+    onUpdated: initialize,
+    notify,
+    onRefresh: (data) => {
+      setBootstrap(data);
+      if (!sessionRef.current) {
+        modelsRef.current = data.models;
+        setModels(data.models);
+        setCommands(data.commands);
+        setConnection(data.cli.connected ? 'ready' : 'error');
+        setConnectionError(data.cli.error || '');
+      }
+    },
+  });
   const currentSummary: SessionSummary | null = session
     ? { sessionId: session.sessionId, cwd: session.cwd, title: currentTitle }
     : null;
@@ -1579,65 +1611,6 @@ export default function App() {
   async function runUpdateAction(command: 'update.check' | 'update.download' | 'update.install') {
     const next = await request<AppUpdateState>(command);
     setAppUpdate(next);
-  }
-  async function readEngineStatus(checkUpdate = false) {
-    try {
-      const status = await request<CliStatus>(
-        'cli.status',
-        checkUpdate ? { checkUpdate: true } : undefined,
-      );
-      setCliStatus(status);
-      setEngineError(status.error || '');
-    } catch (error) {
-      setEngineError(errorText(error));
-      setCliStatus((previous) => (previous ? { ...previous, authStatus: 'unknown' } : previous));
-    }
-  }
-  async function runEngineAction(action: 'check' | 'refresh' | 'update' | 'login') {
-    if (engineAction || (action === 'update' && (engineBusy || transitionRef.current))) return;
-    setEngineAction(action);
-    setEngineError('');
-    try {
-      if (action === 'login') {
-        await request('system.open', { target: 'grok-login', cwd: cwdRef.current });
-      } else if (action === 'check') {
-        await readEngineStatus(true);
-      } else {
-        if (action === 'update') {
-          const result = await request<ManagementResult>('system.run', {
-            action: 'update-install',
-            cwd: cwdRef.current,
-            values: {},
-          });
-          if (result.exitCode) throw new Error(result.text || t('引擎更新失败'));
-          await initialize();
-        } else {
-          const data = await request<Bootstrap>('cli.refresh');
-          setBootstrap(data);
-          if (!sessionRef.current) {
-            modelsRef.current = data.models;
-            setModels(data.models);
-            setCommands(data.commands);
-            setConnection(data.cli.connected ? 'ready' : 'error');
-            setConnectionError(data.cli.error || '');
-          }
-        }
-        await readEngineStatus();
-        notify(
-          t(
-            action === 'update'
-              ? 'Grok Build 已更新'
-              : sessionRef.current
-                ? '引擎与模型已刷新，新会话将使用最新模型列表。'
-                : '引擎与模型已刷新',
-          ),
-        );
-      }
-    } catch (error) {
-      setEngineError(errorText(error));
-    } finally {
-      setEngineAction('');
-    }
   }
   return (
     <div
@@ -1759,93 +1732,19 @@ export default function App() {
             aria-labelledby="navigation-sessions"
             hidden={navigationTab !== 'sessions'}
           >
-            <div className="history-heading">
-              <span>{t('会话记录')}</span>
-              <span className="count">{sessions.length}</span>
-            </div>
-            <div className="search-input">
-              <Search size={15} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('搜索会话')}
-                aria-label={t('搜索会话')}
-              />
-              {search && (
-                <button onClick={() => setSearch('')} title={t('清除搜索')}>
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            <div className="session-list">
-              {filteredSessions.length ? (
-                filteredSessions.map((summary) => (
-                  <div
-                    key={summary.sessionId}
-                    className={`session-item ${session?.sessionId === summary.sessionId ? 'selected' : ''}`}
-                  >
-                    <button
-                      className="session-select"
-                      onClick={() => void loadConversation(summary)}
-                      disabled={!!loadingSession}
-                      title={summary.title}
-                    >
-                      {loadingSession === summary.sessionId ? (
-                        <Spinner />
-                      ) : (
-                        <MessageSquare size={15} />
-                      )}
-                      <span>{summary.title || t('未命名会话')}</span>
-                      <small>{readableDate(summary.updatedAt)}</small>
-                    </button>
-                    <IconButton
-                      label={t('{value0} · 更多操作', { value0: summary.title })}
-                      onClick={() =>
-                        setSessionMenu(
-                          sessionMenu?.sessionId === summary.sessionId ? null : summary,
-                        )
-                      }
-                    >
-                      <Ellipsis size={16} />
-                    </IconButton>
-                    {sessionMenu?.sessionId === summary.sessionId && (
-                      <div className="session-dropdown">
-                        <button
-                          onClick={() => {
-                            setRename(summary);
-                            setRenameTitle(summary.title);
-                            setSessionMenu(null);
-                          }}
-                        >
-                          <Pencil size={14} />
-                          {t('重命名')}
-                        </button>
-                        <button onClick={() => void exportSession(summary)}>
-                          <Download size={14} />
-                          {t('导出会话')}
-                        </button>
-                        <button
-                          className="danger-text"
-                          onClick={() => {
-                            setDeleteTarget(summary);
-                            setSessionMenu(null);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                          {t('删除会话')}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="history-empty">
-                  <History size={21} />
-                  <span>{search ? t('没有找到相关会话') : t('从一段新的对话开始')}</span>
-                  <small>{search ? t('试试其他关键词') : t('此项目的会话会保存在这里')}</small>
-                </div>
-              )}
-            </div>
+            <SessionList
+              key={cwd}
+              sessions={sessions}
+              activeSessionId={session?.sessionId}
+              loadingSessionId={loadingSession}
+              onSelect={(summary) => void loadConversation(summary)}
+              onRename={(summary) => {
+                setRename(summary);
+                setRenameTitle(summary.title);
+              }}
+              onExport={(summary) => void exportSession(summary)}
+              onDelete={setDeleteTarget}
+            />
           </section>
           <section
             id="panel-files"
@@ -1964,11 +1863,7 @@ export default function App() {
                     className="text-button"
                     onClick={() =>
                       void request('system.open', {
-                        target: 'file',
-                        path: (warning.backupPath || warning.sourcePath).replace(
-                          /[/\\][^/\\]+$/,
-                          '',
-                        ),
+                        target: 'data',
                       }).catch((error) => notify(errorText(error)))
                     }
                   >
@@ -1997,6 +1892,27 @@ export default function App() {
             <span title={currentTitle}>{currentTitle}</span>
           </div>
           <div className="topbar-actions">
+            {cwd && (
+              <ProjectAccessBar
+                cwd={cwd}
+                trusted={projectTrusted}
+                onChange={async () => {
+                  const result = await request<{
+                    cwd: string;
+                    trusted: boolean;
+                    cancelled?: boolean;
+                  }>('project.trust', { cwd });
+                  if (result.cancelled) return;
+                  setProjectTrusted(result.trusted);
+                  if (result.trusted) await openProject(result.cwd);
+                  else {
+                    setInspector(true);
+                    setInspectorTab('files');
+                  }
+                }}
+                notify={notify}
+              />
+            )}
             <IconButton
               label={t('搜索与提问目录')}
               active={conversationNavigation}
@@ -2252,15 +2168,16 @@ export default function App() {
             </div>
           ) : (
             <div className="conversation">
-              {rows.map((row) => (
-                <Message
-                  row={row}
-                  onOpenFile={openToolFile}
-                  key={row.id}
-                  onRetry={fillDraft}
-                  notify={notify}
-                />
-              ))}
+              <ConversationTimeline
+                ref={timelineRef}
+                key={session?.sessionId || cwd}
+                rows={rows}
+                scrollRef={threadRef}
+                activeTurnId={run?.turnId}
+                onOpenFile={openToolFile}
+                onRetry={fillDraft}
+                notify={notify}
+              />
               {turnError && (
                 <div className="turn-error" data-conversation-error>
                   <TriangleAlert size={18} />
@@ -2542,6 +2459,7 @@ export default function App() {
                     !!loadingSession ||
                     configuring ||
                     initializing ||
+                    !projectTrusted ||
                     !cwd ||
                     connection !== 'ready'
                   }
@@ -2721,86 +2639,19 @@ export default function App() {
           />
         )}
         {dialog === 'engine' && (
-          <Modal
-            title={t('Grok Build 引擎')}
-            subtitle={t('用于运行 Grok 会话的本机引擎。')}
+          <EngineDialog
+            status={cliStatus}
+            fallbackPath={bootstrap?.cli.path}
+            authLabel={engineAuthLabel}
+            action={engineAction}
+            error={engineError}
+            busy={engineBusy}
+            updateBlocked={engineBusy || configuring || !!loadingSession || initializing}
+            onAction={runEngineAction}
             onClose={() => setDialog(null)}
-          >
-            <dl className="engine-details">
-              <div>
-                <dt>{t('引擎版本')}</dt>
-                <dd>{cliStatus?.version || t('版本未知')}</dd>
-              </div>
-              <div>
-                <dt>{t('登录状态')}</dt>
-                <dd>{engineAuthLabel}</dd>
-              </div>
-              <div>
-                <dt>{t('可执行文件')}</dt>
-                <dd className="engine-path">
-                  {cliStatus?.path || bootstrap?.cli.path || t('未找到')}
-                </dd>
-              </div>
-              {cliStatus?.latestVersion && (
-                <div>
-                  <dt>{t('引擎更新')}</dt>
-                  <dd>
-                    {cliStatus.updateAvailable
-                      ? t('可更新至 {version}', { version: cliStatus.latestVersion })
-                      : t('已是最新')}
-                  </dd>
-                </div>
-              )}
-            </dl>
-            {engineError && (
-              <p className="danger-text" role="alert">
-                {engineError}
-              </p>
-            )}
-            <div className="engine-actions">
-              <button className="secondary-button" onClick={() => setDialog('onboarding')}>
-                {t('首次使用引导')}
-              </button>
-              <button className="secondary-button" onClick={() => setDialog('providers')}>
-                {t('模型来源')}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!!engineAction}
-                onClick={() => void runEngineAction('login')}
-              >
-                {t('登录 Grok Build')}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!!engineAction}
-                onClick={() => void runEngineAction('refresh')}
-              >
-                {engineAction === 'refresh' && <Spinner />}
-                {t('刷新引擎与模型')}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!!engineAction}
-                onClick={() => void runEngineAction('check')}
-              >
-                {engineAction === 'check' && <Spinner />}
-                {t('检查引擎更新')}
-              </button>
-              <button
-                className="primary-button"
-                disabled={
-                  !!engineAction || engineBusy || configuring || !!loadingSession || initializing
-                }
-                onClick={() => void runEngineAction('update')}
-              >
-                {engineAction === 'update' && <Spinner />}
-                {t('更新 Grok Build')}
-              </button>
-            </div>
-            <p className="engine-hint">{t('登录完成后，点击刷新引擎与模型。')}</p>
-            {engineBusy && <p className="engine-hint">{t('等待所有任务结束后可更新引擎。')}</p>}
-          </Modal>
+            onOnboarding={() => setDialog('onboarding')}
+            onProviders={() => setDialog('providers')}
+          />
         )}
         {dialog === 'tasks' && (
           <TaskCenter
@@ -2817,6 +2668,7 @@ export default function App() {
         {dialog === 'project-tools' && (
           <ProjectTools
             cwd={cwd}
+            protectedAttachmentPaths={draftStoreRef.current?.attachmentPaths() || []}
             initialStorage={checkpointStorageRequested}
             sessionId={session?.sessionId}
             editorOpen={editorOpen}
@@ -2872,7 +2724,11 @@ export default function App() {
                 )}
               </>
             )}
-            <div hidden={officeLayout && canPreviewOffice(attachmentPreview.path)}>
+            <div
+              hidden={
+                officeLayout && canPreviewOffice(attachmentPreview.path) && !attachmentPreview.error
+              }
+            >
               {attachmentPreview.dataUrl && (
                 <img
                   className="attachment-image"
@@ -2885,7 +2741,53 @@ export default function App() {
                   <Spinner /> {t('正在读取附件…')}
                 </p>
               )}
-              {attachmentPreview.error && <p role="alert">{attachmentPreview.error}</p>}
+              {attachmentPreview.error && (
+                <>
+                  <p role="alert">{attachmentPreview.error}</p>
+                  {attachmentPreview.path && (
+                    <button
+                      className="secondary-button"
+                      disabled={attachmentPreview.loading}
+                      onClick={async () => {
+                        const previous = attachmentPreview;
+                        const loading = { ...previous, loading: true, error: undefined };
+                        setAttachmentPreview(loading);
+                        try {
+                          const result = await request<{ authorized: boolean }>(
+                            'attachment.reauthorize',
+                            { path: previous.path },
+                          );
+                          if (!result.authorized) {
+                            setAttachmentPreview((current) =>
+                              current === loading ? previous : current,
+                            );
+                            return;
+                          }
+                          const value = await request<{
+                            text?: string;
+                            dataUrl?: string;
+                            notice?: string;
+                            native?: boolean;
+                          }>('attachment.preview', { path: previous.path });
+                          setAttachmentPreview((current) =>
+                            current === loading
+                              ? { ...previous, ...value, error: undefined, loading: false }
+                              : current,
+                          );
+                        } catch (error) {
+                          setAttachmentPreview((current) =>
+                            current === loading
+                              ? { ...previous, loading: false, error: errorText(error) }
+                              : current,
+                          );
+                        }
+                      }}
+                    >
+                      {t('重新选择原附件并恢复预览')}
+                    </button>
+                  )}
+                </>
+              )}
               {attachmentPreview.notice && (
                 <p className="attachment-notice">{t('以下为发送给 Grok 的文字。')}</p>
               )}

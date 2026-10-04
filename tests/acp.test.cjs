@@ -614,6 +614,119 @@ test('returned replay and emitted model snapshots cannot mutate internal session
   assert.equal(f.client.models.currentModelId, 'grok');
 });
 
+test('history loading retains complete text in compact runs before constructing the snapshot', async (t) => {
+  let request;
+  const f = fixture(t, (req) => {
+    if (req.method !== 'session/load') return false;
+    request = req;
+    return true;
+  });
+  const loading = f.client.loadSession({ cwd: 'C:\\project', sessionId: 'history' });
+  await tick();
+  const deliver = (update, method = 'session/update', sessionId = 'history') =>
+    f.child().deliver({ jsonrpc: '2.0', method, params: { sessionId, update } });
+  deliver({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'question' } });
+  for (let i = 0; i < 1024; i++)
+    deliver({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '你🙂' } });
+  for (const text of ['think ', 'then act'])
+    deliver(
+      { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } },
+      '_x.ai/session_notification',
+    );
+  deliver(
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'foreign' } },
+    'session/update',
+    'other-session',
+  );
+  const retainedWhileLoading = f.client._loading.updates.length;
+  f.child().reply(request, { models });
+  const snapshot = await loading;
+  assert.equal(retainedWhileLoading, 3);
+  assert.equal(snapshot.updates.length, 3);
+  assert.equal(snapshot.updates[1].content.text, '你🙂'.repeat(1024));
+  assert.equal(snapshot.updates[2].content.text, 'think then act');
+  assert.deepEqual(
+    f.events
+      .filter((event) => event.type === 'update')
+      .map((event) => [event.sessionId, event.update.content.text]),
+    [['other-session', 'foreign']],
+  );
+});
+
+test('loaded history only merges text with identical content and update metadata', async (t) => {
+  const text = (value, extra = {}, contentExtra = {}) => ({
+    sessionUpdate: 'agent_message_chunk',
+    content: { type: 'text', text: value, ...contentExtra },
+    ...extra,
+  });
+  const updates = [
+    text(
+      'a',
+      { _desktopTurnId: 'turn-a', _meta: { source: 'one' } },
+      { annotations: { audience: ['user'] } },
+    ),
+    text(
+      'b',
+      { _meta: { source: 'one' }, _desktopTurnId: 'turn-a' },
+      { annotations: { audience: ['user'] } },
+    ),
+    text(
+      'c',
+      { _desktopTurnId: 'turn-b', _meta: { source: 'one' } },
+      { annotations: { audience: ['user'] } },
+    ),
+    text(
+      'd',
+      { _desktopTurnId: 'turn-b', _meta: { source: 'two' } },
+      { annotations: { audience: ['user'] } },
+    ),
+    text(
+      'e',
+      { _desktopTurnId: 'turn-b', _meta: { source: 'two' } },
+      { annotations: { audience: ['assistant'] } },
+    ),
+    text('f'),
+    text('g', { _meta: {} }),
+    text('h', { _meta: {} }, { _meta: { mime: 'markdown' } }),
+    text('i', { _meta: {}, custom: 'boundary' }, { _meta: { mime: 'markdown' } }),
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'user one' } },
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'user two' } },
+    text('before image'),
+    {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
+    },
+    text('after image'),
+    {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tool-1',
+      status: 'completed',
+      rawOutput: { result: 'saved' },
+    },
+    text('after tool'),
+  ];
+  const f = fixture(t, (req, child) => {
+    if (req.method !== 'session/load') return false;
+    for (const update of updates)
+      child.deliver({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: { sessionId: 'history', update },
+      });
+    child.reply(req, { models });
+    return true;
+  });
+  const snapshot = await f.client.loadSession({ cwd: 'C:\\project', sessionId: 'history' });
+  assert.deepEqual(snapshot.updates, [
+    text(
+      'ab',
+      { _desktopTurnId: 'turn-a', _meta: { source: 'one' } },
+      { annotations: { audience: ['user'] } },
+    ),
+    ...updates.slice(2),
+  ]);
+});
+
 test('failed history load discards replay and preserves the session used by later prompts', async (t) => {
   const f = fixture(t, (req, child) => {
     if (req.method !== 'session/load') return false;

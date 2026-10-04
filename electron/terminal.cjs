@@ -15,6 +15,10 @@ function dimensions(cols = 90, rows = 24) {
   return { cols, rows };
 }
 
+/**
+ * @typedef {{type: string, id?: string, cwd?: string, sequence?: number, data?: string, state?: object}} TerminalEvent
+ * @param {{spawnPty?: (shell: string, args: string[], options: import('node-pty').IPtyForkOptions | import('node-pty').IWindowsPtyForkOptions) => Pick<import('node-pty').IPty, 'onData'|'onExit'|'write'|'resize'|'kill'>, emit?: (event: TerminalEvent) => void, platform?: NodeJS.Platform}} [options]
+ */
 function createTerminalManager({ spawnPty, emit = () => {}, platform = process.platform } = {}) {
   const entries = new Map();
   const byDirectory = new Map();
@@ -58,6 +62,7 @@ function createTerminalManager({ spawnPty, emit = () => {}, platform = process.p
     }
     const size = dimensions(cols, rows);
     const shell = platform === 'win32' ? windowsPowerShellPath() : process.env.SHELL || '/bin/sh';
+    /** @type {NodeJS.ProcessEnv} */
     const env = { ...process.env, TERM: 'xterm-256color' };
     delete env.ELECTRON_RUN_AS_NODE;
     const child = (spawnPty || require('node-pty').spawn)(
@@ -130,6 +135,7 @@ function createTerminalManager({ spawnPty, emit = () => {}, platform = process.p
   }
   return {
     open,
+    /** @param {{id?: string, cwd?: string}} input */
     state({ id, cwd }) {
       const entry = id ? find(id) : entries.get(byDirectory.get(cwd));
       if (entry) flush(entry);

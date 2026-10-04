@@ -12,13 +12,15 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npx playwright install chromium
+      - run: npm run lint:electron
+      - run: npm run typecheck:electron
       - run: npm test
       - run: npm run build
       - run: npm run test:e2e
@@ -28,9 +30,17 @@ jobs:
         shell: pwsh
         run: |
           $env:GROK_DESKTOP_TEST_EXE = (Resolve-Path "release/win-unpacked/Grok Desktop.exe").Path
+          node scripts/verify-packaged-fuses.cjs $env:GROK_DESKTOP_TEST_EXE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/terminal-native.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:e2e:upgrades
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/e2e-review-fixes.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-access.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-draft-force-exit.cjs
       - name: Publish release
         shell: pwsh
         run: |

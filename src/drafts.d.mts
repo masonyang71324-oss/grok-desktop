@@ -7,6 +7,7 @@ export function createDraftStore(
   onPersist?: () => void | Promise<void>,
 ): {
   read(cwd: string, sessionId?: string): Draft;
+  attachmentPaths(): string[];
   flush(): void;
   save(cwd: string, sessionId: string | undefined, draft: Draft, deferred?: boolean): void;
   selected(cwd: string): string;

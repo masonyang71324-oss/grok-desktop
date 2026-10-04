@@ -4,6 +4,7 @@ const path = require('node:path').posix;
 
 const TEXT_LIMIT = 1024 * 1024;
 const XML_LIMIT = 32 * 1024 * 1024;
+/** @typedef {{local: string, uri: string, attrs: Record<string, import('saxes').SaxesAttributeNS>, children: (XmlNode|string)[]}} XmlNode */
 function error(code, message = code) {
   return Object.assign(new Error(message), { code });
 }
@@ -32,6 +33,7 @@ function decodeXml(bytes) {
   if ((b[0] === 0xfe && b[1] === 0xff) || (b[0] === 0 && b[1] === 0x3c)) encoding = 'utf-16be';
   return new TextDecoder(encoding, { fatal: true }).decode(b);
 }
+/** @returns {XmlNode} */
 function parseXml(bytes, { xhtml = false } = {}) {
   const parser = new SaxesParser({ xmlns: true });
   const xml = decodeXml(bytes);
@@ -70,11 +72,14 @@ function parseXml(bytes, { xhtml = false } = {}) {
   if (!root) throw error('parse-failed');
   return root;
 }
+/** @param {Pick<XmlNode, 'children'>} node @param {string} [local] @param {string} [uri] @returns {XmlNode[]} */
 function elements(node, local, uri) {
   return node.children.filter(
+    /** @returns {n is XmlNode} */
     (n) => typeof n !== 'string' && (!local || n.local === local) && (!uri || n.uri === uri),
   );
 }
+/** @param {Pick<XmlNode, 'children'>} node @param {string} local @param {string} [uri] @returns {XmlNode[]} */
 function descendants(node, local, uri) {
   const result = [];
   for (const child of elements(node)) {
@@ -83,9 +88,11 @@ function descendants(node, local, uri) {
   }
   return result;
 }
+/** @param {Pick<XmlNode, 'children'>} node @returns {string} */
 function content(node) {
   return node.children.map((n) => (typeof n === 'string' ? n : content(n))).join('');
 }
+/** @param {Pick<XmlNode, 'attrs'>} node @param {string} local @param {string} [uri] */
 function attr(node, local, uri) {
   return Object.values(node.attrs).find((a) => a.local === local && (!uri || a.uri === uri))?.value;
 }

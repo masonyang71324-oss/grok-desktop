@@ -388,6 +388,7 @@ async function pptxModel(bytes) {
   };
 }
 
+/** @param {Uint8Array} input @param {string} extension @param {{extractText?: (bytes: Buffer, extension: string) => Promise<string>}} [options] */
 async function buildOfficePreview(input, extension, { extractText } = {}) {
   const bytes = Buffer.from(input),
     ext = extension.toLowerCase();

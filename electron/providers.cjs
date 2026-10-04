@@ -7,6 +7,7 @@ const { parseForESLint, getStaticTOMLValue } = require('toml-eslint-parser');
 const { translate: t } = require('./i18n.cjs');
 
 const FIELDS = ['model', 'base_url', 'name', 'env_key', 'api_backend', 'context_window'];
+/** @type {(message: string) => never} */
 const fail = (message) => {
   throw new Error(t(message));
 };
@@ -84,7 +85,8 @@ function editDisabledList(text, parsed, id, enabled) {
   if (node.value.type !== 'TOMLArray')
     fail('此配置布局不能安全编辑。请在外部编辑器使用标准 TOML 表。');
   if (!enabled) {
-    if (getStaticTOMLValue(node.value).includes(id)) return text;
+    const disabled = getStaticTOMLValue(node.value);
+    if (Array.isArray(disabled) && disabled.includes(id)) return text;
     const last = node.value.elements.at(-1);
     const offset = last ? last.range[1] : node.value.range[0] + 1;
     return text.slice(0, offset) + `${last ? ', ' : ''}${quote(id)}` + text.slice(offset);
@@ -171,7 +173,14 @@ class ProviderStore {
       parsed = parse(text),
       token = randomUUID();
     this.baseline = { token, text };
-    const disabled = parsed.value.models?.disabled_models || [];
+    const modelSettings = parsed.value.models;
+    const disabled =
+      modelSettings &&
+      typeof modelSettings === 'object' &&
+      !Array.isArray(modelSettings) &&
+      !(modelSettings instanceof Date)
+        ? modelSettings.disabled_models || []
+        : [];
     if (!Array.isArray(disabled) || disabled.some((id) => typeof id !== 'string'))
       fail('此配置布局不能安全编辑。请在外部编辑器使用标准 TOML 表。');
     const models = Object.entries(parsed.value.model || {})

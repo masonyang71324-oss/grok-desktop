@@ -179,6 +179,7 @@ test('tool output shows separate old and new content and opens reported file loc
     flushSync(() =>
       root.render(
         React.createElement(Message, {
+          expanded: true,
           row: {
             id: 'tool',
             kind: 'tool',
