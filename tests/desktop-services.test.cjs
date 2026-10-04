@@ -9,6 +9,30 @@ const { createNotifications } = require('../electron/notifications.cjs');
 const { createLogger } = require('../electron/logger.cjs');
 const { normalizeSettings, resolveGrok } = require('../electron/settings.cjs');
 
+test('continuous workspace writes still publish bounded refreshes and close cancels the pending refresh', (t) => {
+  const fsSync = require('node:fs');
+  const { createWorkspaceWatcher } = require('../electron/workspace-watch.cjs');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let changed;
+  t.mock.method(fsSync, 'watch', (cwd, options, callback) => {
+    changed = callback;
+    return { on() {}, close() {} };
+  });
+  const events = [];
+  const watcher = createWorkspaceWatcher((event) => events.push(event));
+  watcher.start('C:/project');
+  for (let n = 0; n < 15; n++) {
+    changed('change', 'src/main.ts');
+    t.mock.timers.tick(100);
+  }
+  assert.ok(events.length >= 1, 'a stream of edits must not postpone refresh indefinitely');
+  assert.ok(events.length <= 2, 'refresh must remain batched');
+  watcher.close();
+  const count = events.length;
+  t.mock.timers.tick(2000);
+  assert.equal(events.length, count);
+});
+
 test('saved task templates retain exact text through settings writes and later preference changes', async (t) => {
   const { writeSettings, loadSettings } = require('../electron/settings.cjs');
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-templates-test-'));

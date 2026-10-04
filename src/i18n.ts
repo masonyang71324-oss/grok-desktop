@@ -10,6 +10,9 @@ import { conversationUpgrades } from './locales/conversation-upgrades';
 import { workspaceUpgrades } from './locales/workspace-upgrades';
 import { runtimeUpgrades } from './locales/runtime-upgrades';
 import { desktopTools } from './locales/desktop-tools';
+import { recovery } from './locales/recovery';
+import { checkpointReview } from './locales/checkpoint-review';
+import { reviewFixes } from './locales/review-fixes';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
@@ -25,6 +28,9 @@ const english: Record<string, string> = {
   ...workspaceUpgrades,
   ...runtimeUpgrades,
   ...desktopTools,
+  ...recovery,
+  ...checkpointReview,
+  ...reviewFixes,
 };
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';

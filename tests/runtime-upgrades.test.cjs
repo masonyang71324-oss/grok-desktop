@@ -155,6 +155,7 @@ test('official installation requires zero exit and verified executable version',
   const state = await installer.start();
   assert.equal(state.status, 'installed');
   assert.equal(state.version, '1.0.46');
+  assert.match(calls[0].exe, /^[A-Z]:\\.*\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i);
   assert.equal(calls[0].options.env.GROK_CHANNEL, 'stable');
   assert.equal(calls[0].options.env.GROK_BIN_DIR, path.dirname(state.path));
   assert.equal(calls[0].options.windowsHide, true);

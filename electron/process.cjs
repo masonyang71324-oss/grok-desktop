@@ -1,10 +1,15 @@
 const { translate: t } = require('./i18n.cjs');
 const { spawn } = require('node:child_process');
 
-function runProcess(executable, args, { cwd, timeout = 30000, maxBytes = 4 * 1024 * 1024 } = {}) {
+function runProcess(
+  executable,
+  args,
+  { cwd, env, timeout = 30000, maxBytes = 4 * 1024 * 1024 } = {},
+) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
+      env,
       windowsHide: true,
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],

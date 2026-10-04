@@ -35,6 +35,7 @@ export interface TaskOutcomeResult {
   stopReason?: string;
   error?: string;
   checkpointId?: string;
+  checkpointSkipped?: boolean;
 }
 export interface TaskOutcomeSummary {
   status: TaskOutcomeResult['status'];

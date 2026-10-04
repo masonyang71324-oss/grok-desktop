@@ -649,3 +649,17 @@
     margin-top: 22px;
   }
 }
+/* Persistent recovery notice: keep the saved backup reachable until dismissed. */
+.recovery-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.recovery-banner p {
+  margin: 5px 0;
+}

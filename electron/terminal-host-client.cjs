@@ -1,5 +1,6 @@
 const { fork, spawn } = require('node:child_process');
 const path = require('node:path');
+const { windowsSystemExecutable } = require('./system-launch.cjs');
 // Every process controlled here is the exact helper created for one terminal.
 function spawnHostedPty(shell, args, options) {
   const host = fork(path.join(__dirname, 'terminal-host.cjs'), [], {
@@ -59,10 +60,14 @@ function spawnHostedPty(shell, args, options) {
       if (closed || stopping) return;
       stopping = true;
       if (process.platform === 'win32') {
-        const killer = spawn('taskkill.exe', ['/PID', String(host.pid), '/T', '/F'], {
-          windowsHide: true,
-          stdio: 'ignore',
-        });
+        const killer = spawn(
+          windowsSystemExecutable('taskkill.exe'),
+          ['/PID', String(host.pid), '/T', '/F'],
+          {
+            windowsHide: true,
+            stdio: 'ignore',
+          },
+        );
         killer.on('error', () => {
           stopping = false;
         });

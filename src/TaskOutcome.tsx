@@ -126,6 +126,18 @@ export const TaskOutcome = memo(function TaskOutcome({
           )}
         </div>
       </div>
+      {result.checkpointSkipped ? (
+        <p className="task-outcome-note" role="status">
+          {t('本轮未创建检查点，无法恢复本轮文件。')}
+        </p>
+      ) : (recorded.skippedCount ?? 0) > 0 ? (
+        <p className="task-outcome-note" role="status">
+          {t('检查点不完整，无法完整恢复本轮文件。')}
+        </p>
+      ) : null}
+      {recorded.fileCount === 0 && (
+        <p className="task-outcome-note">{t('未记录到可恢复变更，不代表本轮没有文件变化。')}</p>
+      )}
       <details className="task-outcome-details">
         <summary>{t('变更与验证明细')}</summary>
         {result.status !== 'completed' && (

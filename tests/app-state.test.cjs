@@ -59,7 +59,8 @@ async function fixture(
     App,
     stopped = false,
     sendFailure,
-    loadOverride;
+    loadOverride,
+    newOverride;
   let currentFakeSession = '',
     createdSessions = 0;
   const fakeSummaries = summaries.map((item) => ({ ...item }));
@@ -205,7 +206,9 @@ async function fixture(
     if (command === 'session.enqueue') return { queueId: 'queued-1' };
     if (command === 'session.load')
       return loadOverride ? loadOverride(payload) : client.loadSession(payload);
-    if (command === 'session.new') return client.newSession(payload);
+    if (command === 'session.new')
+      return newOverride ? newOverride(payload) : client.newSession(payload);
+    if (command === 'session.cancel' || command === 'drafts.flush') return {};
     if (command === 'session.configure') return client.configure(payload);
     if (command === 'session.send') {
       if (sendFailure) return sendFailure();
@@ -259,7 +262,7 @@ async function fixture(
   const returnStatement = appFunction.body.statements.find(ts.isReturnStatement);
   const source =
     original.slice(0, returnStatement.getStart(sourceFile)) +
-    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, permissions, tasks, appUpdate, currentEffort, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
+    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, pending, cancelling, stop, permissions, tasks, appUpdate, currentEffort, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -302,6 +305,7 @@ async function fixture(
     children,
     setSendFailure: (fn) => (sendFailure = fn),
     setLoadOverride: (fn) => (loadOverride = fn),
+    setNewOverride: (fn) => (newOverride = fn),
     emit: (event) => listener?.(event),
     close() {
       windowEvents.get('beforeunload')?.();
@@ -311,6 +315,71 @@ async function fixture(
     },
   };
 }
+
+test('stop during send preparation cancels the correct session before turn-start and preserves draft', async () => {
+  const f = await fixture();
+  let rejectSend;
+  try {
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    f.view.setDraft('Keep this request until it is accepted');
+    await settle();
+    f.setSendFailure(
+      () =>
+        new Promise((resolve, reject) => {
+          rejectSend = reject;
+        }),
+    );
+    const sending = f.view.send();
+    await settle();
+    assert.equal(f.view.pending, true);
+    assert.equal(f.view.run, null);
+    await f.view.stop();
+    await settle();
+    assert.equal(
+      f.requests.filter(
+        (r) => r.command === 'session.cancel' && r.payload.sessionId === 'session-a',
+      ).length,
+      1,
+    );
+    rejectSend(new Error('已取消发送。'));
+    await sending;
+    await settle();
+    assert.equal(f.view.draft, 'Keep this request until it is accepted');
+    assert.equal(f.view.busy, false);
+    assert.equal(f.view.cancelling, false);
+  } finally {
+    rejectSend?.(new Error('probe cleanup'));
+    f.close();
+  }
+});
+
+test('stop while creating a new session never submits the cancelled draft', async () => {
+  const f = await fixture();
+  let finishNew;
+  try {
+    f.view.setDraft('Do not submit after stop');
+    await settle();
+    f.setNewOverride(
+      (payload) =>
+        new Promise((resolve) => {
+          finishNew = () => f.client.newSession(payload).then(resolve);
+        }),
+    );
+    const sending = f.view.send();
+    await settle();
+    assert.equal(f.view.pending, true);
+    await f.view.stop();
+    await finishNew();
+    await sending;
+    await settle();
+    assert.equal(f.requests.filter((r) => r.command === 'session.send').length, 0);
+    assert.equal(f.view.draft, 'Do not submit after stop');
+    assert.equal(f.view.busy, false);
+  } finally {
+    f.close();
+  }
+});
 
 test('default effort in a new project does not inherit the previous session applied effort', async () => {
   const modelState = {

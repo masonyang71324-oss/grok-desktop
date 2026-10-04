@@ -5,7 +5,37 @@ const { randomUUID } = require('node:crypto');
 const { GrokClient } = require('./acp.cjs');
 const { RuntimeActivity } = require('./background.cjs');
 const { translate: t } = require('./i18n.cjs');
+const { readJsonWithRecovery, assertJsonWritable, isObject } = require('./json-recovery.cjs');
 const copy = (value) => structuredClone(value);
+
+function validQueueItem(item) {
+  return (
+    isObject(item) &&
+    typeof item.id === 'string' &&
+    isObject(item.payload) &&
+    (item.payload.text === undefined || typeof item.payload.text === 'string') &&
+    (item.payload.attachments === undefined ||
+      (Array.isArray(item.payload.attachments) && item.payload.attachments.every(isObject)))
+  );
+}
+
+function validSavedQueue(records) {
+  return (
+    Array.isArray(records) &&
+    records.every(
+      (saved) =>
+        isObject(saved) &&
+        typeof saved.sessionId === 'string' &&
+        !!saved.sessionId &&
+        typeof saved.cwd === 'string' &&
+        !!saved.cwd &&
+        (saved.queue === undefined ||
+          (Array.isArray(saved.queue) && saved.queue.every(validQueueItem))) &&
+        (saved.active == null || validQueueItem(saved.active)) &&
+        (saved.lastTurn === undefined || isObject(saved.lastTurn)),
+    )
+  );
+}
 
 function isIdleEntry(entry) {
   const client = entry.client;
@@ -54,10 +84,17 @@ class SessionHub {
     this.pending = new Set();
     this.maxIdleConnections = maxIdleConnections;
     this.activeSessionId = null;
+    this.recoveryWarnings = [];
     this.catalog = this.createClient(emit);
-    if (storageFile && fs.existsSync(storageFile)) {
-      try {
-        for (const saved of JSON.parse(fs.readFileSync(storageFile, 'utf8'))) {
+    if (storageFile) {
+      const records = readJsonWithRecovery(storageFile, {
+        kind: 'queue',
+        isValid: validSavedQueue,
+        onRecovery: (warning) => this.recoveryWarnings.push(warning),
+      });
+      if (records) {
+        this.lastPersistedData = JSON.stringify(records);
+        for (const saved of records) {
           const entry = this._entry(saved.sessionId, saved.cwd);
           entry.title = saved.title || '';
           entry.queue = saved.queue || [];
@@ -69,14 +106,12 @@ class SessionHub {
               : entry.paused
                 ? 'paused'
                 : 'idle';
-          if (saved.active) entry.queue.unshift(saved.active);
+          if (saved.active) {
+            // A disconnect can persist both the active turn and its returned queue item.
+            entry.queue = entry.queue.filter((item) => item.id !== saved.active.id);
+            entry.queue.unshift({ ...saved.active, queued: true, interrupted: true });
+          }
         }
-      } catch (error) {
-        this.emit({
-          type: 'notification',
-          kind: 'queue-recovery-error',
-          payload: { message: error.message },
-        });
       }
     }
   }
@@ -175,6 +210,7 @@ class SessionHub {
 
   _persist() {
     if (!this.storageFile || this.closed) return;
+    assertJsonWritable(this.storageFile);
     const records = [...this.sessions.values()]
       .filter((entry) => entry.queue.length || entry.running || entry.lastTurn)
       .map((entry) => ({
@@ -186,9 +222,12 @@ class SessionHub {
         active: entry.running?.item,
         lastTurn: entry.lastTurn,
       }));
+    const data = JSON.stringify(records);
+    if (data === this.lastPersistedData) return;
     fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
-    fs.writeFileSync(`${this.storageFile}.tmp`, JSON.stringify(records));
+    fs.writeFileSync(`${this.storageFile}.tmp`, data, { encoding: 'utf8', flush: true });
     fs.renameSync(`${this.storageFile}.tmp`, this.storageFile);
+    this.lastPersistedData = data;
   }
 
   _changed() {
@@ -214,7 +253,7 @@ class SessionHub {
       startedAt: entry.running?.startedAt || foreground?.startedAt,
       lastTurn: entry.lastTurn,
       activeTurnStartIndex: foreground?.activeTurnStartIndex,
-      queued: entry.queue.map(({ id, payload, createdAt }) => ({
+      queued: entry.queue.map(({ id, payload, createdAt, interrupted }) => ({
         id,
         text: payload.text || '',
         attachments: (payload.attachments || []).map(({ name, path, kind }) => ({
@@ -223,6 +262,7 @@ class SessionHub {
           kind,
         })),
         createdAt,
+        ...(interrupted ? { interrupted: true } : {}),
       })),
       error: entry.error,
       permissions: [...entry.permissions.values()],
@@ -279,7 +319,7 @@ class SessionHub {
             entry.running.accepted &&
             !entry.queue.some((item) => item.id === entry.running.item.id)
           )
-            entry.queue.unshift({ ...entry.running.item, queued: true });
+            entry.queue.unshift({ ...entry.running.item, queued: true, interrupted: true });
         }
         entry.status = entry.running ? 'interrupted' : 'error';
         entry.permissions.clear();
@@ -660,6 +700,7 @@ class SessionHub {
       ...(stopReason ? { stopReason } : {}),
       ...(error ? { error } : {}),
       ...(checkpoint?.checkpointId ? { checkpointId: checkpoint.checkpointId } : {}),
+      ...(checkpoint?.checkpointSkipped ? { checkpointSkipped: true } : {}),
     };
     entry.running = null;
     entry.permissions.clear();
@@ -763,7 +804,15 @@ class SessionHub {
     return this.catalog.restart();
   }
   async dispose() {
-    this._persist();
+    try {
+      this._persist();
+    } catch (error) {
+      this.emit({
+        type: 'notification',
+        kind: 'queue-save-error',
+        payload: { message: error.message },
+      });
+    }
     this.closed = true;
     for (const entry of this.sessions.values()) {
       entry.paused = true;

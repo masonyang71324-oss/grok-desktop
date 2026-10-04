@@ -65,17 +65,14 @@ export function updateMarkdown(
   const tokens = conversationMarkdown.lexer(text);
   const previous = renderedBlocks.get(container) || [];
   const blocks: RenderedBlock[] = [];
-  // Raw HTML can open a container in one token and close it after Markdown tokens.
-  // Sanitize those documents together to preserve the existing nesting semantics.
-  const groups = tokens.some((token) => token.type === 'html')
-    ? [tokens]
-    : tokens
-        .filter((token) => token.type !== 'space')
-        .map((token) => {
-          const single = [token] as TokensList;
-          single.links = tokens.links;
-          return single;
-        });
+  // Raw HTML tokens are escaped, so they cannot create cross-token containers.
+  const groups = tokens
+    .filter((token) => token.type !== 'space')
+    .map((token) => {
+      const single = [token] as TokensList;
+      single.links = tokens.links;
+      return single;
+    });
   for (const group of groups) {
     const html = conversationMarkdown.parser(group);
     if (!html) continue;

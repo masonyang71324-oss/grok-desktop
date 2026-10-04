@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { runProcess } = require('./process.cjs');
 const { translate: t } = require('./i18n.cjs');
+const { windowsPowerShellPath } = require('./system-launch.cjs');
 async function launchDictation({
   platform = process.platform,
   run = runProcess,
@@ -8,7 +9,7 @@ async function launchDictation({
 } = {}) {
   if (platform !== 'win32') throw new Error(t('此语音入口需要 Windows 语音输入。'));
   const result = await run(
-    'powershell.exe',
+    windowsPowerShellPath(),
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
     { timeout: 10000, maxBytes: 4000 },
   );

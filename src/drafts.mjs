@@ -18,9 +18,9 @@ export function sameDraft(left, right) {
   );
 }
 
-export function createDraftStore(storage, onError = () => {}) {
+export function createDraftStore(storage, onError = () => {}, onPersist = () => {}) {
   let state = { drafts: {}, selected: {}, summaries: {} };
-  let timer;
+  let timer, maxTimer;
   try {
     const saved = JSON.parse(storage?.getItem(storageKey) || 'null');
     if (saved?.drafts && saved?.selected) state = { ...saved, summaries: saved.summaries || {} };
@@ -29,9 +29,14 @@ export function createDraftStore(storage, onError = () => {}) {
   }
   const write = () => {
     clearTimeout(timer);
+    clearTimeout(maxTimer);
     timer = undefined;
+    maxTimer = undefined;
     try {
-      storage?.setItem(storageKey, JSON.stringify(state));
+      if (storage) {
+        storage.setItem(storageKey, JSON.stringify(state));
+        void Promise.resolve(onPersist()).catch(onError);
+      }
     } catch {
       onError();
     }
@@ -68,6 +73,7 @@ export function createDraftStore(storage, onError = () => {}) {
       if (deferred) {
         clearTimeout(timer);
         timer = setTimeout(write, 300);
+        maxTimer ??= setTimeout(write, 1000);
       } else write();
     },
     selected(cwd) {

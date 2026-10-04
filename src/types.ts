@@ -208,6 +208,7 @@ export type DesktopEvent =
   | { type: 'sessions-changed'; sessionId?: string }
   | { type: 'workspace-changed'; cwd: string }
   | { type: 'checkpoints-changed'; cwd: string; sessionId?: string }
+  | { type: 'checkpoint-storage-request'; cwd: string; sessionId?: string }
   | { type: 'tasks-changed'; tasks: TaskSummary[] }
   | { type: 'runner-changed'; cwd: string; state: RunnerState };
 export interface TaskPermission {
@@ -224,7 +225,13 @@ export interface TaskRuntime {
   turnId?: string;
   activeTurnStartIndex?: number;
   connection?: string;
-  queued: { id: string; text: string; createdAt: string; attachments?: Attachment[] }[];
+  queued: {
+    id: string;
+    text: string;
+    createdAt: string;
+    attachments?: Attachment[];
+    interrupted?: boolean;
+  }[];
   error?: string;
   permissions: TaskPermission[];
 }
@@ -246,6 +253,7 @@ export interface TaskTurnResult {
   stopReason?: string;
   error?: string;
   checkpointId?: string;
+  checkpointSkipped?: boolean;
 }
 export interface RunnerState {
   status: string;
@@ -264,7 +272,29 @@ export interface Checkpoint {
   files: { path: string; status: string; before?: string | null; after?: string | null }[];
   skipped?: { path: string; reason: string }[];
 }
+export interface CheckpointStorageRecord {
+  id: string;
+  cwd: string;
+  sessionId: string;
+  createdAt: string;
+  status: string;
+  fileCount: number | null;
+  bytes: number;
+  kind: 'turn' | 'restore' | 'unreadable';
+}
+export interface CheckpointStorage {
+  bytes: number;
+  limitBytes: number;
+  records: CheckpointStorageRecord[];
+}
 export interface Bootstrap {
+  recoveryWarnings?: {
+    kind: 'settings' | 'queue';
+    message: string;
+    sourcePath: string;
+    backupPath?: string;
+    recoveryFailed?: boolean;
+  }[];
   capabilities?: { image?: boolean };
   settings: Settings;
   version: string;

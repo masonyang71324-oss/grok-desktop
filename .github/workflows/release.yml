@@ -29,6 +29,8 @@ jobs:
         run: |
           $env:GROK_DESKTOP_TEST_EXE = (Resolve-Path "release/win-unpacked/Grok Desktop.exe").Path
           npm run test:e2e:upgrades
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-review-fixes.cjs
       - name: Publish release
         shell: pwsh
         run: |

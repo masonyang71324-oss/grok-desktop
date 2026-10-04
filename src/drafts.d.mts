@@ -4,6 +4,7 @@ export function sameDraft(left: Draft, right: Draft): boolean;
 export function createDraftStore(
   storage?: Pick<Storage, 'getItem' | 'setItem'>,
   onError?: () => void,
+  onPersist?: () => void | Promise<void>,
 ): {
   read(cwd: string, sessionId?: string): Draft;
   flush(): void;

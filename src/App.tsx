@@ -148,6 +148,10 @@ export default function App() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<Settings>(defaults);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [recoveryWarnings, setRecoveryWarnings] = useState<
+    NonNullable<Bootstrap['recoveryWarnings']>
+  >([]);
+  const [checkpointStorageRequested, setCheckpointStorageRequested] = useState(false);
   const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
   const [engineAction, setEngineAction] = useState('');
   const [engineError, setEngineError] = useState('');
@@ -171,6 +175,11 @@ export default function App() {
   const [plan, setPlan] = useState<any[]>([]);
   const [run, setRun] = useState<Run | null>(null);
   const [pending, setPending] = useState(false);
+  const preparingSendRef = useRef<{
+    sessionId?: string;
+    cancelled: boolean;
+    submitted: boolean;
+  } | null>(null);
   const [configuring, setConfiguring] = useState(false);
   const [turnNotice, setTurnNotice] = useState('');
   const [cancelling, setCancelling] = useState(false);
@@ -270,12 +279,16 @@ export default function App() {
   const draftStoreRef = useRef<ReturnType<typeof createDraftStore> | null>(null);
   const draftStorageError = useRef(false);
   if (!draftStoreRef.current)
-    draftStoreRef.current = createDraftStore(window.localStorage, () => {
-      if (!draftStorageError.current) {
-        draftStorageError.current = true;
-        notify(t('草稿暂时无法保存到本机，请保留重要内容后再关闭应用。'));
-      }
-    });
+    draftStoreRef.current = createDraftStore(
+      window.localStorage,
+      () => {
+        if (!draftStorageError.current) {
+          draftStorageError.current = true;
+          notify(t('草稿暂时无法保存到本机，请保留重要内容后再关闭应用。'));
+        }
+      },
+      () => request('drafts.flush').then(() => undefined),
+    );
   const composerRef = useRef({ cwd: '', sessionId: '', draftKey: 'initial' });
   const draftAliases = useRef(new Map<string, PreviewOwner>());
   const draftRestoredRef = useRef(false);
@@ -514,6 +527,7 @@ export default function App() {
         })
         .catch(() => {});
       setBootstrap(data);
+      setRecoveryWarnings(data.recoveryWarnings || []);
       setCliStatus({
         ...data.cli,
         authStatus: data.cli.authStatus || 'unknown',
@@ -643,6 +657,11 @@ export default function App() {
         return;
       }
       if (event.type === 'runner-changed') return;
+      if (event.type === 'checkpoint-storage-request') {
+        setCheckpointStorageRequested(true);
+        setDialog('project-tools');
+        return;
+      }
       if (event.type === 'checkpoints-changed') {
         if (
           event.cwd === cwdRef.current &&
@@ -1042,18 +1061,23 @@ export default function App() {
     setTurnError('');
     setTurnNotice('');
     let target = sessionRef.current;
+    const targetCwd = cwdRef.current;
+    const preparation = { sessionId: target?.sessionId, cancelled: false, submitted: false };
+    preparingSendRef.current = preparation;
     let userRowId = '';
     const files = [...submitted.attachments];
     try {
       if (!target) {
         target = await request<SessionSnapshot>('session.new', {
-          cwd: cwdRef.current,
+          cwd: targetCwd,
           ...preferences(true),
         });
         applySnapshot(target, true);
         busyRef.current = true;
         setPending(true);
       }
+      preparation.sessionId = target.sessionId;
+      if (preparation.cancelled) throw new Error(t('已取消发送。'));
       const userRow: TimelineRow = {
         id: crypto.randomUUID(),
         kind: 'user',
@@ -1065,8 +1089,9 @@ export default function App() {
       userRowId = userRow.id;
       setRows((previous) => [...previous, userRow]);
       stickToBottom.current = true;
+      preparation.submitted = true;
       const result = await request<{ turnId?: string; queueId?: string }>('session.send', {
-        cwd: cwdRef.current,
+        cwd: targetCwd,
         sessionId: target.sessionId,
         text,
         ...preferences(),
@@ -1094,23 +1119,38 @@ export default function App() {
       runRef.current = null;
       setPending(false);
       setRun(null);
+      setCancelling(false);
       if (userRowId) setRows((previous) => previous.filter((row) => row.id !== userRowId));
       setTurnError(errorText(e));
       updateAuthentication(errorText(e));
       notify(errorText(e));
       persistDraft();
       if (needsRestoreRef.current) void restoreSession();
+    } finally {
+      if (preparingSendRef.current === preparation) preparingSendRef.current = null;
     }
   }
   async function stop() {
-    if (!runRef.current) return;
+    const preparation = preparingSendRef.current;
+    const active = runRef.current;
+    if ((!preparation && !active) || preparation?.cancelled) return;
+    if (preparation) preparation.cancelled = true;
     setCancelling(true);
     try {
-      await request('session.cancel', { sessionId: runRef.current.sessionId });
+      const sessionId =
+        active?.sessionId || (preparation?.submitted ? preparation.sessionId : undefined);
+      if (sessionId) await request('session.cancel', { sessionId });
     } catch (e) {
       setCancelling(false);
       notify(errorText(e));
     }
+  }
+  async function inspectTaskChanges(task: TaskSummary) {
+    await loadConversation(task);
+    if (sessionRef.current?.sessionId !== task.sessionId || cwdRef.current !== task.cwd) return;
+    setDialog(null);
+    setInspectorTab('changes');
+    setInspector(true);
   }
   function recover(error: string) {
     const action = classifyFailure(error).action;
@@ -1838,6 +1878,7 @@ export default function App() {
           >
             <TaskCenter
               embedded
+              onInspectChanges={(task) => void inspectTaskChanges(task)}
               tasks={tasks}
               notify={notify}
               onClose={() => setNavigationTab('sessions')}
@@ -1899,6 +1940,48 @@ export default function App() {
         />
       </aside>
       <main className="workspace">
+        {recoveryWarnings.length > 0 && (
+          <section className="recovery-banner" role="alert">
+            <div>
+              <strong>{t('本机数据恢复提醒')}</strong>
+              {recoveryWarnings.map((warning, index) => (
+                <div key={index}>
+                  <p>
+                    {t(
+                      warning.kind === 'settings'
+                        ? '设置文件无法读取，已使用默认设置。'
+                        : '任务队列文件无法读取，原任务没有自动重新发送。',
+                    )}
+                  </p>
+                  <p>
+                    {t(
+                      warning.recoveryFailed
+                        ? '原文件无法备份，相关保存已暂停，请先保留原文件。'
+                        : '原文件已另存为备份，可以保留后进一步恢复。',
+                    )}
+                  </p>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      void request('system.open', {
+                        target: 'file',
+                        path: (warning.backupPath || warning.sourcePath).replace(
+                          /[/\\][^/\\]+$/,
+                          '',
+                        ),
+                      }).catch((error) => notify(errorText(error)))
+                    }
+                  >
+                    {t('打开数据目录')}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button className="text-button" onClick={() => setRecoveryWarnings([])}>
+              {t('知道了')}
+            </button>
+          </section>
+        )}
         <header className="topbar">
           <div className="breadcrumb">
             {!sidebar && (
@@ -2443,7 +2526,7 @@ export default function App() {
                   <button
                     className="send-button stop"
                     onClick={() => void stop()}
-                    disabled={pending || cancelling}
+                    disabled={cancelling}
                     title={cancelling ? t('正在停止') : t('停止生成')}
                     aria-label={t('停止生成')}
                   >
@@ -2722,6 +2805,7 @@ export default function App() {
         {dialog === 'tasks' && (
           <TaskCenter
             tasks={tasks}
+            onInspectChanges={(task) => void inspectTaskChanges(task)}
             onClose={() => setDialog(null)}
             notify={notify}
             onOpen={(task) => {
@@ -2733,6 +2817,7 @@ export default function App() {
         {dialog === 'project-tools' && (
           <ProjectTools
             cwd={cwd}
+            initialStorage={checkpointStorageRequested}
             sessionId={session?.sessionId}
             editorOpen={editorOpen}
             initialCheckpointId={projectCheckpointTarget?.id}
@@ -2745,6 +2830,7 @@ export default function App() {
             onClose={() => {
               setDialog(null);
               setProjectCheckpointTarget(null);
+              setCheckpointStorageRequested(false);
             }}
             notify={notify}
           />

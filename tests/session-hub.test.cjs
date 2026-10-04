@@ -948,3 +948,155 @@ test('cached live rows retain authoritative owner IDs and workflow control tools
   });
   await hub.dispose();
 });
+
+for (const bad of [
+  '[{"sessionId":',
+  '{}',
+  '[{"sessionId":"s","cwd":"/project","queue":{}}]',
+  '[{"sessionId":"s","cwd":"/project","queue":[{"id":"q","payload":null}]}]',
+]) {
+  test(`queue corruption is backed up and its warning remains readable: ${bad}`, async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-queue-recovery-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const storageFile = path.join(directory, 'queue.json');
+    fs.writeFileSync(storageFile, bad);
+    const { hub } = fixture({ storageFile });
+    t.after(() => hub.dispose());
+    assert.equal(hub.recoveryWarnings?.length, 1);
+    assert.equal(hub.recoveryWarnings[0].kind, 'queue');
+    const backup = hub.recoveryWarnings[0].backupPath;
+    assert.match(backup, /corrupt/);
+    assert.equal(fs.readFileSync(backup, 'utf8'), bad);
+    await hub.newSession({ cwd: directory });
+    assert.deepEqual(JSON.parse(fs.readFileSync(storageFile, 'utf8')), []);
+    assert.equal(fs.readFileSync(backup, 'utf8'), bad);
+    assert.equal(hub.recoveryWarnings.length, 1);
+  });
+}
+
+test('failed queue recovery backup never overwrites corrupt data on later state changes', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-queue-recovery-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const storageFile = path.join(directory, 'queue.json'),
+    bad = Buffer.from('[broken\r\n');
+  fs.writeFileSync(storageFile, bad);
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (source, target) => {
+    if (source === storageFile) throw Object.assign(new Error('backup denied'), { code: 'EACCES' });
+    return rename(source, target);
+  });
+  const { hub } = fixture({ storageFile });
+  assert.equal(hub.recoveryWarnings?.[0]?.recoveryFailed, true);
+  const session = await hub.newSession({ cwd: directory });
+  await hub.send({ ...session, text: 'new task' });
+  await hub.dispose();
+  assert.deepEqual(fs.readFileSync(storageFile), bad);
+});
+
+test('queue persistence flushes changed state before send and skips identical notification snapshots', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-queue-write-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const storageFile = path.join(directory, 'queue.json');
+  const writes = [],
+    write = fs.writeFileSync;
+  t.mock.method(fs, 'writeFileSync', (filename, data, options) => {
+    if (filename === `${storageFile}.tmp`)
+      writes.push({ data: JSON.parse(data), flush: options?.flush });
+    return write(filename, data, options);
+  });
+  const { hub, clients } = fixture({ storageFile });
+  const session = await hub.newSession({ cwd: directory });
+  const send = clients[1].send.bind(clients[1]);
+  clients[1].send = async (payload) => {
+    const saved = JSON.parse(fs.readFileSync(storageFile, 'utf8'));
+    assert.equal(saved[0].active.payload.text, payload.text);
+    assert.equal(writes.at(-1).flush, true);
+    return send(payload);
+  };
+  await hub.send({ ...session, text: 'persist before sending' });
+  const before = writes.length;
+  for (let i = 0; i < 3; i++)
+    clients[1].publish({ type: 'notification', kind: 'progress', payload: { progress: i } });
+  assert.equal(writes.length, before);
+  hub.enqueue({ ...session, text: 'next' });
+  assert.equal(writes.length, before + 1);
+  assert.equal(writes.at(-1).data[0].queue[0].payload.text, 'next');
+  assert.ok(writes.every((item) => item.flush === true));
+  await hub.dispose();
+});
+
+test('recovered active requests retain the interrupted marker across another restart until manually resumed', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-queue-interrupted-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const storageFile = path.join(directory, 'queue.json');
+  const first = fixture({ storageFile });
+  const session = await first.hub.newSession({ cwd: directory });
+  await first.hub.send({ ...session, text: 'partially executed' });
+  first.hub.enqueue({ ...session, text: 'not started' });
+  await first.hub.dispose();
+  const second = fixture({ storageFile });
+  assert.equal(second.hub.listTasks()[0].queued[0].interrupted, true);
+  assert.equal(second.hub.listTasks()[0].queued[1].interrupted, undefined);
+  await second.hub.dispose();
+  const third = fixture({ storageFile });
+  assert.equal(third.hub.listTasks()[0].queued[0].interrupted, true);
+  await third.hub.loadSession(session);
+  await tick();
+  assert.deepEqual(third.clients[1].sent, []);
+  third.hub.resume(session);
+  await tick();
+  assert.deepEqual(third.clients[1].sent, ['partially executed']);
+  await third.hub.dispose();
+});
+
+test('connection loss labels the returned request interrupted without labelling later queued input', async () => {
+  const { hub, clients } = fixture();
+  const session = await hub.newSession({ cwd: '/project' });
+  await hub.send({ ...session, text: 'partially executed' });
+  hub.enqueue({ ...session, text: 'not started' });
+  clients[1].disconnect();
+  await tick();
+  assert.equal(hub.listTasks()[0].queued[0].interrupted, true);
+  assert.equal(hub.listTasks()[0].queued[1].interrupted, undefined);
+  assert.deepEqual(clients[1].sent, ['partially executed']);
+  await hub.dispose();
+});
+
+test('successful turns keep an explicit checkpoint-skipped result', async () => {
+  const { hub, clients } = fixture({ afterTurn: async () => ({ checkpointSkipped: true }) });
+  const session = await hub.newSession({ cwd: '/project' });
+  await hub.send({ ...session, text: 'approved without checkpoint' });
+  clients[1].finish();
+  await tick();
+  assert.equal(hub.listTasks()[0].lastTurn.status, 'completed');
+  assert.equal(hub.listTasks()[0].lastTurn.checkpointSkipped, true);
+  await hub.dispose();
+});
+
+test('restart during interrupted-turn finalization does not duplicate its already-returned queue item', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-queue-finalizing-'));
+  const storageFile = path.join(directory, 'queue.json');
+  let release, second;
+  const finishing = new Promise((resolve) => {
+    release = resolve;
+  });
+  const first = fixture({ storageFile, afterTurn: () => finishing });
+  try {
+    const session = await first.hub.newSession({ cwd: directory });
+    await first.hub.send({ ...session, text: 'partially executed' });
+    first.hub.enqueue({ ...session, text: 'not started' });
+    first.clients[1].disconnect();
+    second = fixture({ storageFile });
+    assert.deepEqual(
+      second.hub.listTasks()[0].queued.map((item) => item.text),
+      ['partially executed', 'not started'],
+    );
+    assert.equal(second.hub.listTasks()[0].queued[0].interrupted, true);
+    assert.deepEqual(second.clients[1].sent, []);
+  } finally {
+    release();
+    await first.hub.dispose();
+    await second?.hub.dispose();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

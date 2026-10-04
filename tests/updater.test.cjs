@@ -104,3 +104,24 @@ test('stable version comparison handles v-prefixes and multi-digit components', 
   assert.equal(isNewerVersion('1.4.0', '1.4.0'), false);
   assert.equal(isNewerVersion('1.3.9', '1.4.0'), false);
 });
+
+test('English update errors retain their actual service status and installation reason', async () => {
+  const { setLocale } = require('../electron/i18n.cjs');
+  setLocale('en');
+  try {
+    const updater = createAppUpdater({
+      currentVersion: '1.7.4',
+      mode: 'portable',
+      emit() {},
+      fetchFn: async () => ({ ok: false, status: 403 }),
+    });
+    await assert.rejects(() => updater.check(), /403/);
+    const state = updater.status();
+    assert.equal(state.status, 'error');
+    assert.match(state.error, /403/);
+    assert.doesNotMatch(state.error, /[\u4e00-\u9fff]/);
+    await assert.rejects(() => updater.install(), /portable/i);
+  } finally {
+    setLocale('zh-CN');
+  }
+});

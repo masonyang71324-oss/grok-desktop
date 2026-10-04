@@ -16,6 +16,12 @@ const HIDDEN = new Set([
 ]);
 const PREVIEW_BYTES = 512 * 1024;
 
+function inspectGit(args, checked = true) {
+  return (checked ? runChecked : runProcess)('git', ['-c', 'core.fsmonitor=false', ...args], {
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
+}
+
 function resolveWorkspacePath(cwd, file = '') {
   if (!cwd || !path.isAbsolute(cwd)) throw new Error(t('请先选择项目目录。'));
   const root = path.resolve(cwd),
@@ -141,7 +147,7 @@ async function gitChanges({ cwd }) {
   resolveWorkspacePath(cwd);
   let probe;
   try {
-    probe = await runProcess('git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree']);
+    probe = await inspectGit(['-C', cwd, 'rev-parse', '--is-inside-work-tree'], false);
   } catch (error) {
     if (error.code === 'ENOENT')
       return { isGit: false, branch: '', changes: [], unavailable: 'git-not-found' };
@@ -150,9 +156,9 @@ async function gitChanges({ cwd }) {
   if (probe.exitCode !== 0 || probe.stdout.trim() !== 'true')
     return { isGit: false, branch: '', changes: [] };
   const [status, branch, prefixResult] = await Promise.all([
-    runChecked('git', ['-C', cwd, 'status', '--porcelain=v1', '-z', '--untracked-files=all']),
-    runChecked('git', ['-C', cwd, 'branch', '--show-current']),
-    runChecked('git', ['-C', cwd, 'rev-parse', '--show-prefix']),
+    inspectGit(['-C', cwd, 'status', '--porcelain=v1', '-z', '--untracked-files=all']),
+    inspectGit(['-C', cwd, 'branch', '--show-current']),
+    inspectGit(['-C', cwd, 'rev-parse', '--show-prefix']),
   ]);
   // Porcelain paths always start at the repository root, including when cwd is a subdirectory.
   const prefix = prefixResult.stdout.trim();
@@ -188,7 +194,9 @@ async function gitChanges({ cwd }) {
 
 async function gitDiff({ cwd, path: relative, staged = false }) {
   resolveWorkspacePath(cwd, relative);
-  const result = await runChecked('git', [
+  const result = await inspectGit([
+    '-c',
+    'diff.autoRefreshIndex=false',
     '--literal-pathspecs',
     '-C',
     cwd,
@@ -200,15 +208,10 @@ async function gitDiff({ cwd, path: relative, staged = false }) {
     relative,
   ]);
   if (result.stdout.trim()) return { text: result.stdout };
-  const tracked = await runProcess('git', [
-    '--literal-pathspecs',
-    '-C',
-    cwd,
-    'ls-files',
-    '--error-unmatch',
-    '--',
-    relative,
-  ]);
+  const tracked = await inspectGit(
+    ['--literal-pathspecs', '-C', cwd, 'ls-files', '--error-unmatch', '--', relative],
+    false,
+  );
   if (tracked.exitCode !== 0) {
     const file = await readFile({ cwd, path: relative });
     return {

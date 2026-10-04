@@ -1,5 +1,15 @@
 # Changes
 
+## 1.7.4
+
+- Escape raw model HTML so it cannot restyle approvals or overlay the desktop UI; retain Markdown, code, math and copying.
+- Use absolute Windows system executables and PATH-resolved Node; disable Git fsmonitor and background index refresh, confirm executable file opens, and ignore development URLs in packaged builds.
+- Correct checkpoint scan coverage, expose cross-project storage management, and require an explicit per-turn choice to continue without a checkpoint when storage is full. Restore still requires its undo record.
+- Preserve corrupt settings/queue backups, show startup recovery notices, bound draft-save delay, and clearly mark interrupted requests that will be resent.
+- Keep file-tree expansion on refresh, handle stop during preparation, bound continuous watcher refresh delay, and retain localized update error reasons.
+- Update Electron to 44.5.1 and http-cache-semantics to 4.3.0; keep bundled renderer-only libraries out of runtime dependencies.
+- Add focused regression and source/packaged desktop checks. See [review response](docs/review-response-1.7.4.md).
+
 ## 1.7.3
 
 - Publish the display fixes and completed audit evidence from the 1.7.2 candidate.

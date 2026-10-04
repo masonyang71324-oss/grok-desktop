@@ -3,9 +3,12 @@ const path = require('node:path');
 function createWorkspaceWatcher(emit, onError = () => {}) {
   let watcher,
     timer,
+    maxTimer,
     current = '';
   function close() {
     clearTimeout(timer);
+    clearTimeout(maxTimer);
+    timer = maxTimer = undefined;
     watcher?.close();
     watcher = undefined;
     current = '';
@@ -27,8 +30,15 @@ function createWorkspaceWatcher(emit, onError = () => {}) {
             return;
           if (parts.includes('.git') && !['.git/index', '.git/HEAD'].includes(relative)) return;
           if (path.basename(relative).includes('.grok-save-')) return;
+          const flush = () => {
+            clearTimeout(timer);
+            clearTimeout(maxTimer);
+            timer = maxTimer = undefined;
+            emit({ type: 'workspace-changed', cwd });
+          };
           clearTimeout(timer);
-          timer = setTimeout(() => emit({ type: 'workspace-changed', cwd }), 200);
+          timer = setTimeout(flush, 200);
+          maxTimer ||= setTimeout(flush, 1000);
         });
         watcher.on('error', () => {
           close();

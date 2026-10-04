@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { translate: t } = require('./i18n.cjs');
+const { resolvePathExecutable, windowsSystemExecutable } = require('./system-launch.cjs');
 
 function extractLocalUrl(text) {
   for (const match of text.matchAll(/https?:\/\/[^\s<>"'`\x1b]+/g)) {
@@ -20,21 +21,16 @@ function extractLocalUrl(text) {
 async function npmCommand() {
   if (process.platform !== 'win32') return { executable: 'npm', args: [] };
   // Executing npm's JS entry point avoids cmd.exe quoting for Windows paths and script names.
-  const directories = [
-    path.dirname(process.execPath),
-    ...(process.env.PATH || '').split(path.delimiter),
-  ];
+  const executable = await resolvePathExecutable('node.exe', { env: process.env });
+  if (!executable) throw new Error(t('未找到 npm，请安装 Node.js 并重新打开桌面应用。'));
+  const directories = [path.dirname(executable), ...(process.env.PATH || '').split(path.delimiter)];
   for (const directory of directories) {
-    const cli = path.join(
-      directory.replace(/^"|"$/g, ''),
-      'node_modules',
-      'npm',
-      'bin',
-      'npm-cli.js',
-    );
+    const absolute = directory.replace(/^"|"$/g, '');
+    if (!path.isAbsolute(absolute) || !/^[a-z]:[\\/]|^\\\\/i.test(absolute)) continue;
+    const cli = path.join(absolute, 'node_modules', 'npm', 'bin', 'npm-cli.js');
     try {
       await fs.access(cli);
-      return { executable: process.versions.electron ? 'node' : process.execPath, args: [cli] };
+      return { executable, args: [cli] };
     } catch {}
   }
   throw new Error(t('未找到 npm，请安装 Node.js 并重新打开桌面应用。'));
@@ -132,11 +128,15 @@ function createProjectRunner({ emit = () => {} } = {}) {
       if (pid) {
         if (process.platform === 'win32') {
           await new Promise((resolve, reject) => {
-            const killer = spawn('taskkill.exe', ['/pid', String(pid), '/T', '/F'], {
-              windowsHide: true,
-              shell: false,
-              stdio: 'ignore',
-            });
+            const killer = spawn(
+              windowsSystemExecutable('taskkill.exe'),
+              ['/pid', String(pid), '/T', '/F'],
+              {
+                windowsHide: true,
+                shell: false,
+                stdio: 'ignore',
+              },
+            );
             killer.once('error', reject);
             killer.once('close', (code) =>
               code === 0 || !project.child

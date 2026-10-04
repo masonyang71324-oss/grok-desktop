@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { readJsonWithRecovery, assertJsonWritable, isObject } = require('./json-recovery.cjs');
 
 const defaults = {
   grokPath: '',
@@ -87,19 +88,20 @@ function normalizeSettings(input = {}) {
   };
 }
 
-function loadSettings(filename) {
-  try {
-    return normalizeSettings(JSON.parse(fs.readFileSync(filename, 'utf8')));
-  } catch {
-    return { ...defaults, recentProjects: [] };
-  }
+function loadSettings(filename, onRecovery) {
+  const saved = readJsonWithRecovery(filename, { kind: 'settings', isValid: isObject, onRecovery });
+  return saved ? normalizeSettings(saved) : structuredClone(defaults);
 }
 
 async function writeSettings(filename, settings) {
+  assertJsonWritable(filename);
   await fsp.mkdir(path.dirname(filename), { recursive: true });
   const normalized = normalizeSettings(settings);
   const temporary = filename + '.tmp';
-  await fsp.writeFile(temporary, JSON.stringify(normalized, null, 2), 'utf8');
+  await fsp.writeFile(temporary, JSON.stringify(normalized, null, 2), {
+    encoding: 'utf8',
+    flush: true,
+  });
   await fsp.rename(temporary, filename);
   return normalized;
 }

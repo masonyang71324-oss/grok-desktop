@@ -42,6 +42,8 @@ const { createTerminalManager } = require('./terminal.cjs');
 const { spawnHostedPty } = require('./terminal-host-client.cjs');
 const { createWebPreviewManager } = require('./web-preview.cjs');
 const { launchDictation } = require('./dictation.cjs');
+const { windowsPowerShellPath, isExecutableOpenTarget } = require('./system-launch.cjs');
+const { createCheckpointTurnHooks } = require('./checkpoint-turns.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -50,7 +52,8 @@ app.setAppUserModelId('local.grok.desktop');
 if (process.env.GROK_DESKTOP_DATA_DIR)
   app.setPath('userData', path.resolve(process.env.GROK_DESKTOP_DATA_DIR));
 const settingsFile = path.join(app.getPath('userData'), 'settings.json');
-let settings = loadSettings(settingsFile),
+const settingsRecoveryWarnings = [];
+let settings = loadSettings(settingsFile, (warning) => settingsRecoveryWarnings.push(warning)),
   settingsQueue = Promise.resolve();
 setLocale(settings.language);
 let win = null,
@@ -58,6 +61,7 @@ let win = null,
   exitDialogOpen = false,
   installUpdateRequested = false;
 let engineState = { authStatus: 'unknown' };
+let draftFlushTimer = null;
 const activity = new RuntimeActivity({
   isForegroundBusy: () => !!client.activeTurn,
 });
@@ -93,7 +97,6 @@ const workspaceWatcher = createWorkspaceWatcher(emit, () => logger.log('workspac
 const checkpoints = createCheckpointStore({
   directory: path.join(app.getPath('userData'), 'checkpoints'),
 });
-const activeCheckpoints = new Map();
 const runner = createProjectRunner({ emit: (type, data) => emit({ type, ...data }) });
 const terminals = createTerminalManager({ spawnPty: spawnHostedPty, emit });
 const cliInstaller = new CliInstaller({ emit });
@@ -123,21 +126,23 @@ const client = new SessionHub({
   getExecutable: () => resolveGrok(settings.grokPath),
   emit,
   clientVersion: app.getVersion(),
-  beforeTurn: async ({ cwd, sessionId, turnId }) => {
-    const id = await checkpoints.begin({ cwd, sessionId, turnId });
-    activeCheckpoints.set(turnId, id);
-  },
-  afterTurn: async ({ cwd, sessionId, turnId }) => {
-    const id = activeCheckpoints.get(turnId);
-    if (!id) return;
-    try {
-      await checkpoints.finish(id);
-      emit({ type: 'checkpoints-changed', cwd, sessionId });
-      return { checkpointId: id };
-    } finally {
-      activeCheckpoints.delete(turnId);
-    }
-  },
+  ...createCheckpointTurnHooks({
+    store: checkpoints,
+    emit,
+    chooseWithoutCheckpoint: async ({ cwd, sessionId }) => {
+      const result = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: t('检查点空间已满'),
+        message: t('本轮无法创建检查点。继续发送后，本轮文件改动将无法通过检查点恢复。'),
+        detail: cwd,
+        buttons: [t('取消并清理'), t('继续发送（无检查点）')],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (result.response !== 1) emit({ type: 'checkpoint-storage-request', cwd, sessionId });
+      return result.response === 1;
+    },
+  }),
   ...(process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
     ? {
         spawnFn: (executable, args, options) =>
@@ -224,6 +229,7 @@ async function bootstrap() {
   }
   return {
     settings,
+    recoveryWarnings: [...settingsRecoveryWarnings, ...(client.recoveryWarnings || [])],
     version: app.getVersion(),
     update: appUpdater.status(),
     cli: {
@@ -249,10 +255,7 @@ async function openSystem({ target, cwd, path: filepath, url }) {
   if (target === 'workspace-file' || target === 'workspace-reveal') {
     const destination = workspace.resolveWorkspacePath(await validCwd(cwd), filepath);
     if (target === 'workspace-reveal') shell.showItemInFolder(destination);
-    else {
-      const error = await shell.openPath(destination);
-      if (error) throw new Error(error);
-    }
+    else return openLocalPath(destination);
     return;
   }
   if (target === 'url') {
@@ -266,7 +269,7 @@ async function openSystem({ target, cwd, path: filepath, url }) {
     const exe = resolveGrok(settings.grokPath);
     const code = `& '${exe.replaceAll("'", "''")}'${target === 'grok-login' ? ' login' : ''}`;
     const child = spawn(
-      'powershell.exe',
+      windowsPowerShellPath(),
       ['-NoLogo', '-NoExit', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')],
       { cwd: directory, detached: true, stdio: 'ignore', windowsHide: false },
     );
@@ -284,6 +287,22 @@ async function openSystem({ target, cwd, path: filepath, url }) {
         ? path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'config.toml')
         : filepath;
   if (!destination || !path.isAbsolute(destination)) throw new Error(t('请选择有效的文件或目录。'));
+  return openLocalPath(destination);
+}
+
+async function openLocalPath(destination) {
+  if (isExecutableOpenTarget(destination) && (await fs.stat(destination)).isFile()) {
+    const result = await dialog.showMessageBox(win, {
+      type: 'warning',
+      title: t('此文件可能会执行程序'),
+      message: t('系统默认程序可能直接运行此文件。仅在你信任其来源时继续。'),
+      detail: destination,
+      buttons: [t('取消'), t('仍然打开')],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (result.response !== 1) return { cancelled: true };
+  }
   const error = await shell.openPath(destination);
   if (error) throw new Error(error);
 }
@@ -464,6 +483,13 @@ const handlers = {
     });
   },
   'settings.save': saveSettings,
+  'drafts.flush': () => {
+    if (!draftFlushTimer)
+      draftFlushTimer = setTimeout(() => {
+        draftFlushTimer = null;
+        electronSession.defaultSession.flushStorageData();
+      }, 250);
+  },
   'clipboard.write': ({ text, html }) => {
     if (typeof text !== 'string') throw new Error(t('复制内容无效。'));
     return typeof html === 'string'
@@ -585,8 +611,9 @@ const handlers = {
       client.setActiveSession(snapshot.sessionId);
       return snapshot;
     }),
-  'session.send': (payload) =>
-    activity.runSession(async () => client.send({ ...payload, cwd: await validCwd(payload.cwd) })),
+  // Existing sessions already own a validated canonical cwd. Register the turn
+  // synchronously so a cancel cannot arrive before the hub owns the pending send.
+  'session.send': (payload) => activity.runSession(() => client.send(payload)),
   'session.enqueue': (payload) =>
     activity.runSession(async () =>
       client.enqueue({ ...payload, cwd: await validCwd(payload.cwd) }),
@@ -612,6 +639,8 @@ const handlers = {
     checkpoints.list({ cwd: await validCwd(cwd), sessionId }),
   'checkpoints.detail': (payload) => checkpoints.detail(payload),
   'checkpoints.remove': (payload) => checkpoints.remove(payload),
+  'checkpoints.storage': () => checkpoints.storage(),
+  'checkpoints.removeMany': (payload) => checkpoints.removeMany(payload),
   'checkpoints.restore': async (payload) => {
     const checkpoint = await checkpoints.detail({ id: payload.id });
     const cwd = await validCwd(checkpoint.cwd);
@@ -760,7 +789,8 @@ function createWindow() {
         } else installUpdateRequested = false;
       });
   });
-  if (process.env.GROK_DESKTOP_DEV_URL) win.loadURL(process.env.GROK_DESKTOP_DEV_URL);
+  if (!app.isPackaged && process.env.GROK_DESKTOP_DEV_URL)
+    win.loadURL(process.env.GROK_DESKTOP_DEV_URL);
   else win.loadFile(path.join(__dirname, '../dist/index.html'));
 }
 
@@ -836,6 +866,9 @@ else {
     shutdownStarted = true;
     quitting = true;
     saveWindowState();
+    clearTimeout(draftFlushTimer);
+    draftFlushTimer = null;
+    electronSession.defaultSession.flushStorageData();
     workspaceWatcher.close();
     previews.dispose();
     const agentShutdown = client.dispose();

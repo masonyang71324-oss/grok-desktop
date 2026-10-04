@@ -22,6 +22,10 @@ const EXCLUDED = new Set([
   '.cache',
   'coverage',
   'vendor',
+  '.venv',
+  '__pycache__',
+  'obj',
+  'target',
 ]);
 const FILE_BYTES = 1024 * 1024;
 const SNAPSHOT_BYTES = 16 * 1024 * 1024;
@@ -56,7 +60,10 @@ function createCheckpointStore({ directory }) {
         bytes += (await fs.stat(path.join(directory, name))).size;
     }
     if (bytes + Buffer.byteLength(data) > STORE_BYTES)
-      throw new Error(t('检查点存储已达到 512 MB 上限，请删除旧检查点记录后重试。'));
+      throw Object.assign(
+        new Error(t('检查点存储已达到 512 MB 上限，请删除旧检查点记录后重试。')),
+        { code: 'CHECKPOINT_STORAGE_FULL', bytes, limitBytes: STORE_BYTES },
+      );
     const temp = `${location(entry.id)}.tmp`;
     await fs.writeFile(temp, data);
     await fs.rename(temp, location(entry.id));
@@ -66,28 +73,42 @@ function createCheckpointStore({ directory }) {
       skipped = [];
     let bytes = 0,
       count = 0;
-    async function walk(relative) {
+    const pending = [''];
+    while (pending.length) {
+      const relative = pending.shift();
+      if (count >= 2000) {
+        skipped.push({ path: relative || '.', reason: 'file-count-limit' });
+        continue;
+      }
       let entries;
       try {
         entries = await fs.readdir(path.join(cwd, relative), { withFileTypes: true });
       } catch (error) {
         skipped.push({ path: relative || '.', reason: error.code || 'unreadable' });
-        return;
+        continue;
       }
-      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      // Capture nearby source files before descending into larger directory trees.
+      for (const entry of entries.sort(
+        (a, b) => Number(a.isDirectory()) - Number(b.isDirectory()) || a.name.localeCompare(b.name),
+      )) {
         const name = relative ? `${relative}/${entry.name}` : entry.name;
         const absolute = path.join(cwd, name);
-        if (count >= 2000) {
-          skipped.push({ path: relative || '.', reason: 'file-count-limit' });
-          break;
-        }
-        count++;
-        if (EXCLUDED.has(entry.name) || absolute === directory) {
+        if ((entry.isDirectory() && EXCLUDED.has(entry.name)) || absolute === directory) {
           skipped.push({ path: name, reason: 'excluded-directory' });
           continue;
         }
+        if (count >= 2000) {
+          skipped.push({
+            path: relative || '.',
+            reason: 'file-count-limit',
+            from: entry.name,
+            fromDirectory: entry.isDirectory(),
+          });
+          break;
+        }
+        count++;
         if (entry.isDirectory()) {
-          await walk(name);
+          pending.push(name);
           continue;
         }
         if (!entry.isFile()) {
@@ -113,19 +134,26 @@ function createCheckpointStore({ directory }) {
         }
       }
     }
-    await walk('');
     return { files, skipped };
   }
   const omitted = (name, skipped) =>
-    skipped.some(
-      (item) => item.path === '.' || item.path === name || name.startsWith(`${item.path}/`),
-    );
+    skipped.some((item) => {
+      if (item.path !== '.' && item.path !== name && !name.startsWith(`${item.path}/`))
+        return false;
+      if (!item.from || item.path === name) return true;
+      // A count limit covers only the unvisited suffix, ordered files before directories.
+      // Missing paths earlier in that order are known absent, not unknown.
+      const relative = item.path === '.' ? name : name.slice(item.path.length + 1);
+      const parts = relative.split('/');
+      const directoryOrder = Number(parts.length > 1) - Number(item.fromDirectory);
+      return directoryOrder > 0 || (directoryOrder === 0 && parts[0].localeCompare(item.from) >= 0);
+    });
   function publicEntry(entry, detail = true) {
     const { baseline, ...result } = entry;
     return {
       ...result,
       status: entry.status === 'recording' && !active.has(entry.id) ? 'interrupted' : entry.status,
-      skipped: entry.skipped.map((item) => ({
+      skipped: (entry.skipped || []).map((item) => ({
         ...item,
         reason: SKIP_LABELS[item.reason] ? t(SKIP_LABELS[item.reason]) : item.reason,
       })),
@@ -137,6 +165,36 @@ function createCheckpointStore({ directory }) {
           : {}),
       })),
     };
+  }
+  async function records() {
+    let names;
+    try {
+      names = await fs.readdir(directory);
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+    const result = [];
+    for (const name of names.filter((name) => /^[a-f0-9-]{36}\.json$/.test(name))) {
+      const id = name.slice(0, -5);
+      const stat = await fs.stat(location(id));
+      try {
+        const entry = await read(id);
+        if (
+          !entry ||
+          typeof entry.cwd !== 'string' ||
+          typeof entry.createdAt !== 'string' ||
+          !Array.isArray(entry.files) ||
+          (entry.skipped !== undefined && !Array.isArray(entry.skipped))
+        )
+          throw new Error('Unreadable checkpoint');
+        publicEntry(entry, false);
+        result.push({ id, bytes: stat.size, entry });
+      } catch {
+        result.push({ id, bytes: stat.size, createdAt: stat.mtime.toISOString() });
+      }
+    }
+    return result;
   }
   async function current(cwd, name) {
     const parts = name.split('/');
@@ -197,9 +255,15 @@ function createCheckpointStore({ directory }) {
           ...Object.keys(entry.baseline.files),
           ...Object.keys(after.files),
         ])) {
-          if (omitted(name, entry.skipped)) continue;
           const before = entry.baseline.files[name] || null,
             next = after.files[name] || null;
+          // A limit on one scan must not discard files captured by both scans.
+          // Missing content is only absence when that side actually covered the path.
+          if (
+            (!before && omitted(name, entry.baseline.skipped)) ||
+            (!next && omitted(name, after.skipped))
+          )
+            continue;
           if (!equal(before, next))
             entry.files.push({
               path: name,
@@ -215,17 +279,10 @@ function createCheckpointStore({ directory }) {
       }).finally(() => active.delete(id)),
     list: async ({ cwd, sessionId }) => {
       await queue;
-      let names;
-      try {
-        names = await fs.readdir(directory);
-      } catch (error) {
-        if (error.code === 'ENOENT') return [];
-        throw error;
-      }
       const resolved = (await fs.realpath(cwd)).toLowerCase();
-      const entries = await Promise.all(
-        names.filter((name) => name.endsWith('.json')).map((name) => read(name.slice(0, -5))),
-      );
+      const entries = (await records())
+        .filter((record) => record.entry)
+        .map((record) => record.entry);
       return entries
         .filter(
           (entry) =>
@@ -238,6 +295,58 @@ function createCheckpointStore({ directory }) {
       await queue;
       return publicEntry(await read(id));
     },
+    storage: async () => {
+      await queue;
+      const items = await records();
+      return {
+        bytes: items.reduce((sum, record) => sum + record.bytes, 0),
+        limitBytes: STORE_BYTES,
+        records: items
+          .map(({ id, bytes, entry, createdAt }) =>
+            entry
+              ? {
+                  id,
+                  bytes,
+                  cwd: entry.cwd,
+                  sessionId: entry.sessionId,
+                  createdAt: entry.createdAt,
+                  status:
+                    entry.status === 'recording' && !active.has(id) ? 'interrupted' : entry.status,
+                  fileCount: entry.files.length,
+                  kind:
+                    typeof entry.turnId === 'string' && entry.turnId.startsWith('restore:')
+                      ? 'restore'
+                      : 'turn',
+                }
+              : {
+                  id,
+                  bytes,
+                  cwd: '',
+                  sessionId: '',
+                  createdAt,
+                  status: 'unreadable',
+                  fileCount: null,
+                  kind: 'unreadable',
+                },
+          )
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      };
+    },
+    removeMany: ({ ids }) =>
+      serial(async () => {
+        if (!Array.isArray(ids)) throw new Error(t('检查点编号无效。'));
+        const selected = [...new Set(ids)];
+        for (const id of selected) {
+          location(id);
+          if (active.has(id)) throw new Error(t('无法删除正在记录的检查点。'));
+        }
+        const removed = [];
+        for (const id of selected) {
+          await fs.unlink(location(id));
+          removed.push(id);
+        }
+        return { removed };
+      }),
     remove: ({ id }) =>
       serial(async () => {
         const entry = await read(id);

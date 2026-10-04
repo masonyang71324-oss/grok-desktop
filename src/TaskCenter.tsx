@@ -7,12 +7,14 @@ import type { TaskSummary } from './types';
 export default function TaskCenter({
   tasks,
   onOpen,
+  onInspectChanges,
   onClose,
   notify,
   embedded = false,
 }: {
   tasks: TaskSummary[];
   onOpen: (task: TaskSummary) => void;
+  onInspectChanges?: (task: TaskSummary) => void;
   onClose: () => void;
   notify: (text: string) => void;
   embedded?: boolean;
@@ -66,6 +68,18 @@ export default function TaskCenter({
                 {item.text}
                 {!!item.attachments?.length && (
                   <small>{item.attachments.map((file) => file.name).join(', ')}</small>
+                )}
+                {item.interrupted && (
+                  <>
+                    <p className="muted">
+                      {t('上次中断：继续队列会重新发送整条请求，可能重复已执行的操作。')}
+                    </p>
+                    {onInspectChanges && (
+                      <button className="text-button" onClick={() => onInspectChanges(task)}>
+                        {t('先查看已做的更改')}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
               <button

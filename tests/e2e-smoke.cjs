@@ -32,6 +32,7 @@ async function launch(language = 'zh-CN') {
   };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.GROK_DESKTOP_DEV_URL;
+  if (packaged) env.GROK_DESKTOP_DEV_URL = 'http://127.0.0.1:1/ignored-production-dev-url';
   app = await electron.launch({
     executablePath: packaged || require('electron'),
     args: packaged ? [] : [root],
@@ -45,6 +46,11 @@ async function launch(language = 'zh-CN') {
     .locator('.sidebar-status')
     .filter({ hasText: language === 'en' ? 'Grok connected' : 'Grok 已连接' })
     .waitFor();
+  if (packaged)
+    assert.ok(
+      page.url().startsWith('file:'),
+      'packaged application must ignore the development URL override',
+    );
   await page.evaluate(() => {
     window.smokeEvents = [];
     window.desktop.onEvent((event) =>

@@ -383,14 +383,8 @@ export function SettingsDialog({
     setError('');
     try {
       await onUpdateAction(command);
-    } catch {
-      setError(
-        command === 'update.check'
-          ? t('检查更新失败，请检查网络后重试。')
-          : command === 'update.download'
-            ? t('下载更新失败，请稍后重试。')
-            : t('无法开始安装，请重新下载更新后重试。'),
-      );
+    } catch (error) {
+      setError(errorText(error));
     } finally {
       setUpdateBusy(false);
     }
@@ -407,7 +401,7 @@ export function SettingsDialog({
             : update.status === 'current'
               ? t('当前已是最新版本。')
               : update.status === 'error'
-                ? t('检查更新失败，请检查网络后重试。')
+                ? update.error || t('软件更新遇到问题，请查看具体原因。')
                 : update.status === 'unsupported'
                   ? t('开发环境不检查软件更新。')
                   : t('自动检查稳定版本，也可以随时手动检查。');

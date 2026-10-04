@@ -55,7 +55,11 @@ test('Markdown content cannot execute canaries and only explicit safe link and c
       .count(),
     0,
   );
-  await page.getByText('Blocked canary', { exact: true }).click();
+  assert.ok(
+    (await page.locator('.markdown').textContent()).includes(
+      '<a href="javascript:window.markdownCanary=1">Blocked canary</a>',
+    ),
+  );
   assert.deepEqual(await page.evaluate(() => window.calls), []);
   assert.equal(await page.evaluate(() => window.markdownCanary), undefined);
   await page.getByRole('link', { name: 'External canary' }).click();
@@ -176,7 +180,7 @@ test('changing a formula updates it while completed formula and table selection 
   assert.equal(await page.locator('[data-math-source="x^2"]').count(), 0);
 });
 
-test('Markdown inside an open raw HTML block stays nested across blank lines and streamed appends', async (t) => {
+test('raw HTML stays readable as text around Markdown blocks and streamed appends', async (t) => {
   const page = await fixture(t);
   const result = await page.evaluate(() => {
     const { React, createRoot, flushSync, Markdown } = window.ui;
@@ -184,15 +188,23 @@ test('Markdown inside an open raw HTML block stays nested across blank lines and
     const prefix = '<details><summary>Details</summary>\n\n**nested**\n\n</details>\n\n';
     const render = (text) => flushSync(() => root.render(React.createElement(Markdown, { text })));
     render(prefix);
-    const details = document.querySelector('.markdown details');
-    details.open = true;
+    const strong = document.querySelector('.markdown strong');
     render(prefix + 'Outside');
     return {
-      nested: details.querySelector('strong')?.textContent,
-      open: details.open,
-      retained: details === document.querySelector('.markdown details'),
-      outside: document.querySelector('.markdown > p')?.textContent,
+      nested: strong?.textContent,
+      activeDetails: !!document.querySelector('.markdown details'),
+      retained: strong === document.querySelector('.markdown strong'),
+      outside: document.querySelector('.markdown > p:last-child')?.textContent,
+      source: document
+        .querySelector('.markdown')
+        .textContent.includes('<details><summary>Details</summary>'),
     };
   });
-  assert.deepEqual(result, { nested: 'nested', open: true, retained: true, outside: 'Outside' });
+  assert.deepEqual(result, {
+    nested: 'nested',
+    activeDetails: false,
+    retained: true,
+    outside: 'Outside',
+    source: true,
+  });
 });

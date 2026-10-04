@@ -13,6 +13,9 @@ function mathHtml(token: { text: string; raw: string; display: boolean }) {
 
 export const conversationMarkdown = new Marked({ async: false, gfm: true, breaks: true });
 conversationMarkdown.use({
+  // Model-authored HTML is displayed as source. Only Markdown renderers and our
+  // math extension may create elements, classes or attributes in the app DOM.
+  renderer: { html: ({ text }) => escaped(text) },
   extensions: [
     {
       name: 'blockMath',

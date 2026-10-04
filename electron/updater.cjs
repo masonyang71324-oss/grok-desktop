@@ -1,3 +1,4 @@
+const { translate: t } = require('./i18n.cjs');
 const RELEASES_URL = 'https://github.com/masonyang71324-oss/grok-desktop/releases';
 const LATEST_RELEASE_API =
   'https://api.github.com/repos/masonyang71324-oss/grok-desktop/releases/latest';
@@ -92,7 +93,7 @@ function createAppUpdater({
   }
 
   async function checkPortable() {
-    if (typeof fetchFn !== 'function') throw new Error('当前环境无法访问更新服务。');
+    if (typeof fetchFn !== 'function') throw new Error(t('当前环境无法访问更新服务。'));
     const response = await fetchFn(LATEST_RELEASE_API, {
       headers: {
         Accept: 'application/vnd.github+json',
@@ -100,10 +101,11 @@ function createAppUpdater({
       },
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error(`更新服务返回 ${response.status || '错误'}。`);
+    if (!response.ok)
+      throw new Error(t('更新服务返回 {status}。', { status: response.status || 'Error' }));
     const release = await response.json();
     const availableVersion = String(release.tag_name || '').replace(/^v/i, '');
-    if (!availableVersion) throw new Error('更新服务没有返回有效版本号。');
+    if (!availableVersion) throw new Error(t('更新服务没有返回有效版本号。'));
     return publish(
       isNewerVersion(availableVersion, currentVersion)
         ? {
@@ -141,9 +143,9 @@ function createAppUpdater({
       const url = state.releaseUrl || RELEASES_URL;
       return openExternal(url).then(() => snapshot());
     }
-    if (mode !== 'installer') return Promise.reject(new Error('开发环境不支持下载更新。'));
+    if (mode !== 'installer') return Promise.reject(new Error(t('开发环境不支持下载更新。')));
     if (state.status !== 'available')
-      return Promise.reject(new Error('当前没有可以下载的新版本。'));
+      return Promise.reject(new Error(t('当前没有可以下载的新版本。')));
     publish({ status: 'downloading' });
     downloadPromise = Promise.resolve(autoUpdater.downloadUpdate())
       .then(() => snapshot())
@@ -155,8 +157,8 @@ function createAppUpdater({
   }
 
   async function install() {
-    if (mode !== 'installer') throw new Error('便携版不能自动安装，请下载并运行安装版。');
-    if (state.status !== 'downloaded') throw new Error('更新尚未下载完成。');
+    if (mode !== 'installer') throw new Error(t('便携版不能自动安装，请下载并运行安装版。'));
+    if (state.status !== 'downloaded') throw new Error(t('更新尚未下载完成。'));
     await requestInstall();
     return snapshot();
   }

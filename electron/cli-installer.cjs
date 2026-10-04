@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const os = require('node:os');
 const { translate: t } = require('./i18n.cjs');
+const { windowsPowerShellPath, windowsSystemExecutable } = require('./system-launch.cjs');
 
 async function killOwnedTree(child) {
   if (!child?.pid) return;
@@ -11,11 +12,15 @@ async function killOwnedTree(child) {
     return;
   }
   await new Promise((resolve) => {
-    const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
-      windowsHide: true,
-      stdio: 'ignore',
-      shell: false,
-    });
+    const killer = spawn(
+      windowsSystemExecutable('taskkill.exe'),
+      ['/PID', String(child.pid), '/T', '/F'],
+      {
+        windowsHide: true,
+        stdio: 'ignore',
+        shell: false,
+      },
+    );
     killer.once('close', resolve);
     killer.once('error', () => {
       child.kill();
@@ -112,7 +117,7 @@ class CliInstaller {
       delete env.GROK_VERSION;
       delete env.GROK_DEPLOYMENT_KEY;
       const result = await this._process(
-        'powershell.exe',
+        windowsPowerShellPath(),
         [
           '-NoLogo',
           '-NoProfile',

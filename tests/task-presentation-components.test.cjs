@@ -161,6 +161,7 @@ test('completed outcome starts compact with trusted counters and visible actions
         result,
         checkpoint: {
           ...checkpoint,
+          skipped: [],
           files: Array.from({ length: 6 }, (_, index) => ({
             path: `long/folder/generated-output-${index}.tsx`,
             status: 'created',

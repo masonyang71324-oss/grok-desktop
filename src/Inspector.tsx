@@ -75,6 +75,8 @@ export default function Inspector({
   useEffect(() => setTab(initialTab), [initialTab]);
   const [tree, setTree] = useState<Record<string, WorkspaceEntry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
   const [showHidden, setShowHidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -139,9 +141,27 @@ export default function Inspector({
           cwd: context.cwd,
           showHidden,
         });
+        const nextTree: Record<string, WorkspaceEntry[]> = { '': entries };
+        async function reloadExpanded(children: WorkspaceEntry[]) {
+          await Promise.all(
+            children
+              .filter((entry) => entry.isDirectory && expandedRef.current.has(entry.path))
+              .map(async (entry) => {
+                const nested = await request<WorkspaceEntry[]>('workspace.list', {
+                  cwd: context.cwd,
+                  path: entry.path,
+                  showHidden,
+                });
+                if (!isCurrent(context) || context.refresh !== version) return;
+                nextTree[entry.path] = nested;
+                await reloadExpanded(nested);
+              }),
+          );
+        }
+        await reloadExpanded(entries);
         if (isCurrent(context) && context.refresh === version) {
-          setTree({ '': entries });
-          setExpanded(new Set());
+          setTree(nextTree);
+          setExpanded((current) => new Set([...current].filter((name) => nextTree[name])));
         }
       } else if (tab === 'changes') {
         const result = await request<any>('workspace.changes', { cwd: context.cwd });
@@ -162,6 +182,7 @@ export default function Inspector({
     setOfficePath(null);
     setPicker(null);
     setTree({});
+    expandedRef.current = new Set();
     setExpanded(new Set());
     setChanges(null);
     setError('');

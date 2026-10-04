@@ -50,8 +50,10 @@ async function fixture(t) {
             return payload.path
               ? [
                   {
-                    name: payload.cwd === 'C:/a' ? 'old-child.txt' : 'new-child.txt',
-                    path: `src/${payload.cwd === 'C:/a' ? 'old-child.txt' : 'new-child.txt'}`,
+                    name:
+                      window.childName ||
+                      (payload.cwd === 'C:/a' ? 'old-child.txt' : 'new-child.txt'),
+                    path: `src/${window.childName || (payload.cwd === 'C:/a' ? 'old-child.txt' : 'new-child.txt')}`,
                     isDirectory: false,
                   },
                 ]
@@ -539,4 +541,21 @@ test('CSV layout preview keeps the existing original-text editor available', asy
     ),
     1,
   );
+});
+
+test('file changes refresh expanded directories without folding them and project changes reset expansion', async (t) => {
+  const page = await fixture(t);
+  await page.locator('.file-row[title="src"]').click();
+  await page.locator('.file-row[title="src/old-child.txt"]').waitFor();
+  await page.evaluate(() => {
+    window.childName = 'fresh-child.txt';
+    window.showInspector('C:/a', { revision: 1 });
+  });
+  await page.locator('.file-row[title="src/fresh-child.txt"]').waitFor();
+  assert.equal(await page.locator('.file-row[title="src/old-child.txt"]').count(), 0);
+  await page.evaluate(() => window.showInspector('C:/b', { revision: 2 }));
+  await page.waitForFunction(() =>
+    window.calls.some((c) => c.command === 'workspace.list' && c.payload.cwd === 'C:/b'),
+  );
+  assert.equal(await page.locator('.file-row[title="src/fresh-child.txt"]').count(), 0);
 });

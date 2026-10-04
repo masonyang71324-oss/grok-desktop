@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
-const path = require('node:path');
 const { translate: t } = require('./i18n.cjs');
+const { windowsPowerShellPath } = require('./system-launch.cjs');
 
 function dimensions(cols = 90, rows = 24) {
   if (
@@ -57,16 +57,7 @@ function createTerminalManager({ spawnPty, emit = () => {}, platform = process.p
       return snapshot(previous);
     }
     const size = dimensions(cols, rows);
-    const shell =
-      platform === 'win32'
-        ? path.join(
-            process.env.SystemRoot || 'C:\\Windows',
-            'System32',
-            'WindowsPowerShell',
-            'v1.0',
-            'powershell.exe',
-          )
-        : process.env.SHELL || '/bin/sh';
+    const shell = platform === 'win32' ? windowsPowerShellPath() : process.env.SHELL || '/bin/sh';
     const env = { ...process.env, TERM: 'xterm-256color' };
     delete env.ELECTRON_RUN_AS_NODE;
     const child = (spawnPty || require('node-pty').spawn)(

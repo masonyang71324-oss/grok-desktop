@@ -19,7 +19,7 @@
 
 ## 主要功能
 
-最新自查：[1.7.3 对照与验证总结](docs/audit-followup-summary.md)，包含49项逐条映射及真实CLI/一次性Windows证据。
+最新修补：[1.7.4 独立审阅问题处理](docs/review-response-1.7.4.md)。历史自查：[1.7.3 对照与验证总结](docs/audit-followup-summary.md)，包含49项逐条映射及真实CLI/一次性Windows证据。
 
 - 当前会话全文搜索、提问目录、格式化复制、数学公式和长对话渲染优化。
 - 输入区可搜索引用项目文件、调用 Windows 语音输入；侧栏/文件栏/输入区可拖动调整并记住尺寸。
