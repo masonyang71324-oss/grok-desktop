@@ -78,7 +78,21 @@ test('runs existing scripts in paths with spaces, bounds logs and stops its proc
 
 test('Electron main process can run npm using installed Node instead of its own executable', async (t) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'electron runner spaces '));
-  t.after(() => fs.rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }));
+  let child;
+  let closed = Promise.resolve();
+  t.after(async () => {
+    if (child?.exitCode === null && child.signalCode === null) child.kill();
+    await closed;
+    const options = { recursive: true, force: true, maxRetries: 3, retryDelay: 100 };
+    try {
+      await fs.rm(cwd, options);
+    } catch (error) {
+      if (process.platform !== 'win32' || error.code !== 'EBUSY') throw error;
+      // The owned processes have closed; Windows can briefly retain the directory lock.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await fs.rm(cwd, options);
+    }
+  });
   await fs.writeFile(
     path.join(cwd, 'package.json'),
     JSON.stringify({ scripts: { verify: 'node -e "console.log(123456789)"' } }),
@@ -103,13 +117,13 @@ test('Electron main process can run npm using installed Node instead of its own 
   );
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn(require('electron'), [script], {
+  child = spawn(require('electron'), [script], {
     cwd,
     env,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  t.after(() => child.kill());
+  closed = new Promise((resolve) => child.once('close', resolve));
   let output = '';
   child.stdout.on('data', (chunk) => {
     output += chunk;
