@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: grok-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: windows-latest
@@ -17,6 +21,18 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Validate release version and channel
+        id: metadata
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $metadata = node scripts/stage-release.cjs info $env:GITHUB_REF_NAME $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $release = $metadata | ConvertFrom-Json
+          "version=$($release.version)" >> $env:GITHUB_OUTPUT
+          "channel=$($release.channel)" >> $env:GITHUB_OUTPUT
+          "manifest=$($release.manifest)" >> $env:GITHUB_OUTPUT
+          "prerelease=$($release.prerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
       - run: npm ci
       - run: npx playwright install chromium
       - run: npm run lint:electron
@@ -25,7 +41,19 @@ jobs:
       - run: npm run build
       - run: npm run test:e2e
       - name: Build installers
-        run: npx electron-builder --win nsis portable --x64 --publish never
+        shell: pwsh
+        run: npx electron-builder --win nsis portable --x64 --publish never "-c.publish.channel=$env:RELEASE_CHANNEL"
+        env:
+          RELEASE_CHANNEL: ${{ steps.metadata.outputs.channel }}
+      - name: Set initial staged rollout
+        shell: pwsh
+        run: |
+          $percentage = if ($env:STAGING_PERCENTAGE -eq '') { '100' } else { $env:STAGING_PERCENTAGE }
+          node scripts/stage-release.cjs set "release/$env:RELEASE_MANIFEST" $env:GITHUB_REF_NAME $percentage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        env:
+          RELEASE_MANIFEST: ${{ steps.metadata.outputs.manifest }}
+          STAGING_PERCENTAGE: ${{ vars.GROK_STAGING_PERCENTAGE }}
       - name: Test packaged desktop tools
         shell: pwsh
         run: |
@@ -33,6 +61,8 @@ jobs:
           node scripts/verify-packaged-fuses.cjs $env:GROK_DESKTOP_TEST_EXE
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test tests/terminal-native.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-workflows.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:e2e:upgrades
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -43,21 +73,36 @@ jobs:
           node tests/e2e-draft-force-exit.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/e2e-usability.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-architecture.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-architecture-settings.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Publish release
         shell: pwsh
         run: |
-          $version = node -p "require('./package.json').version"
+          $version = $env:RELEASE_VERSION
           $assets = @(
             "release/Grok-Desktop-$version-Setup.exe",
             "release/Grok-Desktop-$version-Setup.exe.blockmap",
             "release/Grok-Desktop-$version-Windows.exe",
-            "release/latest.yml"
+            "release/$env:RELEASE_MANIFEST"
           )
+          $releaseFlags = if ($env:RELEASE_PRERELEASE -eq 'true') {
+            @('--prerelease', '--latest=false')
+          } else {
+            @('--prerelease=false', '--latest')
+          }
           if (gh release view $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY 2>$null) {
             gh release upload $env:GITHUB_REF_NAME $assets --clobber --repo $env:GITHUB_REPOSITORY
-            gh release edit $env:GITHUB_REF_NAME --latest --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            gh release edit $env:GITHUB_REF_NAME @releaseFlags --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $env:GITHUB_REF_NAME $assets --title "Grok Desktop $version" --generate-notes --latest --repo $env:GITHUB_REPOSITORY
+            gh release create $env:GITHUB_REF_NAME $assets --title "Grok Desktop $version" --generate-notes --verify-tag @releaseFlags --repo $env:GITHUB_REPOSITORY
           }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_MANIFEST: ${{ steps.metadata.outputs.manifest }}
+          RELEASE_PRERELEASE: ${{ steps.metadata.outputs.prerelease }}

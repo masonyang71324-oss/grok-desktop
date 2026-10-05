@@ -16,6 +16,9 @@ class FakeAutoUpdater extends EventEmitter {
   async checkForUpdates() {
     this.checks += 1;
   }
+  setFeedURL(options) {
+    this.feed = options;
+  }
   async downloadUpdate() {
     this.downloads += 1;
   }

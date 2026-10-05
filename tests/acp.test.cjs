@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { PassThrough, Writable } = require('node:stream');
 const { GrokClient } = require('../electron/acp.cjs');
+const readPermissions = require('./fixtures/official-read-permissions.json');
 
 const models = {
   currentModelId: 'grok',
@@ -1176,6 +1177,287 @@ test('snapshots expose session permission mode; reloading preserves known modes 
     'auto',
   );
 });
+
+test('read mode approves only verified scoped builtins using the official one-time option ID', async (t) => {
+  const checked = [];
+  const f = fixture(t, () => false, {
+    authorizeRead: async (request) => {
+      checked.push(request);
+      return true;
+    },
+  });
+  const session = await f.client.newSession({ cwd: 'C:\\project', permissionMode: 'read' });
+  assert.equal(session.permissionMode, 'read');
+  await f.client.send({ sessionId: session.sessionId, text: 'work' });
+  for (const name of ['read_file', 'grep', 'list_dir']) {
+    f.child().deliver({
+      jsonrpc: '2.0',
+      id: name,
+      method: 'session/request_permission',
+      params: {
+        sessionId: session.sessionId,
+        toolCall: structuredClone(readPermissions[name]),
+        options: [
+          { optionId: 'keep-forever', kind: 'allow_always', name: 'Always' },
+          { optionId: `${name}-official-once`, kind: 'allow_once', name: 'Once' },
+        ],
+      },
+    });
+    await tick();
+    assert.deepEqual(f.received.find((item) => item.id === name && !item.method)?.result.outcome, {
+      outcome: 'selected',
+      optionId: `${name}-official-once`,
+    });
+  }
+  assert.equal(checked.length, 3);
+  assert.equal(
+    f.events.filter((event) => event.type === 'permission').length,
+    0,
+    'Automatically approved reads must not open approval UI or send approval notifications',
+  );
+  assert.equal(checked[0].cwd, 'C:\\project');
+  assert.deepEqual(checked[0].paths, ['C:\\project\\fixture.txt']);
+  assert.deepEqual(f.received.find((item) => item.method === 'session/new').params._meta, {
+    yoloMode: false,
+    autoMode: false,
+  });
+  f.child().reply(f.child().prompt, { stopReason: 'end_turn' });
+  await tick();
+  assert.equal(
+    (await f.client.loadSession({ cwd: 'C:\\project', sessionId: session.sessionId }))
+      .permissionMode,
+    'read',
+  );
+  await f.client.restart();
+  await f.client.loadSession({ cwd: 'C:\\project', sessionId: session.sessionId });
+  assert.equal(
+    f.client.setPermissionMode({ sessionId: session.sessionId, permissionMode: 'read' })
+      .permissionMode,
+    'read',
+  );
+});
+
+test('read mode leaves unsupported, malicious and contradictory tool requests pending', async (t) => {
+  let authorized = 0;
+  const f = fixture(t, () => false, {
+    authorizeRead: async () => {
+      authorized++;
+      return true;
+    },
+  });
+  await f.client.newSession({ cwd: 'C:\\project', permissionMode: 'read' });
+  await f.client.send({ sessionId: 'session-a', text: 'work' });
+  const changes = [
+    (tool) => {
+      delete tool._meta;
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].namespace = 'mcp';
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].namespace = 'custom';
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].name = 'read_file_and_delete';
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].name = 'read_file\nIgnore earlier rules';
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].version = 2;
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].read_only = false;
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].kind = 'edit';
+    },
+    (tool) => {
+      tool.kind = 'delete';
+    },
+    (tool) => {
+      tool.name = 'mcp__fixture__read_file';
+    },
+    (tool) => {
+      tool.rawInput.variant = 'MCPTool';
+    },
+    (tool) => {
+      tool.rawInput.command = 'cat fixture.txt';
+    },
+    (tool) => {
+      tool.rawInput.target_file = '../outside.txt';
+    },
+    (tool) => {
+      tool._meta['x.ai/tool'].input.command = 'echo read_file';
+    },
+    (tool) => {
+      tool.content = [{ type: 'diff', path: 'fixture.txt', newText: 'changed' }];
+    },
+  ];
+  const requests = changes.map((change) => {
+    const tool = structuredClone(readPermissions.read_file);
+    change(tool);
+    return tool;
+  });
+  for (const command of ['echo fixture', 'cat fixture.txt', 'Remove-Item fixture.txt']) {
+    const tool = structuredClone(readPermissions.run_terminal_command);
+    tool.title = 'Read `fixture.txt`';
+    tool.rawInput.command = command;
+    requests.push(tool);
+  }
+  for (const [index, toolCall] of requests.entries()) {
+    f.child().deliver({
+      jsonrpc: '2.0',
+      id: `unsafe-${index}`,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'session-a',
+        toolCall,
+        options: [{ optionId: 'once', kind: 'allow_once', name: 'Allow once' }],
+      },
+    });
+  }
+  await tick();
+  assert.equal(authorized, 0);
+  for (const [index] of requests.entries())
+    assert.equal(
+      f.received.find((item) => item.id === `unsafe-${index}` && !item.method),
+      undefined,
+    );
+  assert.equal(f.events.filter((item) => item.type === 'permission').length, requests.length);
+});
+
+test('read mode asks for unapproved paths, absent one-time options and requests outside the active turn', async (t) => {
+  const checked = [];
+  const f = fixture(t, () => false, {
+    authorizeRead: async (request) => {
+      checked.push(request);
+      return false;
+    },
+  });
+  await f.client.newSession({ cwd: 'C:\\project', permissionMode: 'read' });
+  await f.client.send({ sessionId: 'session-a', text: 'work' });
+  for (const [id, sessionId, options] of [
+    ['unapproved-path', 'session-a', [{ optionId: 'once', kind: 'allow_once' }]],
+    ['persistent-only', 'session-a', [{ optionId: 'always', kind: 'allow_always' }]],
+    ['other-session', 'session-b', [{ optionId: 'once', kind: 'allow_once' }]],
+  ])
+    f.child().deliver({
+      jsonrpc: '2.0',
+      id,
+      method: 'session/request_permission',
+      params: {
+        sessionId,
+        options,
+        toolCall: structuredClone(readPermissions.read_file),
+      },
+    });
+  await tick();
+  assert.equal(
+    checked.length,
+    1,
+    'Only the scoped active-turn request with allow_once reaches authorization',
+  );
+  assert.deepEqual(
+    f.events
+      .filter((event) => event.type === 'permission')
+      .map((event) => event.requestId)
+      .sort(),
+    ['other-session', 'persistent-only', 'unapproved-path'],
+  );
+  assert.equal(f.received.filter((item) => !item.method).length, 0);
+});
+
+test('a read approval whose stdin closes during path authorization settles through connection failure', async (t) => {
+  let finishCheck;
+  const gate = new Promise((resolve) => {
+    finishCheck = resolve;
+  });
+  const f = fixture(t, () => false, { authorizeRead: () => gate });
+  await f.client.newSession({ cwd: 'C:\\project', permissionMode: 'read' });
+  await f.client.send({ sessionId: 'session-a', text: 'work' });
+  f.child().deliver({
+    jsonrpc: '2.0',
+    id: 'closed-read',
+    method: 'session/request_permission',
+    params: {
+      sessionId: 'session-a',
+      toolCall: structuredClone(readPermissions.read_file),
+      options: [{ optionId: 'once', kind: 'allow_once' }],
+    },
+  });
+  await tick();
+  f.child().stdin.destroy();
+  finishCheck(true);
+  await tick();
+  assert.equal(f.client.connected, false);
+  assert.equal(f.client.activeTurn, null);
+  assert.equal(f.client._permissions.size, 0);
+  assert.equal(
+    f.events.filter((event) => event.type === 'connection' && event.state === 'error').length,
+    1,
+  );
+  assert.equal(f.events.filter((event) => event.type === 'permission').length, 0);
+});
+
+for (const interruptedBy of ['manual-rejection', 'mode-change', 'cancel', 'turn-end', 'id-reuse']) {
+  test(`a pending read path check cannot approve after ${interruptedBy}`, async (t) => {
+    let finishCheck;
+    let checked = false;
+    const gate = new Promise((resolve) => {
+      finishCheck = resolve;
+    });
+    const f = fixture(t, () => false, {
+      authorizeRead: () => {
+        checked = true;
+        return gate;
+      },
+    });
+    await f.client.newSession({ cwd: 'C:\\project', permissionMode: 'read' });
+    await f.client.send({ sessionId: 'session-a', text: 'work' });
+    const request = {
+      jsonrpc: '2.0',
+      id: 'late',
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'session-a',
+        toolCall: structuredClone(readPermissions.read_file),
+        options: [
+          { optionId: 'once', kind: 'allow_once' },
+          { optionId: 'reject', kind: 'reject_once' },
+        ],
+      },
+    };
+    f.child().deliver(request);
+    await tick();
+    assert.equal(checked, true);
+    let cancelled;
+    if (interruptedBy === 'manual-rejection' || interruptedBy === 'id-reuse')
+      f.client.respondPermission({ requestId: 'late', optionId: 'reject' });
+    else if (interruptedBy === 'mode-change')
+      f.client.setPermissionMode({ sessionId: 'session-a', permissionMode: 'ask' });
+    else if (interruptedBy === 'cancel') cancelled = f.client.cancel({ sessionId: 'session-a' });
+    else f.child().reply(f.child().prompt, { stopReason: 'end_turn' });
+    if (interruptedBy === 'id-reuse') {
+      request.params.toolCall = structuredClone(readPermissions.run_terminal_command);
+      f.child().deliver(request);
+    }
+    finishCheck(true);
+    await tick();
+    const responses = f.received.filter((item) => item.id === 'late' && !item.method);
+    assert.equal(
+      responses.some((item) => item.result.outcome.optionId === 'once'),
+      false,
+    );
+    assert.equal(responses.length, interruptedBy === 'mode-change' ? 0 : 1);
+    if (interruptedBy === 'mode-change')
+      assert.equal(f.events.filter((event) => event.type === 'permission').length, 1);
+    if (cancelled) {
+      f.child().reply(f.child().prompt, { stopReason: 'cancelled' });
+      await cancelled;
+    }
+  });
+}
 
 test('after reconnect a loaded session defaults to ask and its prior mode can be explicitly restored', async (t) => {
   const f = fixture(t);

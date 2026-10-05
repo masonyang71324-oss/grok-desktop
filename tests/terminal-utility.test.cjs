@@ -12,7 +12,10 @@ function adapter() {
     killed = [];
   const host = new EventEmitter();
   host.postMessage = (message) => sent.push(message);
-  host.kill = () => true;
+  host.kill = () => {
+    killed.push(host);
+    return true;
+  };
   const utilityProcess = {
     fork: (...args) => {
       launches.push(args);
@@ -85,14 +88,13 @@ test(
     host.pid = 876543;
     host.emit('spawn');
     assert.equal(killed.length, 1);
-    assert.match(killed[0][0], /^[A-Z]:\\.*\\System32\\taskkill\.exe$/i);
-    assert.deepEqual(Array.from(killed[0][1]), ['/PID', '876543', '/T', '/F']);
+    assert.equal(killed[0], host, 'termination uses the live Utility handle');
     pty.kill();
     assert.equal(killed.length, 1);
   },
 );
 
-test('native host uses parentPort message envelopes and waits for exit acknowledgement', () => {
+test('native host buffers input during supervision and waits for exit acknowledgement', async () => {
   const port = new EventEmitter(),
     messages = [],
     exits = [];
@@ -123,13 +125,18 @@ test('native host uses parentPort message envelopes and waits for exit acknowled
     {
       process: proc,
       require: (name) => {
+        if (name === './owned-process.cjs') return { superviseUtility: async () => {} };
         assert.equal(name, 'node-pty');
         return { spawn: () => terminal };
       },
     },
     { filename },
   );
-  port.emit('message', { data: { type: 'start', shell: 'safe-shell', args: [], options: {} } });
+  const started = port.listeners('message')[0]({
+    data: { type: 'start', shell: 'safe-shell', args: [], options: {} },
+  });
+  port.emit('message', { data: { type: 'input', data: 'early' } });
+  await started;
   assert.equal(typeof onData, 'function');
   onData('native');
   port.emit('message', { data: { type: 'input', data: 'echo' } });
@@ -137,7 +144,7 @@ test('native host uses parentPort message envelopes and waits for exit acknowled
   onExit({ exitCode: 3 });
   assert.equal(messages[0].data, 'native');
   assert.equal(messages[1].exitCode, 3);
-  assert.deepEqual(inputs, ['echo']);
+  assert.deepEqual(inputs, ['early', 'echo']);
   assert.deepEqual(sizes, [[90, 25]]);
   assert.deepEqual(exits, []);
   port.emit('message', { data: { type: 'exit-ack' } });

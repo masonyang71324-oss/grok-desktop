@@ -1,0 +1,103 @@
+{
+  "read_file": {
+    "toolCallId": "probe-read_file",
+    "kind": "read",
+    "title": "Read `fixture.txt`",
+    "rawInput": {
+      "variant": "ReadFile",
+      "target_file": "fixture.txt",
+      "offset": 1,
+      "limit": 5
+    },
+    "_meta": {
+      "x.ai/tool": {
+        "version": 1,
+        "name": "read_file",
+        "kind": "read",
+        "namespace": "grok_build",
+        "label": "Read",
+        "read_only": true,
+        "input": {
+          "path": "fixture.txt",
+          "offset": 1,
+          "limit": 5
+        }
+      }
+    }
+  },
+  "grep": {
+    "toolCallId": "probe-grep",
+    "kind": "search",
+    "title": "LOCAL_READ_POLICY_FIXTURE",
+    "rawInput": {
+      "variant": "Grep",
+      "pattern": "LOCAL_READ_POLICY_FIXTURE",
+      "path": ".",
+      "glob": null,
+      "-i": false,
+      "type": null,
+      "multiline": false
+    },
+    "_meta": {
+      "x.ai/tool": {
+        "version": 1,
+        "name": "grep",
+        "kind": "search",
+        "namespace": "grok_build",
+        "label": "Search",
+        "read_only": true,
+        "input": {
+          "pattern": "LOCAL_READ_POLICY_FIXTURE",
+          "path": "."
+        }
+      }
+    }
+  },
+  "run_terminal_command": {
+    "toolCallId": "probe-run_terminal_command",
+    "kind": "execute",
+    "title": "Execute `echo LOCAL_READ_POLICY_FIXTURE`",
+    "rawInput": {
+      "variant": "Bash",
+      "command": "echo LOCAL_READ_POLICY_FIXTURE",
+      "description": "Read fixture",
+      "is_background": false
+    },
+    "_meta": {
+      "x.ai/tool": {
+        "version": 1,
+        "name": "run_terminal_command",
+        "kind": "execute",
+        "namespace": "grok_build",
+        "label": "Run Command",
+        "read_only": false,
+        "input": {
+          "command": "echo LOCAL_READ_POLICY_FIXTURE",
+          "description": "Read fixture"
+        }
+      }
+    }
+  },
+  "list_dir": {
+    "toolCallId": "probe-list_dir",
+    "kind": "other",
+    "title": "List `.`",
+    "rawInput": {
+      "variant": "ListDir",
+      "target_directory": "."
+    },
+    "_meta": {
+      "x.ai/tool": {
+        "version": 1,
+        "name": "list_dir",
+        "kind": "list",
+        "namespace": "grok_build",
+        "label": "List Files",
+        "read_only": true,
+        "input": {
+          "directory": "."
+        }
+      }
+    }
+  }
+}

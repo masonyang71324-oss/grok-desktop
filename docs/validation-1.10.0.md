@@ -1,0 +1,16 @@
+# 1.10.0 validation
+
+Scope: the five directions in [architecture-reliability.md](architecture-reliability.md), on Windows with Electron 44.5.1. All model/permission/workflow tests use owned temporary data and local fixtures. The separate official CLI metadata probe uses Grok Build 1.0.46 with an isolated profile and loopback model; it cancels every permission request.
+
+- `npm test`: **612 passed, 0 failed** after integrating the actual runtime helper into the existing App fixture.
+- `npm run format:check`, `npm run lint:electron`, `npm run typecheck:electron`, `npm run build`: passed. Existing Vite chunk-size/dynamic-import advisories remain non-blocking.
+- Source Electron flows cover startup, editor lifecycle, restoration, parallel sessions, queues, checkpoints/undo/conflicts, npm processes, pictures, Word/common documents, desktop tools, access grants, crash draft recovery and bilingual usability. The new architecture scenarios verify one session load, zero automatically replayed prompts, two retained paused queue items, manual recovery, disabled automatic recovery, workflow controls and usable stop buttons.
+- Diagnostic/settings Electron checks verify stable/beta persistence, read-mode and reconnect preferences, ZIP contents equal to the preview, secret/path exclusion, Chinese/English copy and the scrollable permission menu in a 1000×700 window at 150% zoom.
+- Unpacked Windows application: hardened fuses, native Utility Process terminal lifecycle, npm workflow start/stop, checkpoint restoration, runtime/read/reconnect scenarios and diagnostic/settings flows passed. The release workflow repeats these against the installer payload before publishing.
+- Checkpoint tests cover old inline records, v2 shared content, active/interrupted/undo retention, same-size/same-time edits, capacity accounting, atomic write failures and corrupt-content preflight without partial writes.
+- Real native main-process crash probes cover both startup and ready phases. Managed descendants exit; a separately launched sentinel remains alive. Cleanup uses retained handles, including the Windows already-terminating race, with no persistent PID sweep.
+- Real electron-updater AppUpdater/Provider fixtures cover a newer beta hidden by a later older stable hotfix, beta-to-stable promotion, selected manifest/installer URLs and hashes, native 0% rollout exclusion and channel-switch serialization. Network responses and installer bytes are synthetic; no dummy public beta is published.
+
+Independent reviews found and resolved the beta selection issue, blocked background workflow controls and a stale optimistic cancellation state. The App keeps local preparation state, while main snapshots determine task activity. Read auto-approval suppresses unnecessary permission notifications and handles late authorization/cancellation/closed stdin safely. A custom `RIPGREP_CONFIG_PATH` keeps grep requests manual.
+
+Evidence is stored locally under the ignored `test-results/` directory; reproducible fixtures and scripts are committed. Rollout operations only edit `stagingPercentage` on the selected manifest. Version tags and installer bytes are not changed by that operation. See [update-channels.md](update-channels.md).

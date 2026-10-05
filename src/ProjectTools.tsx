@@ -335,12 +335,17 @@ export default function ProjectTools({
           <p className="muted">{t('检查点不会自动清理。只删除你选中的记录，项目文件保持不变。')}</p>
           {storage && (
             <p>
-              {t('已使用 {used} / {limit}', {
+              {t('实际占用 {used} / {limit}', {
                 used: formatBytes(storage.bytes),
                 limit: formatBytes(storage.limitBytes),
               })}
             </p>
           )}
+          <p className="muted">
+            {t(
+              '相同内容由多个检查点共享。每条记录显示单独删除时至少可回收的空间；同时删除多条可能回收更多。',
+            )}
+          </p>
           <div className="workflow-actions">
             <button
               className="text-button"
@@ -401,7 +406,8 @@ export default function ProjectTools({
                 <br />
                 <span>
                   {new Date(record.createdAt).toLocaleString()} · {t(storageKinds[record.kind])} ·{' '}
-                  {formatBytes(record.bytes)}
+                  {t('至少可回收')}{' '}
+                  {record.reclaimableBytes == null ? '—' : formatBytes(record.reclaimableBytes)}
                 </span>
                 <br />
                 {record.kind !== 'unreadable' && (

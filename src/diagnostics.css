@@ -1,0 +1,52 @@
+.diagnostics-dialog {
+  display: grid;
+  gap: 12px;
+}
+.diagnostics-description {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.diagnostics-dialog h3 {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+.diagnostics-json {
+  margin: 0;
+  max-height: 45vh;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diagnostics-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.diagnostics-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 120px;
+  justify-content: center;
+  color: var(--muted);
+}
+.diagnostics-saved {
+  margin: 0;
+  color: var(--text);
+}
+.diagnostics-error {
+  overflow-wrap: anywhere;
+}
+.diagnostics-error > p {
+  margin: 0 0 8px;
+  color: var(--danger);
+}

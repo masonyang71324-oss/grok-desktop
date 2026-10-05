@@ -52,13 +52,14 @@ test('legacy checkpoint metadata is indexed once, reused after restart and rebui
   assert.equal(first[0].files[0].before, undefined);
   assert.equal(bodyReads, 1);
   await store.list({ cwd });
-  assert.equal((await store.storage()).bytes, sourceBytes);
   assert.equal(bodyReads, 1, 'warm lists must not read checkpoint bodies');
+  assert.equal((await store.storage()).bytes, sourceBytes);
+  assert.equal(bodyReads, 2, 'reclaimable storage accounting reads complete surviving manifests');
   await createCheckpointStore({ directory }).list({ cwd });
-  assert.equal(bodyReads, 1, 'restart must reuse the persisted metadata');
+  assert.equal(bodyReads, 2, 'restart must reuse the persisted metadata');
   await fs.writeFile(path.join(directory, 'metadata-index'), '{');
   await createCheckpointStore({ directory }).list({ cwd });
-  assert.equal(bodyReads, 2);
+  assert.equal(bodyReads, 3);
   assert.equal((await store.detail({ id })).files[0].before, 'private-before');
 });
 

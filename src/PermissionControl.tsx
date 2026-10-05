@@ -12,6 +12,12 @@ const choices = [
     label: '需要时询问',
     description: 'Grok 请求授权时，由你选择允许或拒绝。',
   },
+  {
+    value: 'read' as const,
+    label: '自动允许读取',
+    description:
+      '自动允许项目或已授权附件内可确认的内置读取、搜索和目录查看。命令、写入及其他工具仍需确认。',
+  },
   { value: 'auto' as const, label: '自动批准', description: '自动允许后续请求的文件和工具操作。' },
 ];
 
@@ -102,7 +108,7 @@ export default function PermissionControl({
       <button
         ref={trigger}
         type="button"
-        className={`permission-trigger ${value === 'auto' ? 'is-auto' : ''}`}
+        className={`permission-trigger ${value === 'auto' ? 'is-auto' : value === 'read' ? 'is-read' : ''}`}
         aria-label={t('操作权限：{mode}', {
           mode: t(choices.find((item) => item.value === value)?.label || ''),
         })}
@@ -117,7 +123,7 @@ export default function PermissionControl({
       >
         {busy ? <Spinner /> : <ShieldCheck size={14} />}
         <span>{t('操作权限')}</span>
-        <strong>{t(value === 'auto' ? '自动批准' : '需要时询问')}</strong>
+        <strong>{t(choices.find((item) => item.value === value)?.label || '需要时询问')}</strong>
         <ChevronDown size={13} />
       </button>
       {open && (
@@ -142,6 +148,13 @@ export default function PermissionControl({
               {value === choice.value && <Check size={16} />}
             </button>
           ))}
+          {value === 'read' && (
+            <p className="permission-read-boundary">
+              {t(
+                '缺少可验证的工具信息或路径授权时仍会询问。此模式不会改变项目的“只看文件”信任设置。',
+              )}
+            </p>
+          )}
           <p>{t('Grok 已记住的允许或拒绝规则仍然有效。')}</p>
           {error && (
             <div className="inline-error" role="alert">

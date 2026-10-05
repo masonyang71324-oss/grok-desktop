@@ -1,12 +1,10 @@
-const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { windowsSystemExecutable } = require('./system-launch.cjs');
 // Every process controlled here is the exact helper created for one terminal.
 function spawnHostedPty(
   shell,
   args,
   options,
-  { utilityProcess = require('electron').utilityProcess, spawnFn = spawn } = {},
+  { utilityProcess = require('electron').utilityProcess } = {},
 ) {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -54,19 +52,8 @@ function spawnHostedPty(
   host.on('exit', exited);
   function stopHost() {
     if (closed || !host.pid) return;
-    if (process.platform === 'win32') {
-      const killer = spawnFn(
-        windowsSystemExecutable('taskkill.exe'),
-        ['/PID', String(host.pid), '/T', '/F'],
-        { windowsHide: true, stdio: 'ignore', shell: false },
-      );
-      killer.once('error', () => {
-        stopping = false;
-      });
-      killer.once('close', (code) => {
-        if (code !== 0 && !closed) stopping = false;
-      });
-    } else host.kill();
+    // The guardian watches this exact host handle and closes its owned job.
+    if (!host.kill()) stopping = false;
   }
   host.once('spawn', () => {
     if (stopping) stopHost();

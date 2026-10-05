@@ -36,9 +36,9 @@ test(
         execPath: path.join(base, 'app/electron.exe'),
       },
       require(name) {
-        if (name === 'node:child_process')
+        if (name === './owned-process.cjs')
           return {
-            spawn(executable, args, options) {
+            spawnOwnedProcess(executable, args, options) {
               launches.push({ executable, args, options });
               const child = new EventEmitter();
               child.stdout = new EventEmitter();

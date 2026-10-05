@@ -586,6 +586,11 @@ test('advertised workflow controls run on the owning transport while ordinary se
     const snapshot = await hub.loadSession(a);
     assert.equal(snapshot.runtime.turnId, control.turnId);
     assert.equal(
+      snapshot.runtime.finishing,
+      false,
+      'The foreground workflow control remains cancellable',
+    );
+    assert.equal(
       snapshot.updates[snapshot.runtime.activeTurnStartIndex].content.text,
       `/workflow ${operation} example`,
     );

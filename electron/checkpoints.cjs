@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { renameWithRetry } = require('./file-retry.cjs');
+const { createCheckpointStorage } = require('./checkpoint-storage.cjs');
 const { translate: t } = require('./i18n.cjs');
 
 const SKIP_LABELS = {
@@ -39,6 +40,7 @@ function equal(a, b) {
 /** @param {{directory: string}} options */
 function createCheckpointStore({ directory }) {
   directory = path.resolve(directory);
+  const contents = createCheckpointStorage(directory);
   /** @type {Promise<unknown>} */
   let queue = Promise.resolve();
   const active = new Set();
@@ -55,24 +57,11 @@ function createCheckpointStore({ directory }) {
     return path.join(directory, `${id}.json`);
   };
   async function read(id) {
-    return JSON.parse(await fs.readFile(location(id), 'utf8'));
+    location(id);
+    return contents.read(id);
   }
   async function save(entry) {
-    await fs.mkdir(directory, { recursive: true });
-    const data = JSON.stringify(entry);
-    let bytes = 0;
-    for (const name of await fs.readdir(directory)) {
-      if (name.endsWith('.json') && name !== `${entry.id}.json`)
-        bytes += (await fs.stat(path.join(directory, name))).size;
-    }
-    if (bytes + Buffer.byteLength(data) > STORE_BYTES)
-      throw Object.assign(
-        new Error(t('检查点存储已达到 512 MB 上限，请删除旧检查点记录后重试。')),
-        { code: 'CHECKPOINT_STORAGE_FULL', bytes, limitBytes: STORE_BYTES },
-      );
-    const temp = `${location(entry.id)}.tmp`;
-    await fs.writeFile(temp, data);
-    await renameWithRetry(temp, location(entry.id));
+    await contents.save(entry, STORE_BYTES);
     if (metadataCache) {
       const stat = await fs.stat(location(entry.id));
       metadataCache[entry.id] = indexed(entry, stat);
@@ -160,7 +149,7 @@ function createCheckpointStore({ directory }) {
       return directoryOrder > 0 || (directoryOrder === 0 && parts[0].localeCompare(item.from) >= 0);
     });
   function publicEntry(entry, detail = true) {
-    const { baseline, ...result } = entry;
+    const { baseline, version, ...result } = entry;
     return {
       ...result,
       status: entry.status === 'recording' && !active.has(entry.id) ? 'interrupted' : entry.status,
@@ -268,7 +257,7 @@ function createCheckpointStore({ directory }) {
         continue;
       }
       try {
-        const entry = await read(id);
+        const entry = await contents.readManifest(id);
         if (entry.id !== id) throw new Error('Unreadable checkpoint');
         metadataCache[id] = indexed(entry, stat);
       } catch {
@@ -391,16 +380,21 @@ function createCheckpointStore({ directory }) {
     },
     storage: () =>
       serial(async () => {
-        const items = await records();
+        const state = await contents.scan();
         return {
-          bytes: items.reduce((sum, record) => sum + record.bytes, 0),
+          bytes: state.bytes,
+          manifestBytes: state.manifestBytes,
+          blobBytes: state.blobBytes,
+          logicalBytes: state.logicalBytes,
           limitBytes: STORE_BYTES,
-          records: items
-            .map(({ id, bytes, entry, createdAt }) =>
+          records: state.records
+            .map(({ id, bytes, logicalBytes, reclaimableBytes, entry, createdAt }) =>
               entry
                 ? {
                     id,
                     bytes,
+                    logicalBytes,
+                    reclaimableBytes,
                     cwd: entry.cwd,
                     sessionId: entry.sessionId,
                     createdAt: entry.createdAt,
@@ -418,6 +412,8 @@ function createCheckpointStore({ directory }) {
                 : {
                     id,
                     bytes,
+                    logicalBytes: null,
+                    reclaimableBytes,
                     cwd: '',
                     sessionId: '',
                     createdAt,
@@ -442,6 +438,7 @@ function createCheckpointStore({ directory }) {
           await fs.unlink(location(id));
           removed.push(id);
         }
+        await contents.collect();
         return { removed };
       }),
     remove: ({ id }) =>
@@ -449,6 +446,7 @@ function createCheckpointStore({ directory }) {
         const entry = await read(id);
         if (active.has(id)) throw new Error(t('无法删除正在记录的检查点。'));
         await fs.unlink(location(id));
+        await contents.collect();
         return { removed: id };
       }),
     restore: ({ id, paths }) =>

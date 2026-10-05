@@ -1,6 +1,10 @@
 // Only application-owned copy belongs here. Never translate server output or user content.
 let locale = 'zh-CN';
 const english = {
+  ...require('./architecture-i18n.cjs'),
+  ...require('./read-approval-i18n.cjs'),
+  ...require('./diagnostics-i18n.cjs'),
+  导出诊断包: 'Export diagnostics',
   ...require('./usability-navigation-i18n.cjs'),
   ...require('./storage-completion-i18n.cjs'),
   ...require('./access-completion-i18n.cjs'),

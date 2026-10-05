@@ -1,31 +1,18 @@
 const { translate: t } = require('./i18n.cjs');
+const semver = require('semver');
 const RELEASES_URL = 'https://github.com/masonyang71324-oss/grok-desktop/releases';
 const LATEST_RELEASE_API =
   'https://api.github.com/repos/masonyang71324-oss/grok-desktop/releases/latest';
 
-function versionParts(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^v/i, '')
-    .split('-')[0]
-    .split('.')
-    .map((part) => Number.parseInt(part, 10) || 0);
-}
-
 function isNewerVersion(candidate, current) {
-  const left = versionParts(candidate);
-  const right = versionParts(current);
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const difference = (left[index] || 0) - (right[index] || 0);
-    if (difference !== 0) return difference > 0;
-  }
-  return false;
+  return !!(semver.valid(candidate) && semver.valid(current) && semver.gt(candidate, current));
 }
 
-/** @param {{currentVersion: string, mode: 'development'|'portable'|'installer', autoUpdater?: import('electron-updater').AppUpdater, emit?: (event: {type: 'app-update', state: object}) => void, openExternal?: (url: string) => Promise<unknown>, fetchFn?: typeof fetch, requestInstall?: () => unknown, logger?: {log: (event: string, metadata: Record<string, string>) => void}}} options */
+/** @param {{currentVersion: string, mode: 'development'|'portable'|'installer', channel?: 'stable'|'beta', autoUpdater?: import('electron-updater').AppUpdater, emit?: (event: {type: 'app-update', state: object}) => void, openExternal?: (url: string) => Promise<unknown>, fetchFn?: typeof fetch, requestInstall?: () => unknown, logger?: {log: (event: string, metadata: Record<string, string>) => void}}} options */
 function createAppUpdater({
   currentVersion,
   mode,
+  channel = 'stable',
   autoUpdater,
   emit = () => {},
   openExternal = async () => {},
@@ -37,10 +24,31 @@ function createAppUpdater({
     mode,
     status: mode === 'development' ? 'unsupported' : 'idle',
     currentVersion,
+    channel,
   };
   let started = false;
   let checkPromise = null;
   let downloadPromise = null;
+  let changingChannel = false;
+  const eligible = (version) => {
+    if (!semver.valid(version)) return false;
+    const pre = semver.prerelease(version);
+    return (
+      !pre ||
+      (channel === 'beta' &&
+        pre.length === 2 &&
+        pre[0] === 'beta' &&
+        typeof pre[1] === 'number' &&
+        semver.parse(version).build.length === 0)
+    );
+  };
+  const configureChannel = () => {
+    if (!autoUpdater) return;
+    autoUpdater.channel = channel === 'beta' ? 'beta' : 'latest';
+    autoUpdater.allowPrerelease = channel === 'beta';
+    // Setting channel enables downgrades in electron-updater; reset it explicitly.
+    autoUpdater.allowDowngrade = false;
+  };
 
   const snapshot = () => ({ ...state });
   const publish = (patch) => {
@@ -64,16 +72,29 @@ function createAppUpdater({
     started = true;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
-    autoUpdater.allowPrerelease = false;
+    configureChannel();
     autoUpdater.on('checking-for-update', () => publish({ status: 'checking' }));
-    autoUpdater.on('update-available', (info) =>
-      publish({
+    autoUpdater.on('update-available', (info) => {
+      if (!eligible(info?.version) || !isNewerVersion(info.version, currentVersion))
+        return publish({ status: 'current', availableVersion: undefined });
+      return publish({
         status: 'available',
         availableVersion: info?.version,
         releaseName: info?.releaseName,
+      });
+    });
+    autoUpdater.on('update-not-available', (info) =>
+      publish({
+        status:
+          eligible(info?.version) &&
+          isNewerVersion(info.version, currentVersion) &&
+          typeof info.stagingPercentage === 'number' &&
+          info.stagingPercentage < 100
+            ? 'staged'
+            : 'current',
+        availableVersion: undefined,
       }),
     );
-    autoUpdater.on('update-not-available', () => publish({ status: 'current' }));
     autoUpdater.on('download-progress', (progress) =>
       publish({
         status: 'downloading',
@@ -93,20 +114,47 @@ function createAppUpdater({
     return snapshot();
   }
 
-  async function checkPortable() {
+  async function latestRelease() {
     if (typeof fetchFn !== 'function') throw new Error(t('当前环境无法访问更新服务。'));
-    const response = await fetchFn(LATEST_RELEASE_API, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'Grok-Desktop',
+    const response = await fetchFn(
+      channel === 'beta'
+        ? LATEST_RELEASE_API.replace('/latest', '?per_page=30')
+        : LATEST_RELEASE_API,
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'Grok-Desktop',
+        },
+        signal: AbortSignal.timeout(30_000),
       },
-      signal: AbortSignal.timeout(30_000),
-    });
+    );
     if (!response.ok)
       throw new Error(t('更新服务返回 {status}。', { status: response.status || 'Error' }));
-    const release = await response.json();
-    const availableVersion = String(release.tag_name || '').replace(/^v/i, '');
-    if (!availableVersion) throw new Error(t('更新服务没有返回有效版本号。'));
+    const payload = await response.json();
+    const items = Array.isArray(payload) ? payload : [payload];
+    const valid = items.filter(
+      (item) =>
+        item &&
+        typeof item === 'object' &&
+        typeof item.tag_name === 'string' &&
+        semver.valid(item.tag_name.replace(/^v/i, '')) &&
+        (item.draft === undefined || typeof item.draft === 'boolean') &&
+        (item.prerelease === undefined || typeof item.prerelease === 'boolean'),
+    );
+    if (items.length && !valid.length) throw new Error(t('更新服务没有返回有效版本号。'));
+    const releases = valid
+      .map((item) => ({ ...item, version: item.tag_name.replace(/^v/i, '') }))
+      .filter(
+        (item) => !item.draft && eligible(item.version) && (channel === 'beta' || !item.prerelease),
+      );
+    releases.sort((a, b) => semver.rcompare(a.version, b.version));
+    return releases[0];
+  }
+
+  async function checkPortable() {
+    const release = await latestRelease();
+    if (!release) return publish({ status: 'current', availableVersion: undefined });
+    const availableVersion = release.version;
     return publish(
       isNewerVersion(availableVersion, currentVersion)
         ? {
@@ -119,14 +167,38 @@ function createAppUpdater({
   }
 
   function check() {
+    if (changingChannel) return Promise.reject(new Error(t('正在切换更新通道，请稍后重试。')));
     if (checkPromise) return checkPromise;
-    if (state.status === 'downloading') return Promise.resolve(snapshot());
+    if (['downloading', 'downloaded'].includes(state.status)) return Promise.resolve(snapshot());
     if (mode === 'development') return Promise.resolve(snapshot());
     publish({ status: 'checking', percent: undefined });
     checkPromise = (async () => {
       try {
         if (mode === 'portable') return await checkPortable();
         start();
+        if (channel === 'beta') {
+          // GitHubProvider chooses Atom publication order: a later stable hotfix can hide a
+          // higher beta. Pin the highest compatible release, then keep native rollout,
+          // checksum and installer download handling against that release's manifest.
+          const release = await latestRelease();
+          if (!release || !isNewerVersion(release.version, currentVersion))
+            return publish({ status: 'current', availableVersion: undefined });
+          autoUpdater.setFeedURL({
+            provider: 'generic',
+            url: `${RELEASES_URL}/download/${encodeURIComponent(release.tag_name)}/`,
+            useMultipleRangeRequest: false,
+          });
+          autoUpdater.channel = semver.prerelease(release.version) ? 'beta' : 'latest';
+          autoUpdater.allowPrerelease = true;
+          autoUpdater.allowDowngrade = false;
+        } else {
+          autoUpdater.setFeedURL({
+            provider: 'github',
+            owner: 'masonyang71324-oss',
+            repo: 'grok-desktop',
+          });
+          configureChannel();
+        }
         await autoUpdater.checkForUpdates();
         return snapshot();
       } catch (error) {
@@ -139,6 +211,7 @@ function createAppUpdater({
   }
 
   function download() {
+    if (changingChannel) return Promise.reject(new Error(t('正在切换更新通道，请稍后重试。')));
     if (downloadPromise) return downloadPromise;
     if (mode === 'portable') {
       const url = state.releaseUrl || RELEASES_URL;
@@ -164,7 +237,34 @@ function createAppUpdater({
     return snapshot();
   }
 
-  return { start, check, download, install, status: snapshot };
+  async function changeChannel(next, persist) {
+    if (!['stable', 'beta'].includes(next)) throw new Error(t('无效的更新通道。'));
+    if (
+      changingChannel ||
+      checkPromise ||
+      downloadPromise ||
+      ['checking', 'downloading', 'downloaded'].includes(state.status)
+    )
+      throw new Error(t('请先完成当前更新，再切换通道。'));
+    changingChannel = true;
+    try {
+      const result = await persist();
+      channel = next;
+      configureChannel();
+      publish({
+        channel,
+        status: mode === 'development' ? 'unsupported' : 'idle',
+        availableVersion: undefined,
+        percent: undefined,
+        releaseUrl: undefined,
+      });
+      return result;
+    } finally {
+      changingChannel = false;
+    }
+  }
+
+  return { start, check, download, install, changeChannel, status: snapshot };
 }
 
 module.exports = {

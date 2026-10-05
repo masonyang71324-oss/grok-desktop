@@ -4,6 +4,7 @@ const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { randomUUID } = require('node:crypto');
 const { appendHistoryUpdate } = require('./history-updates.cjs');
+const { readApprovalPaths, authorizeProjectRead } = require('./read-approval.cjs');
 
 const RPC_TIMEOUT = 30_000;
 const SESSION_LOAD_TIMEOUT = 120_000;
@@ -41,11 +42,13 @@ class GrokClient {
     emit,
     spawnFn = spawn,
     clientVersion = require('../package.json').version,
+    authorizeRead = authorizeProjectRead,
   }) {
     this.getExecutable = getExecutable;
     this.emit = emit;
     this.spawnFn = spawnFn;
     this.clientVersion = clientVersion;
+    this.authorizeRead = authorizeRead;
     this.connected = false;
     this.models = emptyModels();
     this.commands = [];
@@ -377,31 +380,65 @@ class GrokClient {
       throw new Error(t('权限请求缺少会话或选项'));
     if (this._permissions.has(id)) throw new Error(t('重复的权限请求 ID'));
     const turn = this.activeTurn?.sessionId === params.sessionId ? this.activeTurn : null;
-    this._permissions.set(id, {
+    const permission = {
       sessionId: params.sessionId,
       turnId: turn?.turnId,
       params: copy(params),
-    });
-    this.emit({
-      type: 'permission',
-      requestId: id,
-      sessionId: params.sessionId,
-      ...(turn ? { turnId: turn.turnId } : {}),
-      params: copy(params),
-    });
+    };
+    this._permissions.set(id, permission);
     if (turn?.cancelling) {
       this.respondPermission({ requestId: id, cancelled: true });
       return;
     }
-    if (turn && this._sessions.get(params.sessionId)?.permissionMode === 'auto') {
+    const session = this._sessions.get(params.sessionId);
+    if (turn && session?.permissionMode === 'read') {
+      const option = params.options.find((item) => item.kind === 'allow_once');
+      const paths = readApprovalPaths(params.toolCall, session.cwd);
+      if (option && paths) {
+        void this._approveRead(id, permission, turn, session, option, paths).catch((error) =>
+          this._fail(error),
+        );
+        return;
+      }
+    }
+    this._publishPermission(id, permission);
+    if (turn && session?.permissionMode === 'auto') {
       const option = params.options.find((item) => item.kind === 'allow_once');
       if (option) this.respondPermission({ requestId: id, optionId: option.optionId });
     }
   }
 
+  _publishPermission(id, permission) {
+    this.emit({
+      type: 'permission',
+      requestId: id,
+      sessionId: permission.sessionId,
+      ...(permission.turnId ? { turnId: permission.turnId } : {}),
+      params: copy(permission.params),
+    });
+  }
+
+  async _approveRead(id, permission, turn, session, option, paths) {
+    let allowed = false;
+    try {
+      allowed = await this.authorizeRead({ cwd: session.cwd, paths });
+    } catch {
+      // Missing/inaccessible paths or an unavailable scope check require a user decision.
+    }
+    if (this._permissions.get(id) !== permission || this.activeTurn !== turn || turn.cancelling)
+      return;
+    if (
+      allowed &&
+      this._sessions.get(session.sessionId) === session &&
+      session.permissionMode === 'read'
+    )
+      this.respondPermission({ requestId: id, optionId: option.optionId });
+    else this._publishPermission(id, permission);
+  }
+
   setPermissionMode({ sessionId, permissionMode }) {
-    if (permissionMode !== 'ask' && permissionMode !== 'auto')
-      throw new Error(t('请选择有效的权限模式：ask 或 auto。'));
+    if (!['ask', 'read', 'auto'].includes(permissionMode))
+      throw new Error(t('请选择有效的权限模式：ask、read 或 auto。'));
     const session = this._session(sessionId);
     session.permissionMode = permissionMode;
     return { sessionId, permissionMode };
@@ -542,7 +579,7 @@ class GrokClient {
         payload.cwd,
         result,
         [],
-        payload.permissionMode === 'auto' ? 'auto' : 'ask',
+        ['read', 'auto'].includes(payload.permissionMode) ? payload.permissionMode : 'ask',
       );
       // Saved preferences may outlive a model catalog update. Reconcile only
       // creation defaults; explicit changes to an open session still validate.

@@ -1,9 +1,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { translate: t } = require('./i18n.cjs');
-const { resolvePathExecutable, windowsSystemExecutable } = require('./system-launch.cjs');
+const { resolvePathExecutable } = require('./system-launch.cjs');
+const { spawnOwnedProcess } = require('./owned-process.cjs');
 
 function extractLocalUrl(text) {
   for (const match of text.matchAll(/https?:\/\/[^\s<>"'`\x1b]+/g)) {
@@ -111,7 +111,7 @@ function createProjectRunner({ emit = () => {} } = {}) {
       pendingOutput: '',
       outputTimer: null,
     };
-    const child = spawn(command.executable, [...command.args, 'run', '--', script], {
+    const child = spawnOwnedProcess(command.executable, [...command.args, 'run', '--', script], {
       cwd,
       windowsHide: true,
       shell: false,
@@ -165,23 +165,8 @@ function createProjectRunner({ emit = () => {} } = {}) {
       const pid = project.child.pid;
       if (pid) {
         if (process.platform === 'win32') {
-          await new Promise((resolve, reject) => {
-            const killer = spawn(
-              windowsSystemExecutable('taskkill.exe'),
-              ['/pid', String(pid), '/T', '/F'],
-              {
-                windowsHide: true,
-                shell: false,
-                stdio: 'ignore',
-              },
-            );
-            killer.once('error', reject);
-            killer.once('close', (code) =>
-              code === 0 || !project.child
-                ? resolve()
-                : reject(new Error(t('无法停止项目进程（{code}）。', { code }))),
-            );
-          });
+          // The live guardian handle owns the job; its exit terminates the tree.
+          project.child.kill();
         } else {
           try {
             process.kill(-pid, 'SIGTERM');

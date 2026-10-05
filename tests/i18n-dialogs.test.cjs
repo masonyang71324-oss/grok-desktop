@@ -149,6 +149,7 @@ test('language selection applies immediately without closing settings or saving 
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.saves[1]), {
     grokPath: 'D:/edited/grok.exe',
+    autoReconnect: true,
     theme: 'light',
     modelId: '',
     effort: '',

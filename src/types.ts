@@ -1,5 +1,5 @@
 export type Result<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
-export type PermissionMode = 'ask' | 'auto';
+export type PermissionMode = 'ask' | 'read' | 'auto';
 export interface Settings {
   language: 'zh-CN' | 'en';
   grokPath: string;
@@ -7,6 +7,8 @@ export interface Settings {
   modelId: string;
   effort: string;
   permissionMode: PermissionMode;
+  updateChannel?: 'stable' | 'beta';
+  autoReconnect?: boolean;
   recentProjects: string[];
   lastProject: string;
   projectTrust?: Record<string, boolean>;
@@ -62,12 +64,14 @@ export type AppUpdateStatus =
   | 'downloading'
   | 'downloaded'
   | 'current'
+  | 'staged'
   | 'error'
   | 'unsupported';
 export interface AppUpdateState {
   mode: 'installer' | 'portable' | 'development';
   status: AppUpdateStatus;
   currentVersion: string;
+  channel?: 'stable' | 'beta';
   availableVersion?: string;
   releaseName?: string;
   releaseUrl?: string;
@@ -234,6 +238,7 @@ export interface TaskPermission {
 }
 export interface TaskRuntime {
   finishing?: boolean;
+  cancelling?: boolean;
   startedAt?: string;
   lastTurn?: TaskTurnResult;
   capabilities?: { promptCapabilities?: { image?: boolean } };
@@ -300,10 +305,15 @@ export interface CheckpointStorageRecord {
   status: string;
   fileCount: number | null;
   bytes: number;
+  logicalBytes: number | null;
+  reclaimableBytes: number | null;
   kind: 'turn' | 'restore' | 'unreadable';
 }
 export interface CheckpointStorage {
   bytes: number;
+  manifestBytes: number;
+  blobBytes: number;
+  logicalBytes: number | null;
   limitBytes: number;
   records: CheckpointStorageRecord[];
 }

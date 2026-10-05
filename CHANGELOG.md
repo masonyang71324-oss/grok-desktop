@@ -1,5 +1,13 @@
 # Changes
 
+## 1.10.0
+
+- Deduplicate checkpoint content with shared blobs, legacy restore support, integrity checks and conservative collection.
+- Reclaim owned internal Windows terminal/npm descendants after main-process crashes without persistent PID sweeping.
+- Use main-process runtime snapshots for task controls and add previewed, private diagnostic ZIP export.
+- Add verified-read approval and one automatic reconnect without prompt replay or queue resumption.
+- Offer stable/beta update channels, semantic version comparison without downgrades, and manifest-only staged rollout controls.
+
 ## 1.9.0
 
 - Add session activity/approval/queue/draft indicators and an action-first task center.

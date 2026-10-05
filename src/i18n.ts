@@ -19,6 +19,9 @@ import { approvalUsability } from './locales/approval-usability';
 import { usabilityPresentation } from './locales/usability-presentation';
 import { usabilityNavigation } from './locales/usability-navigation';
 import { taskStatus } from './locales/task-status';
+import { architecture } from './locales/architecture';
+import { readApproval } from './locales/read-approval';
+import { diagnostics } from './locales/diagnostics';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
@@ -43,6 +46,9 @@ const english: Record<string, string> = {
   ...usabilityPresentation,
   ...usabilityNavigation,
   ...taskStatus,
+  ...architecture,
+  ...readApproval,
+  ...diagnostics,
 };
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';

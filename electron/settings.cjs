@@ -15,6 +15,8 @@ const defaults = {
   modelId: '',
   effort: '',
   permissionMode: 'ask',
+  updateChannel: 'stable',
+  autoReconnect: true,
   recentProjects: [],
   projectTrust: {},
   selectedAttachments: [],
@@ -38,7 +40,9 @@ function normalizeSettings(input = {}) {
     theme: ['dark', 'light', 'system'].includes(input.theme) ? input.theme : 'dark',
     modelId: typeof input.modelId === 'string' ? input.modelId : '',
     effort: typeof input.effort === 'string' ? input.effort : '',
-    permissionMode: input.permissionMode === 'auto' ? 'auto' : 'ask',
+    permissionMode: ['read', 'auto'].includes(input.permissionMode) ? input.permissionMode : 'ask',
+    updateChannel: input.updateChannel === 'beta' ? 'beta' : 'stable',
+    autoReconnect: input.autoReconnect !== false,
     projectTrust: Object.fromEntries(
       Object.entries(isObject(input.projectTrust) ? input.projectTrust : {})
         .filter(([key, value]) => path.isAbsolute(key) && typeof value === 'boolean')

@@ -50,6 +50,7 @@ const { createAccessPolicy, projectKey } = require('./access-policy.cjs');
 const { validateRequest } = require('./request-validation.cjs');
 const { createAttachmentStorage } = require('./attachment-storage.cjs');
 const { withUpdateHealth } = require('./update-health.cjs');
+const { createDiagnostics } = require('./diagnostics.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
@@ -105,8 +106,70 @@ const activity = new RuntimeActivity({
 });
 const eventListeners = new Set();
 const logger = createLogger(path.join(app.getPath('userData'), 'logs'));
+const diagnostics = createDiagnostics({
+  getMetadata: () => {
+    const entries = [...client.sessions.values()];
+    const { language, theme, permissionMode, updateChannel, autoReconnect, notifications, ui } =
+      settings;
+    let configured = false;
+    try {
+      configured = !!resolveGrok(settings.grokPath);
+    } catch {
+      /* No CLI configured. */
+    }
+    return {
+      versions: {
+        app: app.getVersion(),
+        electron: process.versions.electron,
+        node: process.versions.node,
+        chrome: process.versions.chrome,
+        cli: engineState.version || client.version,
+      },
+      platform: process.platform,
+      arch: process.arch,
+      settings: {
+        language,
+        theme,
+        permissionMode,
+        updateChannel,
+        autoReconnect,
+        notifications,
+        ui: { zoomPercent: ui.zoomPercent },
+      },
+      engine: { configured, connection: client.catalog.connected ? 'ready' : 'disconnected' },
+      counts: {
+        sessions: entries.length,
+        activeTasks: entries.filter((entry) => entry.running || entry.control).length,
+        queuedTasks: entries.reduce((sum, entry) => sum + entry.queue.length, 0),
+        pendingApprovals: entries.reduce((sum, entry) => sum + entry.permissions.size, 0),
+      },
+    };
+  },
+  readLogs: async () => {
+    await logger.flush();
+    return Promise.all(
+      ['desktop.log.2', 'desktop.log.1', 'desktop.log'].map(async (name) => {
+        try {
+          return await fs.readFile(path.join(logger.directory, name), 'utf8');
+        } catch (error) {
+          if (error.code === 'ENOENT') return '';
+          throw error;
+        }
+      }),
+    );
+  },
+  chooseDestination: async ({ defaultName }) => {
+    const selected = await dialog.showSaveDialog(win, {
+      title: t('导出诊断包'),
+      defaultPath: defaultName,
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    });
+    return selected.canceled ? null : selected.filePath || null;
+  },
+});
 const appUpdater = createAppUpdater({
   currentVersion: app.getVersion(),
+  channel: settings.updateChannel === 'beta' ? 'beta' : 'stable',
   mode:
     !app.isPackaged || process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
       ? 'development'
@@ -178,6 +241,7 @@ function emit(event) {
 }
 
 const client = new SessionHub({
+  authorizeRead: (input) => access.authorizeRead(input),
   storageFile: path.join(app.getPath('userData'), 'queued-tasks.json'),
   getExecutable: () => resolveGrok(settings.grokPath),
   emit,
@@ -441,7 +505,10 @@ function saveSettings(patch) {
         if (changedPath) await client.restart();
         return publicSettings();
       };
-      return changedPath ? activity.runMutation(save) : save();
+      const persist = () => (changedPath ? activity.runMutation(save) : save());
+      return patch.updateChannel !== undefined && patch.updateChannel !== settings.updateChannel
+        ? appUpdater.changeChannel(patch.updateChannel, persist)
+        : persist();
     })
     .catch((error) => {
       if (
@@ -845,6 +912,8 @@ const handlers = {
     });
   },
   'settings.save': saveSettings,
+  'diagnostics.preview': () => diagnostics.preview(),
+  'diagnostics.export': ({ id }) => diagnostics.export(id),
   'drafts.flush': ({ protectedPaths = [] }) => {
     draftAttachmentPaths = protectedPaths;
     if (!draftFlushTimer)

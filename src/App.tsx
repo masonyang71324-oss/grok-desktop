@@ -124,6 +124,11 @@ import { useEngine } from './useEngine';
 import './workflows.css';
 import './enhancements.css';
 import { createDraftStore, sameDraft, type Draft } from './drafts.mjs';
+import {
+  createReconnectBudget,
+  deriveSessionRuntime,
+  isWorkflowControl,
+} from './session-runtime.mjs';
 
 const defaults: Settings = {
   language: 'zh-CN',
@@ -277,8 +282,11 @@ export default function App() {
   sessionRef.current = session;
   const runRef = useRef(run);
   runRef.current = run;
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const runtimeState = deriveSessionRuntime({ session, tasks, pending });
   const busyRef = useRef(false);
-  busyRef.current = !!run || pending;
+  busyRef.current = runtimeState.busy;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const draftRef = useRef<HTMLTextAreaElement>(null);
@@ -314,6 +322,8 @@ export default function App() {
   const draftRestoredRef = useRef(false);
   const needsRestoreRef = useRef(false);
   const restorePromiseRef = useRef<Promise<boolean> | null>(null);
+  const reconnectBudget = useRef(createReconnectBudget());
+  const reconnectKey = () => sessionRef.current?.sessionId || `catalog:${cwdRef.current}`;
   function currentDraft(): Draft {
     return { text: draftValueRef.current, attachments: attachmentRef.current };
   }
@@ -409,7 +419,7 @@ export default function App() {
         }
       : null;
     runRef.current = active;
-    busyRef.current = !!active;
+    busyRef.current = deriveSessionRuntime({ session: snapshot, tasks: tasksRef.current }).busy;
     setRun(active);
     setPending(false);
     setCancelling(false);
@@ -565,6 +575,7 @@ export default function App() {
       void request<TaskSummary[]>('tasks.list')
         .then((value) => {
           setTasks(value);
+          tasksRef.current = value;
           setPermissions(value.flatMap((task) => task.permissions));
         })
         .catch(() => {});
@@ -676,11 +687,16 @@ export default function App() {
         if (event.message) updateAuthentication(event.message);
         if (event.state === 'error' || event.state === 'disconnected') {
           if (sessionRef.current) needsRestoreRef.current = true;
+          reconnectBudget.current.disconnected(reconnectKey(), {
+            state: event.state,
+            action: classifyFailure(event.message || '').action,
+          });
           setConnection(event.state);
           setConnectionError(event.message || '');
         } else if (event.state === 'ready' && needsRestoreRef.current && sessionRef.current) {
-          setConnection('restoring');
-          void restoreSession();
+          // Transport readiness alone has not loaded the selected session.
+          // Keep manual recovery available when auto recovery is off/spent.
+          setConnection(restorePromiseRef.current ? 'restoring' : 'error');
         } else {
           setConnection(event.state);
           setConnectionError(event.message || '');
@@ -710,6 +726,12 @@ export default function App() {
         return;
       }
       if (event.type === 'tasks-changed') {
+        tasksRef.current = event.tasks;
+        busyRef.current = deriveSessionRuntime({
+          session: sessionRef.current,
+          tasks: event.tasks,
+          pending: !!preparingSendRef.current,
+        }).busy;
         setTasks(event.tasks);
         setPermissions(event.tasks.flatMap((task) => task.permissions));
         return;
@@ -974,7 +996,10 @@ export default function App() {
       return;
     }
     if (summary.sessionId === sessionRef.current?.sessionId) {
-      if (needsRestoreRef.current) await restoreSession();
+      if (needsRestoreRef.current) {
+        reconnectBudget.current.rearm(reconnectKey());
+        await restoreSession();
+      }
       return;
     }
     transitionRef.current = true;
@@ -1127,7 +1152,6 @@ export default function App() {
     } finally {
       transitionRef.current = false;
       setConfiguring(false);
-      if (needsRestoreRef.current) void restoreSession();
     }
   }
   async function send() {
@@ -1149,11 +1173,20 @@ export default function App() {
     }
     if (
       (!text && !submitted.attachments.length) ||
-      busyRef.current ||
+      !!preparingSendRef.current ||
+      (busyRef.current &&
+        !isWorkflowControl({
+          runtime: deriveSessionRuntime({ session: sessionRef.current, tasks: tasksRef.current })
+            .runtime,
+          text,
+          attachments: submitted.attachments,
+          commands: sessionRef.current?.commands,
+        })) ||
       transitionRef.current ||
       loadingSession
     )
       return;
+    reconnectBudget.current.rearm(reconnectKey());
     const recovered = needsRestoreRef.current && (await restoreSession());
     if ((connection !== 'ready' && !recovered) || needsRestoreRef.current) {
       notify(t('Grok 尚未连接，请先重新连接或检查设置。'));
@@ -1232,24 +1265,30 @@ export default function App() {
       updateAuthentication(errorText(e));
       notify(errorText(e));
       persistDraft();
-      if (needsRestoreRef.current) void restoreSession();
     } finally {
       if (preparingSendRef.current === preparation) preparingSendRef.current = null;
     }
   }
   async function stop() {
     const preparation = preparingSendRef.current;
-    const active = runRef.current;
-    if ((!preparation && !active) || preparation?.cancelled) return;
+    const state = deriveSessionRuntime({
+      session: sessionRef.current,
+      tasks: tasksRef.current,
+      pending: !!preparation,
+    });
+    if (!state.canStop || preparation?.cancelled) return;
     if (preparation) preparation.cancelled = true;
     setCancelling(true);
     try {
       const sessionId =
-        active?.sessionId || (preparation?.submitted ? preparation.sessionId : undefined);
+        (['running', 'starting', 'waiting'].includes(state.runtime?.status || '')
+          ? sessionRef.current?.sessionId
+          : undefined) || (preparation?.submitted ? preparation.sessionId : undefined);
       if (sessionId) await request('session.cancel', { sessionId });
     } catch (e) {
-      setCancelling(false);
       notify(errorText(e));
+    } finally {
+      setCancelling(false);
     }
   }
   async function inspectTaskChanges(task: TaskSummary) {
@@ -1267,8 +1306,13 @@ export default function App() {
       void request('system.open', { target: 'grok-login', cwd: cwdRef.current }).catch((e) =>
         notify(errorText(e)),
       );
-    else if (action === 'reconnect') void initialize(true);
-    else {
+    else if (action === 'reconnect') {
+      reconnectBudget.current.rearm(reconnectKey());
+      if (sessionRef.current) {
+        needsRestoreRef.current = true;
+        void restoreSession();
+      } else void initialize(false);
+    } else {
       const last = [...rows].reverse().find((row) => row.kind === 'user');
       if (last && !draftValueRef.current.trim() && !attachmentRef.current.length)
         fillDraft(last.text, last.attachments || []);
@@ -1306,7 +1350,12 @@ export default function App() {
   async function enqueue() {
     const submitted = currentDraft();
     const target = sessionRef.current;
-    if (!target || (!submitted.text.trim() && !submitted.attachments.length) || pending) return;
+    if (
+      !target ||
+      (!submitted.text.trim() && !submitted.attachments.length) ||
+      !runtimeState.canQueue
+    )
+      return;
     try {
       await request('session.enqueue', {
         cwd: target.cwd,
@@ -1608,16 +1657,13 @@ export default function App() {
     : '';
   const currentTitle =
     sessions.find((item) => item.sessionId === session?.sessionId)?.title || t('新会话');
-  const busy = !!run || pending;
-  const currentTask = tasks.find((task) => task.sessionId === session?.sessionId);
-  const currentRuntime = currentTask || session?.runtime;
+  const busy = runtimeState.busy;
+  const currentRuntime = runtimeState.runtime;
   const backgroundTask = currentRuntime?.status === 'background';
-  const taskActive =
-    busy ||
-    !!currentRuntime?.finishing ||
-    ['running', 'starting', 'waiting', 'cancelling', 'background'].includes(
-      currentRuntime?.status || '',
-    );
+  const taskActive = busy;
+  const taskCancelling = runtimeState.cancelling || cancelling;
+  const workflowControl =
+    !pending && isWorkflowControl({ runtime: currentRuntime, text: draft, attachments, commands });
   const latestResult = currentRuntime?.lastTurn;
   const showOutcome =
     !taskActive &&
@@ -1695,6 +1741,39 @@ export default function App() {
       }
     },
   });
+  useEffect(() => {
+    if (!['error', 'disconnected', 'restoring'].includes(connection)) return;
+    const attempted = reconnectBudget.current.take(reconnectKey(), {
+      enabled: settings.autoReconnect !== false,
+      trusted: projectTrusted && cliStatus?.authStatus !== 'required',
+      blocked:
+        initializing ||
+        deleteBusy ||
+        pending ||
+        configuring ||
+        !!loadingSession ||
+        transitionRef.current ||
+        !!restorePromiseRef.current ||
+        busyRef.current ||
+        runtimeState.busy,
+    });
+    if (!attempted) return;
+    if (sessionRef.current) void restoreSession();
+    else void initialize(false);
+  }, [
+    connection,
+    connectionError,
+    settings.autoReconnect,
+    projectTrusted,
+    cliStatus?.authStatus,
+    initializing,
+    deleteBusy,
+    pending,
+    configuring,
+    loadingSession,
+    tasks,
+    session?.sessionId,
+  ]);
   const currentSummary: SessionSummary | null = session
     ? { sessionId: session.sessionId, cwd: session.cwd, title: currentTitle }
     : null;
@@ -1715,13 +1794,15 @@ export default function App() {
           ? t('下载中 {percent}%', { percent: Math.round(appUpdate.percent || 0) })
           : appUpdate.status === 'downloaded'
             ? t('更新已就绪')
-            : appUpdate.status === 'current'
-              ? t('已是最新')
-              : appUpdate.status === 'error'
-                ? t('检查失败')
-                : appUpdate.status === 'unsupported'
-                  ? t('开发模式')
-                  : t('检查更新');
+            : appUpdate.status === 'staged'
+              ? t('新版本正在分批推送，轮到此设备时即可更新。')
+              : appUpdate.status === 'current'
+                ? t('已是最新')
+                : appUpdate.status === 'error'
+                  ? t('检查失败')
+                  : appUpdate.status === 'unsupported'
+                    ? t('开发模式')
+                    : t('检查更新');
   async function runUpdateAction(command: 'update.check' | 'update.download' | 'update.install') {
     const next = await request<AppUpdateState>(command);
     setAppUpdate(next);
@@ -2368,10 +2449,10 @@ export default function App() {
           {taskActive && (
             <TaskActivity
               rows={rows}
-              turnId={run?.turnId || currentRuntime?.turnId}
+              turnId={currentRuntime?.turnId || run?.turnId}
               startedAt={currentRuntime?.startedAt || run?.startedAt}
               pending={pending}
-              cancelling={cancelling}
+              cancelling={taskCancelling}
               background={backgroundTask}
               finishing={currentRuntime?.finishing && !backgroundTask}
               waitingApproval={permissions.some((item) => item.sessionId === session?.sessionId)}
@@ -2557,11 +2638,11 @@ export default function App() {
                   </label>
                 )}
               </div>
-              {busy ? (
+              {busy && !workflowControl ? (
                 <>
                   <button
                     className="secondary-button queue-send"
-                    disabled={(!draft.trim() && !attachments.length) || pending}
+                    disabled={(!draft.trim() && !attachments.length) || !runtimeState.canQueue}
                     onClick={() => void enqueue()}
                   >
                     {t('加入队列')}
@@ -2569,11 +2650,15 @@ export default function App() {
                   <button
                     className="send-button stop"
                     onClick={() => void stop()}
-                    disabled={cancelling}
-                    title={cancelling ? t('正在停止') : t('停止生成')}
+                    disabled={!runtimeState.canStop || taskCancelling}
+                    title={taskCancelling ? t('正在停止') : t('停止生成')}
                     aria-label={t('停止生成')}
                   >
-                    {cancelling || pending ? <Spinner /> : <Square size={15} fill="currentColor" />}
+                    {taskCancelling || pending ? (
+                      <Spinner />
+                    ) : (
+                      <Square size={15} fill="currentColor" />
+                    )}
                   </button>
                 </>
               ) : (
@@ -2609,7 +2694,7 @@ export default function App() {
               {busy ? (
                 <>
                   <span className="status-dot connecting" />
-                  {cancelling ? t('正在停止') : pending ? t('准备中') : t('任务进行中')}
+                  {taskCancelling ? t('正在停止') : pending ? t('准备中') : t('任务进行中')}
                 </>
               ) : (
                 t('Enter 发送 · Shift + Enter 换行')

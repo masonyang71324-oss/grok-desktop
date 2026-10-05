@@ -56,6 +56,7 @@ const modes = {
 const commands = [
   { name: 'mock-permission', description: '模拟权限请求' },
   { name: 'mock-cancel', description: '等待取消' },
+  { name: 'workflow', description: '本地模拟工作流控制' },
 ];
 let state = { sessions: [], clientVersion: '' },
   activeSessionId = '',
@@ -177,7 +178,7 @@ function receive(request) {
     stream(permission.session, [allowed ? '模拟操作已获准。' : '模拟操作未获准。']);
     return;
   }
-  log('request', request.method);
+  log('request', request.method, null, { sessionId: request.params?.sessionId });
   const params = request.params || {};
   if (request.method === 'initialize') {
     state.clientVersion = params.clientInfo?.version || '';
@@ -270,6 +271,13 @@ function receive(request) {
     return;
   }
   if (request.method === 'session/load') {
+    if (
+      process.env.GROK_DESKTOP_MOCK_FAIL_LOAD_FILE &&
+      fs.existsSync(process.env.GROK_DESKTOP_MOCK_FAIL_LOAD_FILE)
+    ) {
+      fail(request, 'ECONNRESET mock session load failed');
+      return;
+    }
     activeSessionId = session.sessionId;
     for (const value of session.updates) update(session, value, false);
     reply(request, { models, modes });
@@ -293,7 +301,35 @@ function receive(request) {
       });
     turn = { request, session, timers: [] };
     update(session, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } });
-    if (text.includes('MOCK_VERIFY')) {
+    if (text.includes('MOCK_WORKFLOW')) {
+      write({
+        method: '_x.ai/session_notification',
+        params: {
+          sessionId: session.sessionId,
+          update: { sessionUpdate: 'workflow_updated', run_id: 'mock-workflow', status: 'active' },
+        },
+      });
+      stream(session, ['模拟工作流已启动。']);
+    } else if (/^\/workflow (?:pause|resume|stop)/.test(text)) {
+      if (text.startsWith('/workflow stop')) {
+        write({
+          method: '_x.ai/session_notification',
+          params: {
+            sessionId: session.sessionId,
+            update: {
+              sessionUpdate: 'workflow_updated',
+              run_id: 'mock-workflow',
+              status: 'cancelled',
+            },
+          },
+        });
+        stream(session, ['模拟工作流已停止。']);
+      } else
+        update(session, {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: '控制请求等待停止。' },
+        });
+    } else if (text.includes('MOCK_VERIFY')) {
       update(session, {
         sessionUpdate: 'tool_call',
         toolCallId: 'mock-verify',
@@ -338,6 +374,27 @@ function receive(request) {
         ],
       });
       finish();
+    } else if (text.includes('MOCK_READ_POLICY')) {
+      const captured = require('../tests/fixtures/official-read-permissions.json');
+      const toolCall = structuredClone(
+        captured[text.includes('SHELL') ? 'run_terminal_command' : 'read_file'],
+      );
+      toolCall.toolCallId = 'mock-tool';
+      update(session, { sessionUpdate: 'tool_call', status: 'pending', ...toolCall });
+      const id = randomUUID();
+      permissions.set(id, { turn, session });
+      write({
+        id,
+        method: 'session/request_permission',
+        params: {
+          sessionId: session.sessionId,
+          toolCall,
+          options: [
+            { optionId: 'allow-once', kind: 'allow_once', name: 'Yes, proceed' },
+            { optionId: 'reject-once', kind: 'reject_once', name: 'No' },
+          ],
+        },
+      });
     } else if (text.includes('MOCK_PERMISSION')) {
       update(session, {
         sessionUpdate: 'tool_call',

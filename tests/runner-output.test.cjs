@@ -15,6 +15,7 @@ test('runner batches output deltas, flushes terminal state and excludes old-run 
     events = [];
   t.mock.method(childProcess, 'spawn', () => {
     const child = new EventEmitter();
+    child.stdin = new PassThrough();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
     children.push(child);

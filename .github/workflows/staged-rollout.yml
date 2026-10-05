@@ -1,0 +1,53 @@
+name: Adjust installed-app staged rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag (vX.Y.Z or vX.Y.Z-beta.N)
+        required: true
+        type: string
+      percentage:
+        description: Staging percentage (integer 0 through 100)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: grok-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  update-manifest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Update only the existing channel manifest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          STAGING_PERCENTAGE: ${{ inputs.percentage }}
+        run: |
+          $metadata = node scripts/stage-release.cjs info $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $release = $metadata | ConvertFrom-Json
+          $remoteJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,isPrerelease
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $remote = $remoteJson | ConvertFrom-Json
+          if ($remote.tagName -ne $env:RELEASE_TAG -or $remote.isPrerelease -ne $release.prerelease) {
+            throw 'The existing release tag or stable/beta status does not match.'
+          }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $release.manifest --dir rollout
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $manifest = Join-Path rollout $release.manifest
+          node scripts/stage-release.cjs set $manifest $env:RELEASE_TAG $env:STAGING_PERCENTAGE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release upload $env:RELEASE_TAG $manifest --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "Updated $($release.manifest) for $env:RELEASE_TAG to $env:STAGING_PERCENTAGE%. Installer assets were not uploaded." >> $env:GITHUB_STEP_SUMMARY

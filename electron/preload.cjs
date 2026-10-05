@@ -29,6 +29,8 @@ const commands = new Set([
   'attachment.preview',
   'attachment.reauthorize',
   'settings.save',
+  'diagnostics.preview',
+  'diagnostics.export',
   'drafts.flush',
   'dialog.project',
   'dialog.attach',

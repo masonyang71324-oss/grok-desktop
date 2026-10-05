@@ -253,6 +253,9 @@ async function fixture(
       readableDate: (value) => value,
     },
     './drafts.mjs': await import(pathToFileURL(path.join(root, 'src/drafts.mjs')).href),
+    './session-runtime.mjs': await import(
+      pathToFileURL(path.join(root, 'src/session-runtime.mjs')).href
+    ),
     './effort-presets.mjs': await import(
       pathToFileURL(path.join(root, 'src/effort-presets.mjs')).href
     ),
@@ -719,6 +722,21 @@ test('explicit queue preserves inline context and image submission reaches the m
   try {
     await f.view.loadConversation(summaries[0]);
     await settle();
+    // The queue action is offered while the owning main-process task is busy.
+    // Supply the same authoritative snapshot that SessionHub publishes.
+    f.emit({
+      type: 'tasks-changed',
+      tasks: [
+        {
+          ...summaries[0],
+          status: 'running',
+          turnId: 'foreground-turn',
+          connection: 'ready',
+          queued: [],
+          permissions: [],
+        },
+      ],
+    });
     const attachment = { name: 'code.ts:2', path: '', kind: 'text', text: 'selected code' };
     f.view.setDraft('next task');
     f.view.setAttachments([attachment]);
@@ -745,6 +763,12 @@ test('explicit queue preserves inline context and image submission reaches the m
       sessionId: 'session-a',
       turnId: 'queued-turn',
       result: { stopReason: 'end_turn' },
+    });
+    f.emit({
+      type: 'tasks-changed',
+      tasks: [
+        { ...summaries[0], status: 'idle', connection: 'ready', queued: [], permissions: [] },
+      ],
     });
     await settle();
     f.view.setDraft('image request');

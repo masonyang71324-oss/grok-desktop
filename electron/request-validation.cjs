@@ -44,6 +44,7 @@ const required = {
   'clipboard.write': ['text'],
   'office.preview': ['path'],
   'attachment.reauthorize': ['path'],
+  'diagnostics.export': ['id'],
 };
 function validateRequest(command, payload = {}) {
   if (!object(payload)) throw new Error(t('操作参数无效。'));
@@ -124,7 +125,14 @@ function validateRequest(command, payload = {}) {
       fail();
     if (Object.hasOwn(payload, 'projectTrust') || Object.hasOwn(payload, 'selectedAttachments'))
       fail();
+    if (
+      !optional(payload, 'autoReconnect', (value) => typeof value === 'boolean') ||
+      !optional(payload, 'updateChannel', (value) => ['stable', 'beta'].includes(value))
+    )
+      fail();
   }
+  if (!optional(payload, 'permissionMode', (value) => ['ask', 'read', 'auto'].includes(value)))
+    fail();
   return payload;
 }
 module.exports = { validateRequest };

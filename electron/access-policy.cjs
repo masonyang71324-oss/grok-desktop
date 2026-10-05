@@ -58,6 +58,27 @@ function createAccessPolicy() {
   return {
     project,
     file,
+    async authorizeRead({ cwd, paths }) {
+      try {
+        const selected = project(cwd, true);
+        const root = key(await fs.realpath(selected.cwd));
+        if (!Array.isArray(paths) || !paths.length) return false;
+        for (const filename of paths) {
+          const resolved = key(await fs.realpath(absolute(filename)));
+          if (
+            !inside(root, resolved) &&
+            !files.has(resolved) &&
+            ![...managed.keys()].some((directory) => inside(directory, resolved))
+          )
+            return false;
+        }
+        // Trust may change while resolving paths.
+        project(cwd, true);
+        return true;
+      } catch {
+        return false;
+      }
+    },
     execution(filename) {
       const scope = containing(absolute(filename));
       if (scope) return project(scope.cwd, true);

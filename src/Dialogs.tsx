@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+const DiagnosticsDialog = lazy(() => import('./DiagnosticsDialog'));
 import InterfaceSize from './InterfaceSize';
 import SystemErrorDetails from './SystemErrorDetails';
 import {
@@ -344,6 +345,7 @@ export function SettingsDialog({
 }) {
   useI18n();
   const [draft, setDraft] = useState(settings);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [languageSaving, setLanguageSaving] = useState(false);
   const [sizeSaving, setSizeSaving] = useState(false);
   async function changeSize(zoomPercent: number) {
@@ -378,8 +380,26 @@ export function SettingsDialog({
     setSaving(true);
     setError('');
     try {
-      const { grokPath, theme, modelId, effort, permissionMode, notifications, language } = draft;
-      await onSave({ grokPath, theme, modelId, effort, permissionMode, notifications, language });
+      const {
+        grokPath,
+        theme,
+        modelId,
+        effort,
+        permissionMode,
+        notifications,
+        language,
+        autoReconnect = true,
+      } = draft;
+      await onSave({
+        grokPath,
+        theme,
+        modelId,
+        effort,
+        permissionMode,
+        notifications,
+        language,
+        autoReconnect,
+      });
       onClose();
     } catch (e) {
       setError(errorText(e));
@@ -408,13 +428,15 @@ export function SettingsDialog({
           ? t('正在下载更新… {percent}%', { percent: Math.round(update.percent || 0) })
           : update.status === 'downloaded'
             ? t('新版本已下载，可以重启安装。')
-            : update.status === 'current'
-              ? t('当前已是最新版本。')
-              : update.status === 'error'
-                ? update.error || t('软件更新遇到问题，请查看具体原因。')
-                : update.status === 'unsupported'
-                  ? t('开发环境不检查软件更新。')
-                  : t('自动检查稳定版本，也可以随时手动检查。');
+            : update.status === 'staged'
+              ? t('新版本正在分批推送，轮到此设备时即可更新。')
+              : update.status === 'current'
+                ? t('当前已是最新版本。')
+                : update.status === 'error'
+                  ? update.error || t('软件更新遇到问题，请查看具体原因。')
+                  : update.status === 'unsupported'
+                    ? t('开发环境不检查软件更新。')
+                    : t('自动检查稳定版本，也可以随时手动检查。');
   return (
     <Modal
       title={t('设置')}
@@ -555,17 +577,34 @@ export function SettingsDialog({
             }
           >
             <option value="ask">{t('由我确认需要批准的操作')}</option>
+            <option value="read">{t('只自动批准已确认的读取操作')}</option>
             <option value="auto">{t('自动批准 Grok 请求的操作')}</option>
           </select>
           <small>
             {draft.permissionMode === 'auto'
               ? t('自动批准会允许 Grok 直接执行其请求的文件与工具操作。')
-              : t('Grok 请求授权时，显示具体操作供你确认。')}
+              : draft.permissionMode === 'read'
+                ? t('仅自动批准已验证的官方读取工具；写入、命令和未知操作仍需确认。')
+                : t('Grok 请求授权时，显示具体操作供你确认。')}
           </small>
         </label>
       </div>
       <div className="settings-section">
         <h3>{t('提醒与诊断')}</h3>
+        <button className="secondary-button" onClick={() => setShowDiagnostics(true)}>
+          {t('诊断预览与导出')}
+        </button>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={draft.autoReconnect !== false}
+            onChange={(event) => setDraft({ ...draft, autoReconnect: event.target.checked })}
+          />
+          <span>{t('意外断线后尝试一次自动重连')}</span>
+        </label>
+        <p className="muted helper-note">
+          {t('只恢复连接，不自动重发任务或继续队列。失败后可手动重连。')}
+        </p>
         <label className="settings-check">
           <input
             type="checkbox"
@@ -593,6 +632,29 @@ export function SettingsDialog({
       </div>
       <div className="settings-section update-settings">
         <h3>{t('软件更新')}</h3>
+        <label className="field">
+          {t('更新通道')}
+          <select
+            value={settings.updateChannel || 'stable'}
+            disabled={
+              saving ||
+              updateBusy ||
+              ['checking', 'downloading', 'downloaded'].includes(update.status)
+            }
+            onChange={(event) => {
+              const updateChannel = event.target.value as 'stable' | 'beta';
+              setUpdateBusy(true);
+              setError('');
+              void onSave({ updateChannel })
+                .catch((error) => setError(errorText(error)))
+                .finally(() => setUpdateBusy(false));
+            }}
+          >
+            <option value="stable">{t('稳定版（推荐）')}</option>
+            <option value="beta">{t('测试版')}</option>
+          </select>
+          <small>{t('测试版可提前体验新功能。切回稳定版会等待更新的正式版，不会自动降级。')}</small>
+        </label>
         <div className="update-status-row">
           <div>
             <strong>{t('当前版本 {version}', { version: update.currentVersion })}</strong>
@@ -661,6 +723,11 @@ export function SettingsDialog({
           <p>{notificationText(error)}</p>
           <SystemErrorDetails error={error} showExplanation={false} />
         </div>
+      )}
+      {showDiagnostics && (
+        <Suspense fallback={<Spinner />}>
+          <DiagnosticsDialog onClose={() => setShowDiagnostics(false)} onError={setError} />
+        </Suspense>
       )}
     </Modal>
   );
