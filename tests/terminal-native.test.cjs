@@ -40,7 +40,7 @@ test(
         timeout: 30000,
       });
       const result = await app.evaluate(
-        async ({ app }, { directory, root, packaged, node }) => {
+        async ({ app, utilityProcess }, { directory, root, packaged, node }) => {
           const path = process.getBuiltinModule('node:path');
           const require = process
             .getBuiltinModule('node:module')
@@ -51,18 +51,52 @@ test(
           );
           const { createTerminalManager } = require(path.join(moduleRoot, 'electron/terminal.cjs'));
           const events = [];
+          const started = Date.now();
+          const trace = [];
+          const record = (event) => {
+            trace.push({ elapsedMs: Date.now() - started, ...event });
+            if (trace.length > 30) trace.shift();
+          };
+          const observedUtility = {
+            fork(...args) {
+              const host = utilityProcess.fork(...args);
+              host.once('spawn', () => record({ type: 'utility-spawn', pid: host.pid }));
+              host.on('message', (message) => {
+                if (message.type === 'exit' || message.type === 'error')
+                  record({ type: 'utility-message', message });
+              });
+              host.once('exit', (code) => record({ type: 'utility-exit', code }));
+              return host;
+            },
+          };
           const manager = createTerminalManager({
-            spawnPty: spawnHostedPty,
+            spawnPty: (...args) => spawnHostedPty(...args, { utilityProcess: observedUtility }),
             emit: (event) => events.push(event),
           });
           globalThis.terminalProbeManager = manager;
+          let activeId;
+          const capture = () => {
+            const state = activeId ? manager.state({ id: activeId }) : null;
+            return {
+              elapsedMs: Date.now() - started,
+              state: state && {
+                status: state.status,
+                exitCode: state.exitCode,
+                sequence: state.sequence,
+                markerReceived: state.log.includes('UTILITY_PROBE_READY'),
+                cursorPositionQueries: (state.log.match(/\x1b\[\??6n/g) || []).length,
+                logTail: state.log.slice(-3000),
+              },
+              trace: [...trace],
+            };
+          };
           const wait = async (predicate, label, timeout = 30000) => {
             const until = Date.now() + timeout;
             while (Date.now() < until) {
               if (predicate()) return;
               await new Promise((resolve) => setTimeout(resolve, 50));
             }
-            throw new Error(label);
+            throw new Error(`${label}: ${JSON.stringify(capture())}`);
           };
           const prompt = (id) =>
             /(?:^|[\r\n])PS [^\r\n]*> ?$/.test(
@@ -71,20 +105,29 @@ test(
                 .log.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g, ''),
             );
           const first = manager.open({ cwd: directory });
+          activeId = first.id;
           await wait(() => prompt(first.id), 'first PowerShell prompt');
+          record({
+            type: 'first-prompt',
+            cursorPositionQueries: capture().state.cursorPositionQueries,
+          });
           manager.resize({ id: first.id, cols: 100, rows: 30 });
+          record({ type: 'resize-sent', cols: 100, rows: 30 });
           const utility = app.getAppMetrics().find((item) => item.name === 'Grok terminal');
           manager.write({
             id: first.id,
             data: "Write-Output ('UTILITY_' + 'PROBE_READY'); exit\r",
           });
+          record({ type: 'natural-exit-command-sent' });
           await wait(
             () => manager.state({ id: first.id }).status === 'exited',
             'natural utility exit',
             5000,
           );
           const firstState = manager.state({ id: first.id });
+          const naturalExit = capture();
           const next = manager.open({ cwd: directory, restart: true });
+          activeId = next.id;
           await wait(() => prompt(next.id), 'restarted PowerShell prompt');
           manager.write({
             id: next.id,
@@ -123,6 +166,7 @@ test(
             busy: manager.busy,
             descendantPid,
             descendantStopped: true,
+            naturalExit,
           };
         },
         { directory, root, packaged: !!process.env.GROK_DESKTOP_TEST_EXE, node: process.execPath },
