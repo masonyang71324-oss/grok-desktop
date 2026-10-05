@@ -21,6 +21,7 @@ export interface Settings {
     sidebarWidth?: number;
     inspectorWidth?: number;
     composerHeight?: number;
+    zoomPercent?: number;
   };
   window?: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
 }
@@ -183,6 +184,8 @@ export type DesktopEvent =
   | { type: 'commands'; sessionId?: string; commands: Command[] }
   | { type: 'models'; sessionId?: string; models: ModelsState }
   | { type: 'app-update'; state: AppUpdateState }
+  | { type: 'notification-activate'; session: SessionSummary | null; requestId?: string | number }
+  | { type: 'interface-size'; zoomPercent: number; error?: string }
   | {
       type: 'permission';
       sessionId: string;
@@ -355,6 +358,7 @@ export interface ManagementResult {
 }
 export interface DesktopApi {
   pathsForFiles(files: File[]): Promise<Attachment[]>;
+  resolveDrop(files: File[]): Promise<{ files: Attachment[]; projectPath?: string }>;
   request<T = unknown>(command: string, payload?: any): Promise<Result<T>>;
   onEvent(callback: (event: DesktopEvent) => void): () => void;
 }

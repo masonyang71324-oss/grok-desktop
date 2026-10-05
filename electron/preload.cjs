@@ -77,17 +77,20 @@ const commands = new Set([
   'system.run',
 ]);
 
+async function selectNativeFiles(files, mode) {
+  const selected = Array.from(files)
+    .map((file) => ({ name: file.name, path: webUtils.getPathForFile(file) }))
+    .filter((file) => file.path);
+  // This route is deliberately absent from request()'s public command list.
+  // Paths originate from native File objects, not arbitrary renderer strings.
+  const result = await ipcRenderer.invoke('desktop:files-selected', selected, mode);
+  if (!result.ok) throw new Error(result.error);
+  return result.data;
+}
+
 contextBridge.exposeInMainWorld('desktop', {
-  pathsForFiles: async (files) => {
-    const selected = Array.from(files)
-      .map((file) => ({ name: file.name, path: webUtils.getPathForFile(file) }))
-      .filter((file) => file.path);
-    // This route is deliberately absent from request()'s public command list.
-    // Paths originate from native File objects, not arbitrary renderer strings.
-    const result = await ipcRenderer.invoke('desktop:files-selected', selected);
-    if (!result.ok) throw new Error(result.error);
-    return result.data;
-  },
+  pathsForFiles: (files) => selectNativeFiles(files, 'files'),
+  resolveDrop: (files) => selectNativeFiles(files, 'drop'),
   request: (command, payload) => {
     if (!commands.has(command)) return Promise.resolve({ ok: false, error: '不支持的操作。' });
     return ipcRenderer.invoke('desktop:request', command, payload);

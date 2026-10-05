@@ -63,7 +63,16 @@ import {
   fromReplay,
   type TimelineRow,
 } from './timeline.mjs';
-import { baseName, classifyFailure, errorText, request } from './lib';
+import {
+  baseName,
+  classifyFailure,
+  describeSystemError,
+  notificationText,
+  errorText,
+  request,
+} from './lib';
+import SystemErrorDetails from './SystemErrorDetails';
+import './usability-integration.css';
 import { Brand, IconButton, Modal, Spinner } from './components';
 const ActionsDialog = lazy(() =>
   import('./Dialogs').then((module) => ({ default: module.ActionsDialog })),
@@ -231,6 +240,15 @@ export default function App() {
   const uiRestored = useRef(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [notificationTarget, setNotificationTarget] = useState<{
+    session: SessionSummary;
+    requestId?: string | number;
+  } | null>(null);
+  const [preferredPermission, setPreferredPermission] = useState<{
+    sessionId: string;
+    requestId?: string | number;
+  } | null>(null);
+  const navigationNotice = useRef('');
   const [notice, setNotice] = useState('');
   const [turnError, setTurnError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -461,12 +479,23 @@ export default function App() {
     restorePromiseRef.current = operation;
     return operation;
   }
-  async function applyProject(project: {
-    cwd: string;
-    sessions: SessionSummary[];
-    trusted?: boolean;
-  }) {
+  async function applyProject(
+    project: {
+      cwd: string;
+      sessions: SessionSummary[];
+      trusted?: boolean;
+    },
+    restoreLastSession = true,
+  ) {
     setProjectTrusted(project.trusted !== false);
+    setSettings((previous) => ({
+      ...previous,
+      lastProject: project.cwd,
+      recentProjects: [
+        project.cwd,
+        ...previous.recentProjects.filter((p) => p !== project.cwd),
+      ].slice(0, 12),
+    }));
     const lastSessionId = draftStoreRef.current!.selected(project.cwd);
     const incoming = !composerRef.current.cwd ? currentDraft() : null;
     const carryInput = !!incoming && (!!incoming.text || incoming.attachments.length > 0);
@@ -506,6 +535,7 @@ export default function App() {
         notify(t('两份未发送草稿已合并，原有会话草稿保持原样。'));
     }
     if (
+      restoreLastSession &&
       project.trusted !== false &&
       !carryInput &&
       lastSessionId &&
@@ -659,6 +689,24 @@ export default function App() {
       }
       if (event.type === 'app-update') {
         setAppUpdate(event.state);
+        return;
+      }
+      if (event.type === 'interface-size') {
+        setSettings((value) => ({
+          ...value,
+          ui: { ...value.ui!, zoomPercent: event.zoomPercent },
+        }));
+        settingsRef.current = {
+          ...settingsRef.current,
+          ui: { ...settingsRef.current.ui!, zoomPercent: event.zoomPercent },
+        };
+        if (event.error) notify(event.error);
+        return;
+      }
+      if (event.type === 'notification-activate') {
+        if (event.session)
+          setNotificationTarget({ session: event.session, requestId: event.requestId });
+        else notify(t('此通知对应的会话已不可用，请从会话历史中查找。'));
         return;
       }
       if (event.type === 'tasks-changed') {
@@ -889,14 +937,6 @@ export default function App() {
         sessions: SessionSummary[];
       }>('project.open', { cwd: target });
       await applyProject(project);
-      setSettings((previous) => ({
-        ...previous,
-        lastProject: project.cwd,
-        recentProjects: [
-          project.cwd,
-          ...previous.recentProjects.filter((p) => p !== project.cwd),
-        ].slice(0, 12),
-      }));
     } catch (e) {
       notify(errorText(e));
     } finally {
@@ -940,8 +980,17 @@ export default function App() {
     transitionRef.current = true;
     setLoadingSession(summary.sessionId);
     try {
+      const targetCwd = summary.cwd || cwdRef.current;
+      if (targetCwd !== cwdRef.current) {
+        const project = await request<{
+          cwd: string;
+          sessions: SessionSummary[];
+          trusted?: boolean;
+        }>('project.open', { cwd: targetCwd });
+        await applyProject(project, false);
+      }
       const snapshot = await request<SessionSnapshot>('session.load', {
-        cwd: summary.cwd || cwdRef.current,
+        cwd: targetCwd,
         sessionId: summary.sessionId,
       });
       applySnapshot(snapshot);
@@ -953,6 +1002,42 @@ export default function App() {
       setLoadingSession('');
     }
   }
+  useEffect(() => {
+    if (
+      !notificationTarget ||
+      initializing ||
+      loadingSession ||
+      pending ||
+      configuring ||
+      transitionRef.current
+    )
+      return;
+    const { session: target, requestId } = notificationTarget;
+    if (editorOpen && target.cwd !== cwdRef.current) {
+      if (navigationNotice.current !== target.sessionId) {
+        navigationNotice.current = target.sessionId;
+        notify(t('请先保存并关闭文件编辑器，随后会打开通知对应的会话。'));
+      }
+      return;
+    }
+    navigationNotice.current = '';
+    setNotificationTarget(null);
+    setDialog(null);
+    void loadConversation(target).then(() => {
+      if (sessionRef.current?.sessionId === target.sessionId)
+        setPreferredPermission({ sessionId: target.sessionId, requestId });
+    });
+  }, [
+    notificationTarget,
+    initializing,
+    loadingSession,
+    pending,
+    configuring,
+    editorOpen,
+    cwd,
+    session?.sessionId,
+    connection,
+  ]);
   const preferences = (forNew = false) => {
     const actual = modelsRef.current;
     const selected = actual.availableModels.find(
@@ -1347,8 +1432,9 @@ export default function App() {
     }
     const owner = { ...composerRef.current };
     try {
-      const files = await window.desktop.pathsForFiles(Array.from(event.dataTransfer.files));
-      appendFilesToDraft(files, owner);
+      const selected = await window.desktop.resolveDrop(Array.from(event.dataTransfer.files));
+      if (selected.projectPath) await openProject(selected.projectPath);
+      else appendFilesToDraft(selected.files, owner);
     } catch (error) {
       notify(errorText(error));
     }
@@ -1480,6 +1566,22 @@ export default function App() {
       notify(errorText(e));
     }
   }
+  const selectedPermission =
+    permissions.find(
+      (item) =>
+        item.sessionId === preferredPermission?.sessionId &&
+        (preferredPermission.requestId === undefined ||
+          item.requestId === preferredPermission.requestId),
+    ) || permissions[0];
+  const draftSessionIds = new Set(
+    sessions
+      .filter((item) =>
+        item.sessionId === session?.sessionId
+          ? !!(draft || attachments.length)
+          : draftStoreRef.current!.hasDraft(item.cwd || cwd, item.sessionId),
+      )
+      .map((item) => item.sessionId),
+  );
   const currentModelId = session
     ? models.currentModelId
     : models.availableModels.some((model) => model.modelId === settings.modelId)
@@ -1747,6 +1849,8 @@ export default function App() {
             <SessionList
               key={cwd}
               sessions={sessions}
+              tasks={tasks}
+              draftSessionIds={draftSessionIds}
               activeSessionId={session?.sessionId}
               loadingSessionId={loadingSession}
               onSelect={(summary) => void loadConversation(summary)}
@@ -2100,161 +2204,166 @@ export default function App() {
             </button>
           </div>
         )}
-        <div
-          className="thread"
-          ref={threadRef}
-          onScroll={() => {
-            const node = threadRef.current!;
-            stickToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100;
-            setShowScroll(!stickToBottom.current);
-          }}
-        >
-          {!rows.length ? (
-            <div className="welcome">
-              <div className="welcome-orbit">
-                <Brand />
-                <span />
+        <div className="thread-viewport">
+          <div
+            className="thread"
+            ref={threadRef}
+            onScroll={() => {
+              const node = threadRef.current!;
+              stickToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100;
+              setShowScroll(!stickToBottom.current);
+            }}
+          >
+            {!rows.length ? (
+              <div className="welcome">
+                <div className="welcome-orbit">
+                  <Brand />
+                  <span />
+                </div>
+                <div className="welcome-kicker">{t('你的想法，从这里成为现实')}</div>
+                <h1>{t('一起把事情做好。')}</h1>
+                <p>
+                  {t('理解代码、解决问题，或从零开始创造。')}
+                  <br />
+                  {t('Grok 就在你的项目里，随时准备动手。')}
+                </p>
+                <div className="welcome-cards">
+                  <button
+                    onClick={() =>
+                      fillDraft(t('请先阅读这个项目，说明它的结构、核心功能和推荐的运行方式。'))
+                    }
+                  >
+                    <div className="welcome-card-icon">
+                      <Code2 size={20} />
+                    </div>
+                    <strong>{t('理解项目')}</strong>
+                    <span>{t('梳理结构，快速找到入口')}</span>
+                    <ArrowRight size={17} />
+                  </button>
+                  <button
+                    onClick={() =>
+                      fillDraft(t('请检查这个项目，找出有实际影响的问题，并说明建议的修复方案。'))
+                    }
+                  >
+                    <div className="welcome-card-icon">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <strong>{t('检查与改进')}</strong>
+                    <span>{t('定位问题，让代码更可靠')}</span>
+                    <ArrowRight size={17} />
+                  </button>
+                  <button
+                    onClick={() =>
+                      fillDraft(
+                        t(
+                          '我想为这个项目增加一个功能。请先了解现有结构，帮我把想法整理成可执行的方案：',
+                        ),
+                      )
+                    }
+                  >
+                    <div className="welcome-card-icon">
+                      <Sparkles size={20} />
+                    </div>
+                    <strong>{t('实现一个想法')}</strong>
+                    <span>{t('从需求出发，做出可用成果')}</span>
+                    <ArrowRight size={17} />
+                  </button>
+                </div>
+                {!cwd ? (
+                  <button className="welcome-open" onClick={() => void openProject()}>
+                    <FolderOpen size={16} />
+                    {t('选择你的项目')}
+                    <ArrowRight size={15} />
+                  </button>
+                ) : (
+                  <div className="welcome-project">
+                    <span className="status-dot" />
+                    {t('正在 {project} 中工作', { project: baseName(cwd) })}
+                    <button onClick={() => void openProject()}>{t('切换项目')}</button>
+                  </div>
+                )}
               </div>
-              <div className="welcome-kicker">{t('你的想法，从这里成为现实')}</div>
-              <h1>{t('一起把事情做好。')}</h1>
-              <p>
-                {t('理解代码、解决问题，或从零开始创造。')}
-                <br />
-                {t('Grok 就在你的项目里，随时准备动手。')}
-              </p>
-              <div className="welcome-cards">
-                <button
-                  onClick={() =>
-                    fillDraft(t('请先阅读这个项目，说明它的结构、核心功能和推荐的运行方式。'))
-                  }
-                >
-                  <div className="welcome-card-icon">
-                    <Code2 size={20} />
+            ) : (
+              <div className="conversation">
+                <ConversationTimeline
+                  ref={timelineRef}
+                  key={session?.sessionId || cwd}
+                  rows={rows}
+                  scrollRef={threadRef}
+                  activeTurnId={run?.turnId}
+                  onOpenFile={openToolFile}
+                  onRetry={fillDraft}
+                  notify={notify}
+                />
+                {turnError && (
+                  <div className="turn-error" data-conversation-error>
+                    <TriangleAlert size={18} />
+                    <div>
+                      <strong>{classifyFailure(turnError).title}</strong>
+                      {!describeSystemError(turnError) && <p>{turnError}</p>}
+                      <p>{classifyFailure(turnError).description}</p>
+                      {describeSystemError(turnError) && (
+                        <SystemErrorDetails error={turnError} showExplanation={false} />
+                      )}
+                      <button className="text-button" onClick={() => recover(turnError)}>
+                        {recoveryLabel(turnError)}
+                        <ArrowRight size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <strong>{t('理解项目')}</strong>
-                  <span>{t('梳理结构，快速找到入口')}</span>
-                  <ArrowRight size={17} />
-                </button>
-                <button
-                  onClick={() =>
-                    fillDraft(t('请检查这个项目，找出有实际影响的问题，并说明建议的修复方案。'))
-                  }
-                >
-                  <div className="welcome-card-icon">
-                    <ShieldCheck size={20} />
+                )}
+                {turnNotice && (
+                  <div className="turn-notice">
+                    <Square size={14} />
+                    <span>
+                      {t(
+                        {
+                          cancelled: '任务已停止。你可以编辑请求后继续。',
+                          refusal: 'Grok 未执行这项请求。你可以调整任务内容后重试。',
+                          max_tokens: '本轮输出达到长度限制。你可以继续请求 Grok 完成余下部分。',
+                          max_turn_requests: '本轮达到工具请求次数限制。你可以继续此任务。',
+                        }[turnNotice] || '本轮已结束：{value0}',
+                        { value0: turnNotice },
+                      )}
+                    </span>
                   </div>
-                  <strong>{t('检查与改进')}</strong>
-                  <span>{t('定位问题，让代码更可靠')}</span>
-                  <ArrowRight size={17} />
-                </button>
-                <button
-                  onClick={() =>
-                    fillDraft(
-                      t(
-                        '我想为这个项目增加一个功能。请先了解现有结构，帮我把想法整理成可执行的方案：',
-                      ),
-                    )
-                  }
-                >
-                  <div className="welcome-card-icon">
-                    <Sparkles size={20} />
-                  </div>
-                  <strong>{t('实现一个想法')}</strong>
-                  <span>{t('从需求出发，做出可用成果')}</span>
-                  <ArrowRight size={17} />
-                </button>
+                )}
               </div>
-              {!cwd ? (
-                <button className="welcome-open" onClick={() => void openProject()}>
-                  <FolderOpen size={16} />
-                  {t('选择你的项目')}
-                  <ArrowRight size={15} />
-                </button>
-              ) : (
-                <div className="welcome-project">
-                  <span className="status-dot" />
-                  {t('正在 {project} 中工作', { project: baseName(cwd) })}
-                  <button onClick={() => void openProject()}>{t('切换项目')}</button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="conversation">
-              <ConversationTimeline
-                ref={timelineRef}
-                key={session?.sessionId || cwd}
-                rows={rows}
-                scrollRef={threadRef}
-                activeTurnId={run?.turnId}
-                onOpenFile={openToolFile}
-                onRetry={fillDraft}
-                notify={notify}
-              />
-              {turnError && (
-                <div className="turn-error" data-conversation-error>
-                  <TriangleAlert size={18} />
-                  <div>
-                    <strong>{classifyFailure(turnError).title}</strong>
-                    <p>{turnError}</p>
-                    <p>{classifyFailure(turnError).description}</p>
-                    <button className="text-button" onClick={() => recover(turnError)}>
-                      {recoveryLabel(turnError)}
-                      <ArrowRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-              {turnNotice && (
-                <div className="turn-notice">
-                  <Square size={14} />
-                  <span>
-                    {t(
-                      {
-                        cancelled: '任务已停止。你可以编辑请求后继续。',
-                        refusal: 'Grok 未执行这项请求。你可以调整任务内容后重试。',
-                        max_tokens: '本轮输出达到长度限制。你可以继续请求 Grok 完成余下部分。',
-                        max_turn_requests: '本轮达到工具请求次数限制。你可以继续此任务。',
-                      }[turnNotice] || '本轮已结束：{value0}',
-                      { value0: turnNotice },
-                    )}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-          {showOutcome && latestResult && (
-            <div className="task-result-container">
-              <TaskOutcome
-                result={latestResult}
-                rows={outcomeRows}
-                checkpoint={resultCheckpoint}
-                loading={resultLoading}
-                onReview={() => openOutcome()}
-                onRestore={() => openOutcome(true)}
-                onOpenFile={(path) => {
-                  setInspector(true);
-                  setInspectorTab('files');
-                  setFileToOpen({ path, requestId: Date.now() });
-                }}
-              />
-            </div>
+            )}
+            {showOutcome && latestResult && (
+              <div className="task-result-container">
+                <TaskOutcome
+                  result={latestResult}
+                  rows={outcomeRows}
+                  checkpoint={resultCheckpoint}
+                  loading={resultLoading}
+                  onReview={() => openOutcome()}
+                  onRestore={() => openOutcome(true)}
+                  onOpenFile={(path) => {
+                    setInspector(true);
+                    setInspectorTab('files');
+                    setFileToOpen({ path, requestId: Date.now() });
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          {showScroll && (
+            <button
+              className="scroll-bottom"
+              onClick={() => {
+                stickToBottom.current = true;
+                threadRef.current?.scrollTo({
+                  top: threadRef.current.scrollHeight,
+                  behavior: 'smooth',
+                });
+              }}
+              title={t('回到最新消息')}
+            >
+              <ArrowDown size={17} />
+            </button>
           )}
         </div>
-        {showScroll && (
-          <button
-            className="scroll-bottom"
-            onClick={() => {
-              stickToBottom.current = true;
-              threadRef.current?.scrollTo({
-                top: threadRef.current.scrollHeight,
-                behavior: 'smooth',
-              });
-            }}
-            title={t('回到最新消息')}
-          >
-            <ArrowDown size={17} />
-          </button>
-        )}
         <div className="composer-area">
           {taskActive && (
             <TaskActivity
@@ -2289,7 +2398,7 @@ export default function App() {
             }}
             onDrop={dropFiles}
           >
-            {dragging && <div className="drop-hint">{t('松开以添加文件或图片')}</div>}
+            {dragging && <div className="drop-hint">{t('松开以添加附件或打开项目文件夹')}</div>}
             <ResizeHandle
               axis="vertical"
               reverse
@@ -2592,7 +2701,20 @@ export default function App() {
       </footer>
       {notice && (
         <div className="toast" role="status">
-          <span>{notice}</span>
+          <div className="toast-message">
+            <span>{notificationText(notice)}</span>
+            {describeSystemError(notice) && (
+              <SystemErrorDetails
+                key={notice}
+                error={notice}
+                showExplanation={false}
+                onExpandedChange={(open) => {
+                  window.clearTimeout(noticeTimer.current);
+                  if (!open) noticeTimer.current = window.setTimeout(() => setNotice(''), 6000);
+                }}
+              />
+            )}
+          </div>
           <IconButton label={t('关闭提示')} onClick={() => setNotice('')}>
             <X size={15} />
           </IconButton>
@@ -2966,21 +3088,27 @@ export default function App() {
             </div>
           </Modal>
         )}
-        {permissions[0] && (
+        {selectedPermission && (
           <PermissionDialog
-            key={`${permissions[0].sessionId}:${permissions[0].requestId}`}
-            item={permissions[0]}
+            key={`${selectedPermission.sessionId}:${selectedPermission.requestId}`}
+            item={selectedPermission}
+            cwd={
+              tasks.find((task) => task.sessionId === selectedPermission.sessionId)?.cwd ||
+              (session?.sessionId === selectedPermission.sessionId ? session.cwd : undefined)
+            }
             permissionMode={
-              permissions[0].sessionId === session?.sessionId ? session.permissionMode : undefined
+              selectedPermission.sessionId === session?.sessionId
+                ? session.permissionMode
+                : undefined
             }
             onModeChange={
-              permissions[0].sessionId === session?.sessionId
-                ? (mode) => changePermissions(mode, permissions[0].sessionId)
+              selectedPermission.sessionId === session?.sessionId
+                ? (mode) => changePermissions(mode, selectedPermission.sessionId)
                 : undefined
             }
             onReply={async (optionId, cancelled) => {
-              const id = permissions[0].requestId;
-              const originSessionId = permissions[0].sessionId;
+              const id = selectedPermission.requestId;
+              const originSessionId = selectedPermission.sessionId;
               await request('session.permission', {
                 sessionId: originSessionId,
                 requestId: id,

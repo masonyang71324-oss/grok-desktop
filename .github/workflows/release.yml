@@ -41,6 +41,8 @@ jobs:
           node tests/e2e-access.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/e2e-draft-force-exit.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-usability.cjs
       - name: Publish release
         shell: pwsh
         run: |

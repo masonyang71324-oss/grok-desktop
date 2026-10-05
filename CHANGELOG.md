@@ -1,5 +1,13 @@
 # Changes
 
+## 1.9.0
+
+- Add session activity/approval/queue/draft indicators and an action-first task center.
+- Show structured approval diffs, working directories and destructive-command explanations without changing permission outcomes.
+- Explain common filesystem errors while retaining original details and copying.
+- Add persistent interface size, shared menu zoom and compact readable navigation; keep the scroll-to-bottom control inside the message viewport.
+- Navigate notification clicks to the originating session and support native folder drops with explicit trust and cancellation. Refresh destination trust on cross-project navigation and retain drafts/editor protection.
+
 ## 1.8.1
 
 - Gate composer input and attachment pick/paste/drop while restoring the workspace or conversation, so early input cannot land in a hidden startup draft.

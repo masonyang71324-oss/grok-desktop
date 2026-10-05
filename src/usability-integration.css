@@ -1,0 +1,115 @@
+.toast {
+  align-items: flex-start;
+  max-width: min(680px, calc(100vw - 48px));
+}
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  max-height: min(420px, 65vh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.toast-message .system-error-details {
+  margin-top: 8px;
+}
+.thread-viewport {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.thread-viewport > .scroll-bottom {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+@media (max-width: 1150px) {
+  /* Three complete labels must fit even when zoom reduces the navigation width. */
+  .app.unified-layout .navigation-tabs button {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 2px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-height: 650px) {
+  /* Leave room for history below the fixed navigation and above the action list. */
+  .app.unified-layout .sidebar {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .app.unified-layout .brand {
+    height: 34px;
+    min-height: 34px;
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+  .app.unified-layout .brand > div {
+    font-size: 20px;
+  }
+  .app.unified-layout .brand > div > span {
+    margin-top: 2px;
+  }
+  .app.unified-layout .sidebar .brand-mark {
+    width: 30px;
+    height: 30px;
+  }
+  .app.unified-layout .sidebar .brand-mark svg {
+    width: 22px;
+    height: 22px;
+  }
+  .app.unified-layout .new-conversation {
+    height: 32px;
+    min-height: 32px;
+    margin-bottom: 6px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    font-size: 12px;
+  }
+  .app.unified-layout .navigation-tabs {
+    margin-bottom: 6px;
+  }
+  .app.unified-layout .navigation-tabs button {
+    gap: 2px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+  .app.unified-layout .project-switcher {
+    margin-bottom: 4px;
+  }
+  .app.unified-layout .project-button {
+    min-height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .app.unified-layout .history-heading {
+    margin-bottom: 4px;
+  }
+  .app.unified-layout .sidebar .search-input {
+    min-height: 30px;
+    height: 30px;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
+  .app.unified-layout .sidebar-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding-top: 2px;
+    margin-top: 2px;
+  }
+  .app.unified-layout .sidebar-bottom > button,
+  .app.unified-layout .sidebar-bottom-row > button {
+    min-height: 26px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    font-size: 12px;
+  }
+}

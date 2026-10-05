@@ -313,6 +313,7 @@ async function assertEffort(value, label) {
     });
     assert.equal(savedSettings.notifications, false);
     assert.deepEqual(savedSettings.ui, {
+      zoomPercent: 100,
       sidebar: true,
       inspector: false,
       inspectorTab: 'changes',
@@ -349,6 +350,7 @@ async function assertEffort(value, label) {
     const restoredSettings = (await request('bootstrap')).settings;
     assert.equal(restoredSettings.notifications, false);
     assert.deepEqual(restoredSettings.ui, {
+      zoomPercent: 100,
       sidebar: true,
       inspector: false,
       inspectorTab: 'changes',

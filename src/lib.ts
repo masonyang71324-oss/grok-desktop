@@ -31,6 +31,65 @@ export async function request<T = any>(
 }
 export const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+
+export function describeSystemError(error: unknown): {
+  kind: 'permission' | 'busy' | 'space' | 'missing';
+  code: string;
+  title: string;
+  description: string;
+  summary: string;
+  details: string;
+} | null {
+  const details = errorText(error);
+  const code = details.match(/\b(EACCES|EPERM|EBUSY|ENOSPC|ENOENT)\b/)?.[1];
+  if (!code) return null;
+  const explanations = {
+    EACCES: {
+      kind: 'permission',
+      title: '无法访问文件或文件夹',
+      description: '请检查文件或文件夹的访问权限；若被其他程序占用，请关闭相关程序后重试。',
+    },
+    EPERM: {
+      kind: 'permission',
+      title: '无法访问文件或文件夹',
+      description: '请检查文件或文件夹的访问权限；若被其他程序占用，请关闭相关程序后重试。',
+    },
+    EBUSY: {
+      kind: 'busy',
+      title: '文件或文件夹正在使用中',
+      description: '请关闭正在使用该文件或文件夹的程序，再重试。',
+    },
+    ENOSPC: {
+      kind: 'space',
+      title: '磁盘空间不足',
+      description: '请清理目标磁盘的可用空间，再重试。',
+    },
+    ENOENT: {
+      kind: 'missing',
+      title: '找不到文件或文件夹',
+      description: '请确认路径正确，文件或文件夹没有被移动或删除，再重试。',
+    },
+  } as const;
+  const explanation = explanations[code as keyof typeof explanations];
+  const title = t(explanation.title);
+  const description = t(explanation.description);
+  return {
+    kind: explanation.kind,
+    code,
+    title,
+    description,
+    summary: `${title} · ${description}`,
+    details,
+  };
+}
+
+// Keep the raw value in state; use this only when rendering notification text.
+export const notificationText = (message: string) => {
+  if (!describeSystemError(message)) return message;
+  const failure = classifyFailure(message);
+  return `${failure.title} · ${failure.description}`;
+};
+
 export function classifyFailure(error: unknown): {
   kind: string;
   title: string;
@@ -75,6 +134,14 @@ export function classifyFailure(error: unknown): {
       title: t('连接中断'),
       description: t('重新连接会保留现有会话，任务不会自动重发。'),
       action: 'reconnect',
+    };
+  const systemError = describeSystemError(error);
+  if (systemError)
+    return {
+      kind: systemError.kind,
+      title: systemError.title,
+      description: systemError.description,
+      action: 'retry',
     };
   return {
     kind: 'task',

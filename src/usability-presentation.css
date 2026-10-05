@@ -1,0 +1,36 @@
+.interface-size {
+  margin-top: 16px;
+}
+.system-error-details {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.system-error-explanation p {
+  margin: 4px 0 8px;
+}
+.system-error-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.system-error-details pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    12px/1.7 Consolas,
+    monospace;
+  user-select: text;
+}
+.system-error-details .text-button,
+.system-error-details [role='status'] {
+  font-size: 12px;
+}

@@ -27,6 +27,8 @@ const { buildCommand, runManagement } = require('./management.cjs');
 const workspace = require('./workspace.cjs');
 const { createEventDelivery } = require('./event-delivery.cjs');
 const { createNotifications } = require('./notifications.cjs');
+const { resolveNativeDrop } = require('./native-drop.cjs');
+const { normalizeZoomPercent, stepZoomPercent } = require('./interface-size.cjs');
 const { createLogger } = require('./logger.cjs');
 const { createWorkspaceWatcher } = require('./workspace-watch.cjs');
 const { createCheckpointStore } = require('./checkpoints.cjs');
@@ -60,6 +62,7 @@ const settingsRecoveryWarnings = [];
 let settings = loadSettings(settingsFile, (warning) => settingsRecoveryWarnings.push(warning)),
   settingsQueue = Promise.resolve();
 setLocale(settings.language);
+let requestedInterfaceZoom = normalizeZoomPercent(settings.ui.zoomPercent);
 const access = createAccessPolicy();
 const listedSessions = new Map();
 const pendingProjectOperations = new Map();
@@ -127,6 +130,14 @@ const notifications = createNotifications({
   enabled: () => settings.notifications && !quitting,
   Notification,
   onFailure: () => logger.log('notification-failed'),
+  onNavigate: ({ sessionId, requestId }) => {
+    const task = client.listTasks().find((item) => item.sessionId === sessionId);
+    emit({
+      type: 'notification-activate',
+      session: task ? { sessionId: task.sessionId, cwd: task.cwd, title: task.title || '' } : null,
+      ...(requestId !== undefined ? { requestId } : {}),
+    });
+  },
 });
 const workspaceWatcher = createWorkspaceWatcher(emit, () => logger.log('workspace-watch-failed'));
 const checkpoints = createCheckpointStore({
@@ -320,6 +331,32 @@ async function registerAttachments(files) {
   });
   return selected;
 }
+async function selectDroppedProject(cwd) {
+  let existing;
+  try {
+    existing = access.project(cwd);
+  } catch {}
+  const result = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: t('打开拖入的文件夹'),
+    message: t(
+      existing
+        ? '将这个文件夹作为项目打开？'
+        : '将这个文件夹作为项目打开？信任后可运行任务；不了解来源时可先只看文件。',
+    ),
+    detail: cwd,
+    buttons: existing ? [t('打开项目'), t('取消')] : [t('只看文件'), t('信任并启用'), t('取消')],
+    defaultId: 0,
+    cancelId: existing ? 1 : 2,
+  });
+  if (result.response === (existing ? 1 : 2)) return null;
+  if (existing) return existing.cwd;
+  const grant = await access.grantProject(cwd, result.response === 1);
+  await saveSettings({
+    projectTrust: { ...settings.projectTrust, [projectKey(grant.cwd)]: grant.trusted },
+  });
+  return grant.cwd;
+}
 async function reauthorizeAttachmentPaths(paths) {
   if (
     !Array.isArray(paths) ||
@@ -355,50 +392,87 @@ async function reauthorizeAttachmentPaths(paths) {
 }
 
 function saveSettings(patch) {
+  if (patch.ui?.zoomPercent !== undefined)
+    requestedInterfaceZoom = normalizeZoomPercent(patch.ui.zoomPercent);
   if (patch.grokPath !== undefined && patch.grokPath !== settings.grokPath)
     activity.assertSessionAllowed();
-  const operation = settingsQueue.then(async () => {
-    const changedPath = patch.grokPath !== undefined && patch.grokPath !== settings.grokPath;
-    const save = async () => {
-      let target;
-      if (changedPath) {
-        try {
-          target = resolveGrok(patch.grokPath || undefined);
-        } catch (error) {
-          if (patch.grokPath) throw error;
+  const operation = settingsQueue
+    .then(async () => {
+      const changedPath = patch.grokPath !== undefined && patch.grokPath !== settings.grokPath;
+      const save = async () => {
+        let target;
+        if (changedPath) {
+          try {
+            target = resolveGrok(patch.grokPath || undefined);
+          } catch (error) {
+            if (patch.grokPath) throw error;
+          }
         }
-      }
-      if (changedPath && target && !access.hasExecutable(target)) {
-        const picked = await dialog.showOpenDialog(win, {
-          title: t('确认要使用的 Grok Build 程序'),
-          defaultPath: target,
-          properties: ['openFile'],
-          filters: [{ name: t('Windows 程序'), extensions: ['exe'] }],
-        });
-        if (picked.canceled || !picked.filePaths[0]) throw new Error(t('已取消选择程序。'));
-        const selected = await access.grantExecutable(picked.filePaths[0]);
-        patch = {
+        if (changedPath && target && !access.hasExecutable(target)) {
+          const picked = await dialog.showOpenDialog(win, {
+            title: t('确认要使用的 Grok Build 程序'),
+            defaultPath: target,
+            properties: ['openFile'],
+            filters: [{ name: t('Windows 程序'), extensions: ['exe'] }],
+          });
+          if (picked.canceled || !picked.filePaths[0]) throw new Error(t('已取消选择程序。'));
+          const selected = await access.grantExecutable(picked.filePaths[0]);
+          patch = {
+            ...patch,
+            grokPath:
+              !patch.grokPath && projectKey(selected) === projectKey(target) ? '' : selected,
+          };
+        }
+        if (changedPath && patch.grokPath) resolveGrok(String(patch.grokPath).trim());
+        settings = await writeSettings(settingsFile, {
+          ...settings,
           ...patch,
-          grokPath: !patch.grokPath && projectKey(selected) === projectKey(target) ? '' : selected,
-        };
-      }
-      if (changedPath && patch.grokPath) resolveGrok(String(patch.grokPath).trim());
-      settings = await writeSettings(settingsFile, {
-        ...settings,
-        ...patch,
-        ui: { ...settings.ui, ...patch.ui },
-      });
-      setLocale(settings.language);
-      if (patch.language !== undefined) updateMenu();
-      nativeTheme.themeSource = settings.theme;
-      if (!settings.notifications) notifications.clear();
-      if (changedPath) await client.restart();
-      return publicSettings();
-    };
-    return changedPath ? activity.runMutation(save) : save();
-  });
+          ui: { ...settings.ui, ...patch.ui },
+        });
+        setLocale(settings.language);
+        if (patch.language !== undefined) updateMenu();
+        nativeTheme.themeSource = settings.theme;
+        if (
+          patch.ui?.zoomPercent !== undefined &&
+          normalizeZoomPercent(patch.ui.zoomPercent) === requestedInterfaceZoom
+        )
+          applyInterfaceSize();
+        if (!settings.notifications) notifications.clear();
+        if (changedPath) await client.restart();
+        return publicSettings();
+      };
+      return changedPath ? activity.runMutation(save) : save();
+    })
+    .catch((error) => {
+      if (
+        patch.ui?.zoomPercent !== undefined &&
+        requestedInterfaceZoom === normalizeZoomPercent(patch.ui.zoomPercent)
+      )
+        requestedInterfaceZoom = normalizeZoomPercent(settings.ui.zoomPercent);
+      throw error;
+    });
   settingsQueue = operation.catch(() => {});
   return operation;
+}
+
+function applyInterfaceSize() {
+  if (!win || win.isDestroyed()) return;
+  const zoomPercent = normalizeZoomPercent(settings.ui.zoomPercent);
+  win.webContents.setZoomFactor(zoomPercent / 100);
+  emit({ type: 'interface-size', zoomPercent });
+}
+function changeInterfaceSize(direction) {
+  const zoomPercent =
+    direction === 'reset' ? 100 : stepZoomPercent(requestedInterfaceZoom, direction);
+  void saveSettings({ ui: { zoomPercent } }).catch((error) => {
+    if (requestedInterfaceZoom === zoomPercent)
+      requestedInterfaceZoom = normalizeZoomPercent(settings.ui.zoomPercent);
+    emit({
+      type: 'interface-size',
+      zoomPercent: normalizeZoomPercent(settings.ui.zoomPercent),
+      error: error.message,
+    });
+  });
 }
 
 function publicSettings() {
@@ -1051,7 +1125,7 @@ ipcMain.handle('desktop:request', async (event, command, payload) => {
     return { ok: false, error: message };
   }
 });
-ipcMain.handle('desktop:files-selected', async (event, files) => {
+ipcMain.handle('desktop:files-selected', async (event, files, mode = 'files') => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
     return { ok: false, error: t('不支持的操作。') };
   try {
@@ -1061,7 +1135,17 @@ ipcMain.handle('desktop:files-selected', async (event, files) => {
       files.some((file) => typeof file.path !== 'string' || typeof file.name !== 'string')
     )
       throw new Error(t('操作参数无效。'));
-    return { ok: true, data: await registerAttachments(files) };
+    if (!['files', 'drop'].includes(mode)) throw new Error(t('操作参数无效。'));
+    return {
+      ok: true,
+      data:
+        mode === 'drop'
+          ? await resolveNativeDrop(files, {
+              selectProject: selectDroppedProject,
+              registerFiles: registerAttachments,
+            })
+          : await registerAttachments(files),
+    };
   } catch (error) {
     return { ok: false, error: error.message };
   }
@@ -1112,6 +1196,8 @@ function createWindow() {
     win.show();
   });
   win.on('focus', () => notifications.clear());
+  win.webContents.on('did-finish-load', applyInterfaceSize);
+  win.webContents.on('zoom-changed', (_event, direction) => changeInterfaceSize(direction));
   win.on('closed', () => previews.dispose());
   const scheduleWindowSave = () => {
     clearTimeout(windowSaveTimer);
@@ -1207,9 +1293,21 @@ function updateMenu() {
       {
         label: t('视图'),
         submenu: [
-          { role: 'resetZoom', label: t('实际大小') },
-          { role: 'zoomIn', label: t('放大') },
-          { role: 'zoomOut', label: t('缩小') },
+          {
+            label: t('实际大小'),
+            accelerator: 'CommandOrControl+0',
+            click: () => changeInterfaceSize('reset'),
+          },
+          {
+            label: t('放大'),
+            accelerator: 'CommandOrControl+Plus',
+            click: () => changeInterfaceSize('in'),
+          },
+          {
+            label: t('缩小'),
+            accelerator: 'CommandOrControl+-',
+            click: () => changeInterfaceSize('out'),
+          },
           { type: 'separator' },
           ...(!app.isPackaged || process.env.GROK_DESKTOP_DEVTOOLS === '1'
             ? [

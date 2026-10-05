@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import InterfaceSize from './InterfaceSize';
+import SystemErrorDetails from './SystemErrorDetails';
 import {
   Activity,
   ArrowRight,
@@ -15,7 +17,6 @@ import {
   Plug,
   RefreshCw,
   Search,
-  ShieldCheck,
   Sun,
   Terminal,
   Workflow,
@@ -26,16 +27,11 @@ import type {
   Command,
   ManagementResult,
   ModelsState,
-  PermissionMode,
-  PermissionRequest,
   Settings,
 } from './types';
-import { baseName, errorText, request } from './lib';
+import { baseName, errorText, notificationText, request } from './lib';
 import { EmptyBox, Modal, RawResult, Spinner } from './components';
 import { buildCommand } from './commands.mjs';
-import { permissionChoice, permissionOverview } from './permission-dialog.mjs';
-import PermissionControl from './PermissionControl';
-import './permission-dialog.css';
 import { getLocale, translate as t, useI18n } from './i18n';
 export const commandLabels: Record<string, string> = {
   'always-approve': '工具批准方式',
@@ -339,7 +335,9 @@ export function SettingsDialog({
   models: ModelsState;
   bootstrap: Bootstrap | null;
   onClose: () => void;
-  onSave: (settings: Partial<Settings>) => Promise<void>;
+  onSave: (
+    settings: Partial<Omit<Settings, 'ui'>> & { ui?: Partial<NonNullable<Settings['ui']>> },
+  ) => Promise<void>;
   busy: boolean;
   update: AppUpdateState;
   onUpdateAction: (command: 'update.check' | 'update.download' | 'update.install') => Promise<void>;
@@ -347,6 +345,18 @@ export function SettingsDialog({
   useI18n();
   const [draft, setDraft] = useState(settings);
   const [languageSaving, setLanguageSaving] = useState(false);
+  const [sizeSaving, setSizeSaving] = useState(false);
+  async function changeSize(zoomPercent: number) {
+    setSizeSaving(true);
+    setError('');
+    try {
+      await onSave({ ui: { zoomPercent } });
+    } catch (error) {
+      setError(errorText(error));
+    } finally {
+      setSizeSaving(false);
+    }
+  }
   async function changeLanguage(language: Settings['language']) {
     const previous = draft.language;
     setLanguageSaving(true);
@@ -415,7 +425,7 @@ export function SettingsDialog({
           <span className="muted">Grok Desktop {bootstrap?.version || ''}</span>
           <button
             className="primary-button"
-            disabled={saving || languageSaving}
+            disabled={saving || languageSaving || sizeSaving}
             onClick={() => void save()}
           >
             {saving ? <Spinner /> : <Check size={16} />}
@@ -439,6 +449,11 @@ export function SettingsDialog({
           </select>
           <small>{t('立即生效，并在下次启动时保留。')}</small>
         </label>
+        <InterfaceSize
+          value={settings.ui?.zoomPercent || 100}
+          disabled={saving || languageSaving || sizeSaving}
+          onChange={(value) => void changeSize(value)}
+        />
         <div className="theme-options">
           {(
             [
@@ -641,7 +656,12 @@ export function SettingsDialog({
           <p className="muted helper-note">{t('当前任务结束后即可重启安装。')}</p>
         )}
       </div>
-      {error && <div className="inline-error">{error}</div>}
+      {error && (
+        <div className="inline-error">
+          <p>{notificationText(error)}</p>
+          <SystemErrorDetails error={error} showExplanation={false} />
+        </div>
+      )}
     </Modal>
   );
 }
@@ -1666,127 +1686,4 @@ export function UsageDialog({
     </Modal>
   );
 }
-export function PermissionDialog({
-  item,
-  onReply,
-  permissionMode,
-  onModeChange,
-}: {
-  item: { requestId: string | number; params: PermissionRequest };
-  onReply: (optionId?: string, cancelled?: boolean) => Promise<void>;
-  permissionMode?: PermissionMode;
-  onModeChange?: (mode: PermissionMode) => Promise<void>;
-}) {
-  useI18n();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const overview = permissionOverview(item.params.toolCall);
-  const title = overview.title === item.params.toolCall?.title ? overview.title : t(overview.title);
-  const options = item.params.options.map((option) => {
-    const display = permissionChoice(option);
-    const originalLabel =
-      !['allow_once', 'allow_always', 'reject_once', 'reject_always'].includes(option.kind) &&
-      display.label === display.original;
-    return { option, display, label: originalLabel ? display.label : t(display.label) };
-  });
-  async function reply(optionId?: string, cancelled = false) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await onReply(optionId, cancelled);
-    } catch (e) {
-      setError(errorText(e));
-      setBusy(false);
-    }
-  }
-  return (
-    <Modal
-      title={t('Grok 需要你的批准')}
-      subtitle={t('查看操作内容，再选择如何处理。')}
-      closeOnBackdrop={false}
-      onClose={() => {
-        if (!busy) void reply(undefined, true);
-      }}
-      footer={
-        <div className="permission-footer">
-          <div className="permission-action-grid">
-            {options.map(({ option, display, label }) => (
-              <button
-                key={option.optionId}
-                className={`permission-choice ${option.kind === 'allow_once' ? 'primary' : ''}`}
-                aria-label={label}
-                disabled={busy}
-                onClick={() => void reply(option.optionId)}
-              >
-                <strong>{label}</strong>
-                <small>{t(display.description)}</small>
-              </button>
-            ))}
-          </div>
-          <div className="permission-cancel-row">
-            {busy && <Spinner />}
-            <button
-              className="text-button"
-              disabled={busy}
-              onClick={() => void reply(undefined, true)}
-            >
-              {t('取消这项操作')}
-            </button>
-          </div>
-        </div>
-      }
-    >
-      <div className="permission-review-header">
-        <div className="permission-review-icon">
-          <ShieldCheck size={23} />
-        </div>
-        <div>
-          <h3>{title}</h3>
-          <p>{t('这项操作正在等待你的决定。')}</p>
-        </div>
-      </div>
-      {overview.preview && <div className="permission-command-preview">{overview.preview}</div>}
-      {overview.sections.length > 0 && (
-        <details className="permission-review-details">
-          <summary>
-            <Terminal size={15} />
-            {t('查看完整命令与参数')}
-            <ChevronRight size={14} />
-          </summary>
-          {overview.sections.map((section, index) => (
-            <div className="permission-detail-section" key={index}>
-              <h4>{t(section.label)}</h4>
-              <pre>{section.text}</pre>
-            </div>
-          ))}
-        </details>
-      )}
-      <details className="permission-source-options">
-        <summary>
-          {t('查看官方选项说明')}
-          <ChevronRight size={14} />
-        </summary>
-        <dl>
-          {options.map(({ option, display, label }) => (
-            <div key={option.optionId}>
-              <dt>{label}</dt>
-              <dd>{display.original || t('服务端未提供补充说明。')}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
-      {permissionMode && onModeChange && (
-        <div className="permission-following-mode">
-          <PermissionControl
-            value={permissionMode}
-            onChange={onModeChange}
-            disabled={busy}
-            scope={t('后续操作权限')}
-          />
-          <p>{t('已弹出的这项操作仍需单独确认。')}</p>
-        </div>
-      )}
-      {error && <div className="inline-error">{error}</div>}
-    </Modal>
-  );
-}
+export { PermissionDialog } from './ApprovalDialog';

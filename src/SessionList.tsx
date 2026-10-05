@@ -13,12 +13,17 @@ import { IconButton, Spinner } from './components';
 import { WindowedList, type WindowedListHandle } from './ConversationTimeline';
 import { readableDate } from './lib';
 import { useI18n } from './i18n';
-import type { SessionSummary } from './types';
+import type { SessionSummary, TaskSummary } from './types';
+import { sessionStatusChips } from './task-status.mjs';
 import './session-list.css';
 
 const estimateSession = () => 42;
+const emptyTasks: TaskSummary[] = [];
+const emptyDraftSessionIds: ReadonlySet<string> = new Set();
 export default function SessionList({
   sessions,
+  tasks = emptyTasks,
+  draftSessionIds = emptyDraftSessionIds,
   activeSessionId,
   loadingSessionId,
   onSelect,
@@ -27,6 +32,8 @@ export default function SessionList({
   onDelete,
 }: {
   sessions: SessionSummary[];
+  tasks?: TaskSummary[];
+  draftSessionIds?: ReadonlySet<string>;
   activeSessionId?: string;
   loadingSessionId?: string;
   onSelect: (session: SessionSummary) => void;
@@ -40,6 +47,10 @@ export default function SessionList({
   const root = useRef<HTMLDivElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const list = useRef<WindowedListHandle>(null);
+  const taskBySession = useMemo(
+    () => new Map(tasks.map((task) => [task.sessionId, task])),
+    [tasks],
+  );
   const filtered = useMemo(
     () =>
       sessions
@@ -149,55 +160,84 @@ export default function SessionList({
             handleRef={list}
             estimateHeight={estimateSession}
             alwaysRender={pinned}
-            renderItem={({ summary }, index) => (
-              <div
-                className={`session-item ${activeSessionId === summary.sessionId ? 'selected' : ''}`}
-                onKeyDown={(event) => void tabAcrossWindow(event, index)}
-              >
-                <button
-                  className="session-select"
-                  onClick={() => invoke(onSelect, summary)}
-                  onKeyDown={(event) => void navigate(event, index)}
-                  disabled={!!loadingSessionId}
-                  title={summary.title}
-                  aria-current={activeSessionId === summary.sessionId ? 'true' : undefined}
+            renderItem={({ summary }, index) => {
+              const chips = sessionStatusChips(
+                taskBySession.get(summary.sessionId),
+                draftSessionIds.has(summary.sessionId),
+              );
+              return (
+                <div
+                  className={`session-item ${activeSessionId === summary.sessionId ? 'selected' : ''}`}
+                  onKeyDown={(event) => void tabAcrossWindow(event, index)}
                 >
-                  {loadingSessionId === summary.sessionId ? (
-                    <Spinner />
-                  ) : (
-                    <MessageSquare size={15} />
+                  <button
+                    className="session-select"
+                    onClick={() => invoke(onSelect, summary)}
+                    onKeyDown={(event) => void navigate(event, index)}
+                    disabled={!!loadingSessionId}
+                    title={summary.title}
+                    aria-current={activeSessionId === summary.sessionId ? 'true' : undefined}
+                  >
+                    {loadingSessionId === summary.sessionId ? (
+                      <Spinner />
+                    ) : (
+                      <MessageSquare size={15} />
+                    )}
+                    <span className="session-summary">
+                      <span className="session-title-line">
+                        <span>{summary.title || t('未命名会话')}</span>
+                        <small>{readableDate(summary.updatedAt)}</small>
+                      </span>
+                      {!!chips.length && (
+                        <span className="session-statuses">
+                          {chips.map((chip) => {
+                            const label = t(
+                              chip.label,
+                              chip.count === undefined ? undefined : { count: chip.count },
+                            );
+                            return (
+                              <span
+                                className={`session-status-chip ${chip.kind}`}
+                                key={chip.kind}
+                                title={label}
+                              >
+                                {label}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  <IconButton
+                    label={t('{value0} · 更多操作', { value0: summary.title })}
+                    onClick={() =>
+                      setMenu((previous) =>
+                        previous === summary.sessionId ? undefined : summary.sessionId,
+                      )
+                    }
+                  >
+                    <Ellipsis size={16} />
+                  </IconButton>
+                  {menu === summary.sessionId && (
+                    <div className="session-dropdown">
+                      <button onClick={() => invoke(onRename, summary)}>
+                        <Pencil size={14} />
+                        {t('重命名')}
+                      </button>
+                      <button onClick={() => invoke(onExport, summary)}>
+                        <Download size={14} />
+                        {t('导出会话')}
+                      </button>
+                      <button className="danger-text" onClick={() => invoke(onDelete, summary)}>
+                        <Trash2 size={14} />
+                        {t('删除会话')}
+                      </button>
+                    </div>
                   )}
-                  <span>{summary.title || t('未命名会话')}</span>
-                  <small>{readableDate(summary.updatedAt)}</small>
-                </button>
-                <IconButton
-                  label={t('{value0} · 更多操作', { value0: summary.title })}
-                  onClick={() =>
-                    setMenu((previous) =>
-                      previous === summary.sessionId ? undefined : summary.sessionId,
-                    )
-                  }
-                >
-                  <Ellipsis size={16} />
-                </IconButton>
-                {menu === summary.sessionId && (
-                  <div className="session-dropdown">
-                    <button onClick={() => invoke(onRename, summary)}>
-                      <Pencil size={14} />
-                      {t('重命名')}
-                    </button>
-                    <button onClick={() => invoke(onExport, summary)}>
-                      <Download size={14} />
-                      {t('导出会话')}
-                    </button>
-                    <button className="danger-text" onClick={() => invoke(onDelete, summary)}>
-                      <Trash2 size={14} />
-                      {t('删除会话')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              );
+            }}
           />
         ) : (
           <div className="history-empty">

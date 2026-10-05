@@ -1,6 +1,7 @@
 # 文档入口
 
 - [架构与边界](architecture.md)、[可靠性要求](reliability.md)、[附件格式](attachment-formats.md)
+- [1.9.0 五组使用体验改进](release-1.9.0.md)
 - [1.8.1 启动输入补丁](release-1.8.1.md)
 - [1.8.0 审阅建议补全](implementation-1.8.0.md)
 - [Windows 签名与运行时构建](windows-signing-and-runtime.md)

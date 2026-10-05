@@ -29,7 +29,7 @@
 }
 .permission-command-preview {
   font:
-    11px/1.7 'Cascadia Code',
+    12px/1.7 'Cascadia Code',
     Consolas,
     monospace;
   padding: 11px 13px;
@@ -89,7 +89,7 @@
 }
 .permission-detail-section h4 {
   margin: 0 0 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--faint);
 }
@@ -123,7 +123,7 @@
 }
 .permission-source-options dd {
   margin: 3px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   color: var(--muted);
   white-space: pre-wrap;
@@ -167,7 +167,7 @@
   overflow-wrap: anywhere;
 }
 .permission-choice small {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.65;
   color: var(--muted);
 }
@@ -207,4 +207,75 @@
 }
 .permission-footer .permission-action-grid {
   margin-top: 0;
+}
+.permission-working-directory {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.permission-working-directory dt {
+  color: var(--muted);
+}
+.permission-working-directory dd {
+  margin: 3px 0 0;
+  font-family: var(--mono, Consolas, monospace);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.permission-risk-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 13px;
+  margin: 12px 0;
+  border: 1px solid color-mix(in srgb, var(--warning, #c48a2d) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning, #c48a2d) 8%, var(--surface));
+  font-size: 12px;
+  line-height: 1.75;
+}
+.permission-risk-notice > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning, #c48a2d);
+}
+.permission-risk-item + .permission-risk-item {
+  margin-top: 10px;
+}
+.permission-risk-item p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+.permission-file-diff {
+  min-width: 0;
+  margin: 15px 0;
+}
+.permission-file-diff h4 {
+  margin: 0;
+  font: 12px/1.7 var(--mono, Consolas, monospace);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.permission-file-diff .structured-diff-lines {
+  max-height: 300px;
+}
+.permission-raw-details {
+  padding: 13px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+.permission-raw-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.permission-raw-details pre {
+  font: 12px/1.8 var(--mono, Consolas, monospace);
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }

@@ -3194,3 +3194,40 @@ code {
 .context-usage-section > .helper-note {
   margin-top: 13px;
 }
+
+/* Keep actions, state, and recovery guidance readable at the smallest layout. */
+.section-label,
+.history-heading,
+.session-select small,
+.sidebar-status,
+.new-conversation > kbd,
+.effort-presets,
+.home-update-status,
+.home-engine-status,
+.connection-pill,
+.app-update-banner strong,
+.app-update-banner span,
+.update-status-row strong,
+.update-status-row p,
+.welcome-cards span,
+.welcome-project,
+.live-label,
+.tool-status,
+.tool-detail pre,
+.composer-bottom,
+.composer-bottom > span,
+.composer-bottom select,
+.composer-bottom button,
+.change-row small,
+.plan-item small,
+.inspector-footer,
+.inspector .inline-error,
+.command-card code,
+.raw-result summary,
+.helper-note .text-button,
+.result-item > .text-button,
+.shortcut-list kbd,
+.usage-section-heading > span,
+.account-money-stats span {
+  font-size: 12px;
+}

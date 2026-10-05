@@ -1,5 +1,11 @@
 const { translate: t } = require('./i18n.cjs');
-function createNotifications({ getWindow, enabled, Notification, onFailure = () => {} }) {
+function createNotifications({
+  getWindow,
+  enabled,
+  Notification,
+  onFailure = () => {},
+  onNavigate = (_target) => {},
+}) {
   let current;
   function clear() {
     const win = getWindow();
@@ -35,6 +41,13 @@ function createNotifications({ getWindow, enabled, Notification, onFailure = () 
         win.show();
         win.focus();
         clear();
+        if (event.sessionId && ['permission', 'task-finished'].includes(event.type))
+          onNavigate({
+            sessionId: event.sessionId,
+            ...(event.type === 'permission' && event.requestId !== undefined
+              ? { requestId: event.requestId }
+              : {}),
+          });
       });
       current.on('failed', onFailure);
       current.show();

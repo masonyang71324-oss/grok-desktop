@@ -6,6 +6,7 @@ const os = require('node:os');
 const { projectKey } = require('./access-policy.cjs');
 const { renameWithRetry } = require('./file-retry.cjs');
 const { readJsonWithRecovery, assertJsonWritable, isObject } = require('./json-recovery.cjs');
+const { normalizeZoomPercent } = require('./interface-size.cjs');
 
 const defaults = {
   grokPath: '',
@@ -20,7 +21,13 @@ const defaults = {
   lastProject: '',
   notifications: true,
   promptTemplates: [],
-  ui: { sidebar: true, inspector: false, inspectorTab: 'files', navigationTab: 'sessions' },
+  ui: {
+    sidebar: true,
+    inspector: false,
+    inspectorTab: 'files',
+    navigationTab: 'sessions',
+    zoomPercent: 100,
+  },
   window: null,
 };
 
@@ -70,6 +77,7 @@ function normalizeSettings(input = {}) {
       .slice(0, 20)
       .map(({ id, name, text }) => ({ id, name, text })),
     ui: {
+      zoomPercent: normalizeZoomPercent(input.ui?.zoomPercent),
       sidebar: input.ui?.sidebar !== false,
       inspector: input.ui?.inspector !== false,
       navigationTab: ['sessions', 'files', 'tasks'].includes(input.ui?.navigationTab)

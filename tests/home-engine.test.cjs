@@ -111,7 +111,10 @@ test('unified navigation preserves the composer and exposes files, tasks and foo
   await navigation.getByRole('tab', { name: '文件', exact: true }).click();
   await page.locator('.inspector').getByText('先选择一个项目', { exact: true }).waitFor();
   await navigation.getByRole('tab', { name: '任务', exact: true }).click();
-  await page.locator('.task-center-embedded').getByText('暂无任务', { exact: true }).waitFor();
+  await page
+    .locator('.task-center-embedded')
+    .getByText('暂无活跃或待处理任务', { exact: true })
+    .waitFor();
   await navigation.getByRole('tab', { name: '会话', exact: true }).click();
   assert.equal(await draft.inputValue(), '切换面板后保留的草稿');
   const footer = await page.locator('.desktop-status-bar').boundingBox();
@@ -204,7 +207,10 @@ test('expanded task results stay in the thread scroll while the send control rem
       ],
     }),
   );
-  await page.getByText('正在整理结果', { exact: true }).waitFor();
+  await page
+    .getByRole('region', { name: '任务活动', exact: true })
+    .getByText('正在整理结果', { exact: true })
+    .waitFor();
   assert.equal(await page.locator('.task-outcome').count(), 0);
 });
 

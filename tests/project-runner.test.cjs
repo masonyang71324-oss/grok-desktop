@@ -118,7 +118,9 @@ test('Electron main process can run npm using installed Node instead of its own 
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   child = spawn(require('electron'), [script], {
-    cwd,
+    // Electron's helper processes need not inherit the disposable project folder.
+    // The fixture still runs npm with cwd: __dirname, including its space-containing path.
+    cwd: path.resolve(__dirname, '..'),
     env,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],

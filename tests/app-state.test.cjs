@@ -50,7 +50,13 @@ const storageFixture = () => {
 
 async function fixture(
   storage = storageFixture(),
-  { filterEmptySessions = false, lastProject = cwd, modelState = models, projectOpenGate } = {},
+  {
+    filterEmptySessions = false,
+    lastProject = cwd,
+    modelState = models,
+    projectOpenGate,
+    trustByProject = {},
+  } = {},
 ) {
   let listener,
     index = 0,
@@ -201,7 +207,11 @@ async function fixture(
     }
     if (command === 'project.open') {
       await projectOpenGate;
-      return { cwd: payload.cwd, sessions: await client.listSessions(payload) };
+      return {
+        cwd: payload.cwd,
+        sessions: await client.listSessions(payload),
+        trusted: trustByProject[payload.cwd] !== false,
+      };
     }
     if (command === 'dialog.attach') return [{ name: 'picked.txt', path: 'C:\\picked.txt' }];
     if (command === 'clipboard.image')
@@ -279,7 +289,7 @@ async function fixture(
   const returnStatement = appFunction.body.statements.find(ts.isReturnStatement);
   const source =
     original.slice(0, returnStatement.getStart(sourceFile)) +
-    '\nreturn { cwd, draft, attachments, session, sessions, rows, connection, turnError, busy, run, pending, cancelling, stop, permissions, tasks, appUpdate, currentEffort, initializing, loadingSession, notice, attach, pasteImage, dropFiles, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
+    '\nreturn { cwd, projectTrusted, draft, attachments, session, sessions, rows, connection, turnError, busy, run, pending, cancelling, stop, permissions, selectedPermission, tasks, appUpdate, currentEffort, initializing, loadingSession, notice, attach, pasteImage, dropFiles, configureSelection, runUpdateAction, enqueue, setDraft, setAttachments, setEditorOpen, loadConversation, newConversation, openProject, send, setRename, setRenameTitle, renameSession, setDeleteTarget, deleteSession };\n}';
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -294,6 +304,10 @@ async function fixture(
         async pathsForFiles(files) {
           requests.push({ command: 'native.files', payload: files });
           return files;
+        },
+        async resolveDrop(files) {
+          requests.push({ command: 'native.files', payload: files });
+          return { files };
         },
         onEvent(fn) {
           listener = fn;
@@ -388,6 +402,72 @@ test('first-project initialization blocks attachment entry until the composer ha
     assert.equal(f.view.attachments[0].name, 'picked.txt');
   } finally {
     releaseProject();
+    f.close();
+  }
+});
+
+test('notification navigation restores destination trust and preserves the source project draft', async () => {
+  const readOnly = 'C:\\read-only-project';
+  const f = await fixture(undefined, { trustByProject: { [readOnly]: false } });
+  try {
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    await f.view.openProject(readOnly);
+    await settle();
+    assert.equal(f.view.projectTrusted, false);
+    f.view.setDraft('keep read-only project draft');
+    await settle();
+    f.emit({ type: 'notification-activate', session: summaries[0] });
+    await settle();
+    assert.equal(f.view.session.sessionId, 'session-a');
+    assert.equal(f.view.projectTrusted, true);
+    assert.equal(f.view.cwd, cwd);
+    await f.view.openProject(readOnly);
+    await settle();
+    assert.equal(f.view.draft, 'keep read-only project draft');
+  } finally {
+    f.close();
+  }
+});
+
+test('notification navigation waits for the file editor and matches duplicate approval IDs by session', async () => {
+  const f = await fixture();
+  const target = { ...summaries[1], cwd: 'C:\\second-project' };
+  const approval = {
+    sessionId: 'session-b',
+    requestId: 1,
+    params: { sessionId: 'session-b', options: [] },
+  };
+  try {
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    f.view.setDraft('keep source session draft');
+    f.view.setEditorOpen(true);
+    await settle();
+    f.setLoadOverride(async (payload) => ({
+      ...(await f.client.loadSession(payload)),
+      runtime: { permissions: payload.sessionId === 'session-b' ? [approval] : [] },
+    }));
+    f.emit({
+      type: 'permission',
+      sessionId: 'session-a',
+      requestId: 1,
+      params: { sessionId: 'session-a', options: [] },
+    });
+    f.emit({ type: 'notification-activate', session: target, requestId: 1 });
+    await settle();
+    assert.equal(f.view.session.sessionId, 'session-a');
+    assert.equal(f.view.draft, 'keep source session draft');
+    assert.match(f.view.notice, /保存并关闭/);
+    f.view.setEditorOpen(false);
+    await settle();
+    assert.equal(f.view.session.sessionId, 'session-b');
+    assert.equal(f.view.selectedPermission.sessionId, 'session-b');
+    assert.equal(f.view.selectedPermission.requestId, 1);
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    assert.equal(f.view.draft, 'keep source session draft');
+  } finally {
     f.close();
   }
 });

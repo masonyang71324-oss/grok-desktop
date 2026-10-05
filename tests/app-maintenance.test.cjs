@@ -66,8 +66,11 @@ test('session list virtualizes manual scrolling and keeps selected item and menu
   });
   await page.locator('.session-item.selected').waitFor();
   assert.equal(
-    await page.locator('.session-item.selected .session-select span').textContent(),
-    'Session 0500',
+    await page
+      .locator('.session-item.selected')
+      .getByRole('button', { name: 'Session 0500', exact: true })
+      .getAttribute('aria-current'),
+    'true',
   );
   assert.ok((await page.locator('.session-item').count()) < 90);
   await page.locator('.session-list').evaluate((el) => {

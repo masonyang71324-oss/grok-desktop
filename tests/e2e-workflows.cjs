@@ -202,6 +202,8 @@ async function logs() {
     );
     await page.getByRole('button', { name: '任务中心', exact: true }).click();
     const center = page.getByRole('dialog', { name: '任务中心', exact: true });
+    assert.equal(await center.getByText(projectB, { exact: true }).count(), 0);
+    await center.getByRole('button', { name: '显示全部', exact: true }).click();
     await center.getByText(projectB, { exact: true }).waitFor();
     await center.getByText('QUEUE_SECOND', { exact: true }).waitFor();
     await fs.mkdir(path.join(root, 'test-results'), { recursive: true });

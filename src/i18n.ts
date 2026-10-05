@@ -15,6 +15,10 @@ import { checkpointReview } from './locales/checkpoint-review';
 import { reviewFixes } from './locales/review-fixes';
 import { storageCompletion } from './locales/storage-completion';
 import { accessCompletion } from './locales/access-completion';
+import { approvalUsability } from './locales/approval-usability';
+import { usabilityPresentation } from './locales/usability-presentation';
+import { usabilityNavigation } from './locales/usability-navigation';
+import { taskStatus } from './locales/task-status';
 
 export type Locale = 'zh-CN' | 'en';
 type Params = Record<string, string | number>;
@@ -35,6 +39,10 @@ const english: Record<string, string> = {
   ...reviewFixes,
   ...storageCompletion,
   ...accessCompletion,
+  ...approvalUsability,
+  ...usabilityPresentation,
+  ...usabilityNavigation,
+  ...taskStatus,
 };
 const storageKey = 'grok-desktop.language';
 let locale: Locale = 'zh-CN';

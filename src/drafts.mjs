@@ -59,6 +59,12 @@ export function createDraftStore(storage, onError = () => {}, onPersist = () => 
       ),
     ],
     flush: write,
+    hasDraft(cwd, sessionId) {
+      const value = state.drafts[keyFor(cwd, sessionId)];
+      return typeof value?.text === 'string' && Array.isArray(value.attachments)
+        ? !!(value.text || value.attachments.length)
+        : false;
+    },
     read(cwd, sessionId) {
       const value = state.drafts[keyFor(cwd, sessionId)];
       return typeof value?.text === 'string' && Array.isArray(value.attachments)

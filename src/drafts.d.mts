@@ -6,6 +6,7 @@ export function createDraftStore(
   onError?: () => void,
   onPersist?: () => void | Promise<void>,
 ): {
+  hasDraft(cwd: string, sessionId?: string): boolean;
   read(cwd: string, sessionId?: string): Draft;
   attachmentPaths(): string[];
   flush(): void;

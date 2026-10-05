@@ -145,10 +145,10 @@ async function run(native) {
       assert.equal(await input.inputValue(), 'Keep my screenshot draft');
       await fs.unlink(deletedPath);
       await page.getByRole('button', { name: '发送消息', exact: true }).click();
-      await page
-        .getByRole('status')
-        .getByText(/ENOENT/)
-        .waitFor();
+      const failureNotice = page.getByRole('status').filter({ hasText: '找不到文件或文件夹' });
+      await failureNotice.waitFor();
+      await failureNotice.getByText('原始错误详情', { exact: true }).click();
+      await failureNotice.getByText(/ENOENT/).waitFor();
       assert.equal(await input.inputValue(), 'Keep my screenshot draft');
       assert.equal(await page.locator('.attachment-list > span').count(), 1);
       console.log('PASS screenshot draft survives reload and missing-file send failure');
