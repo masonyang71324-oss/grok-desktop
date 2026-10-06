@@ -95,6 +95,8 @@
   font-size: 14px;
 }
 .effort-energy {
+  --effort-change-duration: 0.42s;
+  --effort-change-easing: cubic-bezier(0.22, 0.7, 0.25, 1);
   --effort-progress: 100%;
   --effort-level: 1;
   --effort-charge: 1;
@@ -240,6 +242,21 @@ button.effort-energy-model {
     clip-path 0.28s ease,
     opacity 0.42s ease;
 }
+/* Keep the native range's input/keyboard semantics; interpolate only its paint. */
+.effort-energy-thumb {
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  left: calc(var(--effort-progress) - 28px * var(--effort-level));
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d4dfd8;
+  border-radius: 50%;
+  background: #f7fbf8;
+  box-shadow: none;
+  pointer-events: none;
+  transition: left var(--effort-change-duration) var(--effort-change-easing);
+}
 .effort-energy-range {
   position: relative;
   display: block;
@@ -269,6 +286,7 @@ button.effort-energy-model {
   border: 1px solid #d4dfd8;
   border-radius: 50%;
   background: #f7fbf8;
+  opacity: 0;
   box-shadow: none;
   cursor: grab;
 }
@@ -286,6 +304,7 @@ button.effort-energy-model {
   border: 1px solid #d4dfd8;
   border-radius: 50%;
   background: #f7fbf8;
+  opacity: 0;
   box-shadow: none;
 }
 .effort-energy-range:disabled {
@@ -319,6 +338,14 @@ button.effort-energy-model {
 :root[data-theme='light'] .effort-energy-icon:hover:not(:disabled) {
   background: #e3eee7;
   color: #173a25;
+}
+.effort-energy-flow,
+.effort-energy-plasma,
+.effort-energy-particles,
+.effort-energy-title,
+.effort-energy-header > .effort-energy-icon:first-child {
+  transition-duration: var(--effort-change-duration);
+  transition-timing-function: var(--effort-change-easing);
 }
 @keyframes effort-energy-stream {
   from {

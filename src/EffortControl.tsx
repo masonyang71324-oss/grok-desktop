@@ -339,6 +339,7 @@ export default function EffortControl({
                   style={{ backgroundImage: 'url("./effort-particles.png")' }}
                   aria-hidden="true"
                 />
+                <div className="effort-energy-thumb" aria-hidden="true" />
                 <input
                   ref={input}
                   type="range"

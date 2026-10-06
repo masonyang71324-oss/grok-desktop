@@ -69,6 +69,72 @@ async function waitForValue(page, value) {
   );
 }
 
+async function captureEffortMotion(page, action, targetIndex) {
+  await page.locator('.effort-energy-thumb').waitFor();
+  const recording = page.evaluate(
+    (index) =>
+      new Promise((resolve) => {
+        const track = document.querySelector('.effort-energy-track');
+        const thumb = document.querySelector('.effort-energy-thumb');
+        const flow = document.querySelector('.effort-energy-flow');
+        const plasma = document.querySelector('.effort-energy-plasma');
+        const input = document.querySelector('.effort-energy-range');
+        const ratio = index / Number(input.max);
+        const target = {
+          left:
+            track.getBoundingClientRect().left + (track.clientWidth - thumb.offsetWidth) * ratio,
+          clip: 100 * (1 - ratio),
+          opacity: ratio ** 4.7,
+        };
+        const frames = [];
+        const started = performance.now();
+        let settledFrames = 0;
+        const sample = () => ({
+          left: thumb.getBoundingClientRect().left,
+          clip: Number(getComputedStyle(flow).clipPath.match(/(-?[\d.]+)%/)?.[1] || 0),
+          opacity: Number(getComputedStyle(plasma).opacity),
+        });
+        const first = sample();
+        function frame(time) {
+          const current = sample();
+          frames.push(current);
+          const settled =
+            Math.abs(current.left - target.left) < 0.15 &&
+            Math.abs(current.clip - target.clip) < 0.05 &&
+            Math.abs(current.opacity - target.opacity) < 0.0001;
+          settledFrames = settled ? settledFrames + 1 : 0;
+          if (settledFrames >= 2 || time - started > 2500) {
+            resolve({ first, target, frames, settled: settledFrames >= 2 });
+          } else requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      }),
+    targetIndex,
+  );
+  await action();
+  return recording;
+}
+
+function assertVisibleTween(recording, label) {
+  assert.equal(
+    recording.settled,
+    true,
+    `${label} reaches its final rendered position: ${JSON.stringify({ first: recording.first, last: recording.frames.at(-1), target: recording.target })}`,
+  );
+  for (const property of ['left', 'clip', 'opacity']) {
+    const from = recording.first[property],
+      to = recording.target[property];
+    const inset = Math.abs(to - from) * 0.01;
+    const intermediates = recording.frames
+      .map((frame) => frame[property])
+      .filter((value) => value > Math.min(from, to) + inset && value < Math.max(from, to) - inset);
+    assert.ok(
+      new Set(intermediates).size >= 2,
+      `${label} renders multiple intermediate ${property} values`,
+    );
+  }
+}
+
 test('reversed advertised options form an ascending slider with exact values, reset, and English labels', async (t) => {
   const page = await fixture(t);
   const control = await open(page);
@@ -323,6 +389,82 @@ test('highest energy stays distinct from penultimate and reduced motion stops th
     .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).animationName));
   assert.ok(motion.length >= 2);
   assert.ok(motion.every((name) => name === 'none'));
+});
+
+test('adjacent effort changes visibly tween the thumb, filled track, and plasma at low and highest levels', async (t) => {
+  for (const [from, to, targetIndex] of [
+    ['low', 'medium', 1],
+    ['max', 'ultra', 5],
+  ]) {
+    const page = await fixture(t);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.evaluate((value) => window.renderEffort({ value }), from);
+    const control = await open(page);
+    await waitForValue(page, targetIndex - 1);
+    const recording = await captureEffortMotion(
+      page,
+      () => control.press('ArrowRight'),
+      targetIndex,
+    );
+    assertVisibleTween(recording, `${from} → ${to}`);
+    assert.equal(await control.inputValue(), String(targetIndex));
+    assert.deepEqual(await changes(page), [to]);
+  }
+});
+
+test('decreasing effort and restoring the model default animate back without changing submitted values', async (t) => {
+  const page = await fixture(t);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.evaluate(() => window.renderEffort({ value: 'ultra' }));
+  const control = await open(page);
+  await waitForValue(page, 5);
+  assertVisibleTween(
+    await captureEffortMotion(page, () => control.press('ArrowLeft'), 4),
+    'ultra → max',
+  );
+  const reset = page.getByRole('button', { name: '重置推理深度', exact: true });
+  assertVisibleTween(
+    await captureEffortMotion(page, () => reset.click(), 1),
+    'max → model default',
+  );
+  assert.equal(await control.inputValue(), '1');
+  assert.deepEqual(await changes(page), ['max', '']);
+});
+
+test('reduced motion moves the decorative thumb directly while retaining the native accessible slider', async (t) => {
+  const page = await fixture(t);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => window.renderEffort({ value: 'ultra' }));
+  const control = await open(page);
+  await waitForValue(page, 5);
+  const recording = await captureEffortMotion(page, () => control.press('Home'), 0);
+  assert.equal(recording.settled, true);
+  assert.equal(
+    recording.frames.some(
+      (frame) =>
+        frame.left > recording.target.left + 0.15 && frame.left < recording.first.left - 0.15,
+    ),
+    false,
+  );
+  assert.equal(await control.inputValue(), '0');
+  assert.equal(await control.getAttribute('aria-valuetext'), '轻量');
+  assert.equal(await page.getByRole('slider').count(), 1);
+  assert.deepEqual(await changes(page), ['low']);
+  const motion = await page
+    .locator('.effort-energy-thumb, .effort-energy-flow, .effort-energy-plasma')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        duration: getComputedStyle(node).transitionDuration,
+        animation: getComputedStyle(node).animationName,
+      })),
+    );
+  assert.ok(
+    motion.every(
+      (style) =>
+        style.animation === 'none' &&
+        style.duration.split(',').every((duration) => parseFloat(duration) === 0),
+    ),
+  );
 });
 
 test('keyboard opening and Escape restore focus; outside click and Tab dismiss without trapping focus', async (t) => {

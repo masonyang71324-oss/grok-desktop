@@ -54,7 +54,7 @@ const { createDiagnostics } = require('./diagnostics.cjs');
 
 app.enableSandbox();
 app.setName('Grok Desktop');
-app.setAppUserModelId('local.grok.desktop');
+app.setAppUserModelId(app.isPackaged ? 'local.grok.desktop' : 'local.grok.desktop.dev');
 // A conventional override also lets packaged/automated launches isolate their data.
 if (process.env.GROK_DESKTOP_DATA_DIR)
   app.setPath('userData', path.resolve(process.env.GROK_DESKTOP_DATA_DIR));
