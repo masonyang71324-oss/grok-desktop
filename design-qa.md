@@ -32,3 +32,17 @@ final result: passed
 - Source/prototype text density differs because the concept invents a successful two-file task while the captured fixture records zero file changes and no verification command. Production UI does not fabricate those results.
 - Minor intentional differences: native controls, original logo, additional file/management affordances and exact context numbers preserve the existing product's capabilities. Message timestamps are not invented when upstream data is unavailable.
 - No unresolved P0/P1/P2 visual or interaction findings in the checked states. Whole-product assistive-technology compliance and every display scaling setting were not audited.
+
+## 1.10.1 — approved flat energy slider integration
+
+Final result: passed.
+
+Source visual: `E:/ZCode工作区域/grok-build-composer-preview/public/proof/energy-flat-ultra.jpg` (401 × 190). The user approved the flat treatment, full plasma at the highest level, and a quieter penultimate level. Production component captures: `test-results/effort-energy-en.jpg` and `effort-energy-light.jpg` (401 × 190 CSS/image pixels, no density scaling). Combined comparison: `test-results/effort-design-comparison.jpg` (449 × 780), captured in the in-app browser. The captures already isolate the full control, so no additional detail crop is needed. The actual packaged application also captured `test-results/effort-packaged.png` with its real mocked model catalog.
+
+Fidelity surfaces: the existing 14px/12px title/model hierarchy and application font stack are preserved; the panel remains 256px wide with the approved spacing, rounded flat track and white handle. Graphite/cool-green tokens and the original generated plasma/particle assets are retained without inset lighting, exterior aura or thumb shadows. Light mode uses darker legible labels. Chinese labels and a live model link intentionally replace demo-only English labels/actions. All selectable levels come from the engine. Defaults, custom options and quick presets remain available.
+
+Interaction findings resolved: saving a native range temporarily removed keyboard focus; focus now returns only if the user stayed in the control. Escape also works while saving. The popover stays open for immediate visual feedback; local drag/key preview commits only once when released. Server-adjusted values and failed requests restore the authoritative state. Unknown level ordering uses the native complete list instead of inventing strength.
+
+Packaged verification found an asset-path issue that was invisible in Vite: relative image URLs inside CSS variables resolved against `dist/assets/`. Moving background-image declarations directly onto their elements correctly resolves against the document. The packaged smoke test now decodes both images and captures the control, and passed after the fix.
+
+Validation: 624/624 full automated tests passed; after the image-path correction, 30/30 related component/App tests and the packaged Electron smoke workflow passed. The packaged workflow also covers configuration/default reset, streaming, permissions, history, drafts and both languages, with no renderer errors. Build, formatting and diff checks passed. NSIS installation exited 0 and the installed executable reports 1.10.1.0. No unresolved P0/P1/P2 finding in this bounded change.

@@ -162,6 +162,7 @@ type Dialog =
   | null;
 export default function App() {
   const { t } = useI18n();
+  const modelSelectRef = useRef<HTMLSelectElement>(null);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [recoveryWarnings, setRecoveryWarnings] = useState<
@@ -2575,6 +2576,7 @@ export default function App() {
                 <label className="model-control" title={t('选择模型')}>
                   <Zap size={14} />
                   <select
+                    ref={modelSelectRef}
                     aria-label={t('选择模型')}
                     value={currentModelId || ''}
                     disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
@@ -2588,15 +2590,28 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-                {effortOptions.length > 0 && (
-                  <EffortControl
-                    options={effortOptions}
-                    value={currentEffort}
-                    presets={presets}
-                    disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
-                    onChange={(effort) => void configureSelection({ effort })}
-                  />
-                )}
+                {effortOptions.length > 0 &&
+                  selectedModel?._meta?.supportsReasoningEffort !== false && (
+                    <EffortControl
+                      key={`${session?.sessionId || 'new'}:${currentModelId}`}
+                      options={effortOptions}
+                      value={currentEffort}
+                      presets={presets}
+                      modelName={selectedModel?.name || currentModelId || 'Grok'}
+                      disabled={busy || !!loadingSession || connection !== 'ready'}
+                      pending={configuring}
+                      onChange={(effort) => configureSelection({ effort })}
+                      onModelClick={() => {
+                        const modelSelect = modelSelectRef.current;
+                        modelSelect?.focus();
+                        try {
+                          modelSelect?.showPicker();
+                        } catch {
+                          /* The focused native select remains usable with the keyboard. */
+                        }
+                      }}
+                    />
+                  )}
                 {!!session && contextWindows.length > 1 && (
                   <label className="context-control" title={t('上下文窗口')}>
                     <select

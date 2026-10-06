@@ -460,8 +460,10 @@ test('advertised effort defaults and context selection use authoritative configu
   const context = page.getByRole('combobox', { name: '上下文窗口', exact: true });
   await page.getByRole('button', { name: '推理深度', exact: true }).click();
   assert.equal(
-    await page.getByRole('combobox', { name: '推理深度', exact: true }).inputValue(),
-    'medium',
+    await page
+      .getByRole('slider', { name: '推理深度', exact: true })
+      .getAttribute('aria-valuetext'),
+    '标准',
   );
   await page.keyboard.press('Escape');
   assert.equal(await context.inputValue(), '256000');
@@ -523,8 +525,10 @@ test('obsolete saved model defaults display the advertised catalog default witho
   );
   await page.getByRole('button', { name: '推理深度', exact: true }).click();
   assert.equal(
-    await page.getByRole('combobox', { name: '推理深度', exact: true }).inputValue(),
-    'medium',
+    await page
+      .getByRole('slider', { name: '推理深度', exact: true })
+      .getAttribute('aria-valuetext'),
+    '标准',
   );
   await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(() => window.settings.modelId), 'grok-code-fast-1');

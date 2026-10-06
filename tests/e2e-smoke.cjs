@@ -89,8 +89,9 @@ async function mockLog() {
     .map((line) => JSON.parse(line));
 }
 async function openEffort() {
-  await page.getByRole('button', { name: '推理深度', exact: true }).click();
-  return page.getByRole('combobox', { name: '推理深度', exact: true });
+  if (!(await page.getByRole('dialog', { name: '推理深度', exact: true }).isVisible()))
+    await page.getByRole('button', { name: '推理深度', exact: true }).click();
+  return page.getByRole('slider', { name: '推理深度', exact: true });
 }
 async function assertEffort(value, label) {
   await page.waitForFunction((expected) => {
@@ -98,7 +99,8 @@ async function assertEffort(value, label) {
     return trigger && !trigger.disabled && trigger.textContent.trim() === expected;
   }, label);
   const control = await openEffort();
-  assert.equal(await control.inputValue(), value);
+  assert.equal(await control.inputValue(), String(['low', 'medium', 'high'].indexOf(value)));
+  assert.equal(await control.getAttribute('aria-valuetext'), label);
   await control.press('Escape');
 }
 
@@ -383,9 +385,32 @@ async function assertEffort(value, label) {
     const contextControl = page.getByRole('combobox', { name: '上下文窗口', exact: true });
     await contextControl.selectOption('500000');
     await page.waitForFunction(() => !document.querySelector('.context-control select').disabled);
-    await (await openEffort()).selectOption('high');
+    await (await openEffort()).press('End');
     await assertEffort('high', '深入');
-    await (await openEffort()).selectOption('');
+    await openEffort();
+    const energyAssets = await page.evaluate(async () => {
+      const layers = ['.effort-energy-plasma', '.effort-energy-particles'];
+      return Promise.all(
+        layers.map(async (selector) => {
+          const source = getComputedStyle(document.querySelector(selector)).backgroundImage;
+          const image = new Image();
+          image.src = source.slice(4, -1).replace(/^"|"$/g, '');
+          try {
+            await image.decode();
+          } catch {
+            throw new Error(`Energy image failed to load: ${image.src}`);
+          }
+          return image.naturalWidth > 0 && image.naturalHeight > 0;
+        }),
+      );
+    });
+    assert.deepEqual(energyAssets, [true, true], 'packaged energy textures must load');
+    await fs.mkdir(path.join(root, 'test-results'), { recursive: true });
+    await page
+      .locator('.effort-popup')
+      .screenshot({ path: path.join(root, 'test-results/effort-packaged.png') });
+    pass('energy-slider-packaged-assets');
+    await page.getByRole('button', { name: '重置推理深度', exact: true }).click();
     await assertEffort('medium', '标准');
     assert.equal(await contextControl.inputValue(), '500000');
     await request('cli.refresh');
@@ -394,9 +419,13 @@ async function assertEffort(value, label) {
     phase = 'ux-actions-and-summary';
     await page.locator('.usage-status').filter({ hasText: '62.5%' }).waitFor();
     await openEffort();
+    if (!(await page.getByRole('button', { name: '快速处理', exact: true }).isVisible()))
+      await page.getByRole('button', { name: '推理快捷设置', exact: true }).click();
     await page.getByRole('button', { name: '快速处理', exact: true }).click();
     await assertEffort('low', '轻量');
     await openEffort();
+    if (!(await page.getByRole('button', { name: '标准处理', exact: true }).isVisible()))
+      await page.getByRole('button', { name: '推理快捷设置', exact: true }).click();
     await page.getByRole('button', { name: '标准处理', exact: true }).click();
     await assertEffort('medium', '标准');
     const promptCountBefore = (await mockLog()).filter((item) => item.type === 'prompt').length;
