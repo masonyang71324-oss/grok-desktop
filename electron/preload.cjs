@@ -8,6 +8,7 @@ const commands = new Set([
   'cli.install.start',
   'cli.install.cancel',
   'cli.login',
+  'cli.login.cancel',
   'providers.list',
   'providers.save',
   'providers.remove',

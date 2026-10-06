@@ -38,6 +38,7 @@ const documentFormats = require('./document.cjs');
 const { createAppUpdater } = require('./updater.cjs');
 const { readCliStatus, selectUpdatedCli } = require('./cli-status.cjs');
 const { CliInstaller } = require('./cli-installer.cjs');
+const { CliLogin } = require('./cli-login.cjs');
 const { ProviderStore } = require('./providers.cjs');
 const { previewOffice } = require('./office-preview.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
@@ -209,6 +210,18 @@ const checkpoints = createCheckpointStore({
 const runner = createProjectRunner({ emit: (type, data) => emit({ type, ...data }) });
 const terminals = createTerminalManager({ spawnPty: spawnHostedPty, emit });
 const cliInstaller = new CliInstaller({ emit });
+const cliLogin = new CliLogin({
+  ...(process.env.GROK_DESKTOP_TEST_GROK_SCRIPT
+    ? {
+        spawnFn: (executable, args, options) =>
+          spawn(
+            executable,
+            [path.resolve(process.env.GROK_DESKTOP_TEST_GROK_SCRIPT), ...args],
+            options,
+          ),
+      }
+    : {}),
+});
 const providers = new ProviderStore();
 const attachmentStorage = createAttachmentStorage({
   directory: attachmentsDirectory,
@@ -564,6 +577,15 @@ async function engineStatus({ checkUpdate = false } = {}) {
   return { ...engineState, models: client.models };
 }
 
+async function loginGrok() {
+  const result = await cliLogin.start(resolveGrok(settings.grokPath));
+  if (result.cancelled) return result;
+  const status = await engineStatus();
+  if (status.authStatus !== 'authenticated')
+    throw new Error(t('官方授权已结束，但尚未确认登录成功。请检查网络后重试。'));
+  return { ...result, status };
+}
+
 async function refreshEngine() {
   activity.assertSessionAllowed();
   // The catalog connection owns no turns. Refreshing it keeps all session tasks alive.
@@ -660,24 +682,20 @@ async function openSystem({ target, cwd, path: filepath, url }) {
     await shell.openExternal(url);
     return;
   }
-  if (target === 'terminal' || target === 'grok-login') {
-    const directory =
-      target === 'grok-login'
-        ? os.homedir()
-        : access.project(cwd || settings.lastProject, true).cwd;
+  if (target === 'grok-login') return loginGrok();
+  if (target === 'terminal') {
+    const directory = access.project(cwd || settings.lastProject, true).cwd;
     const exe = resolveGrok(settings.grokPath);
-    const code = `& '${exe.replaceAll("'", "''")}'${target === 'grok-login' ? ' login' : ''}`;
+    const code = `& '${exe.replaceAll("'", "''")}'`;
     const child = spawn(
       windowsPowerShellPath(),
       ['-NoLogo', '-NoExit', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')],
       { cwd: directory, detached: true, stdio: 'ignore', windowsHide: false },
     );
-    if (target === 'terminal') {
-      const record = { cwd: directory, child };
-      externalProjectTerminals.add(record);
-      child.once('exit', () => externalProjectTerminals.delete(record));
-      child.once('error', () => externalProjectTerminals.delete(record));
-    }
+    const record = { cwd: directory, child };
+    externalProjectTerminals.add(record);
+    child.once('exit', () => externalProjectTerminals.delete(record));
+    child.once('error', () => externalProjectTerminals.delete(record));
     await new Promise((resolve, reject) => {
       child.once('spawn', resolve);
       child.once('error', reject);
@@ -866,7 +884,8 @@ const handlers = {
     return result;
   },
   'cli.install.cancel': () => cliInstaller.cancel(),
-  'cli.login': () => openSystem({ target: 'grok-login', cwd: settings.lastProject }),
+  'cli.login': loginGrok,
+  'cli.login.cancel': () => cliLogin.cancel(),
   'providers.list': () => providers.list(),
   'providers.save': (payload) =>
     activity.runMutation(async () => {
@@ -1449,6 +1468,7 @@ else {
       agentShutdown,
       terminals.dispose(),
       cliInstaller.dispose(),
+      cliLogin.dispose(),
     ]).then(() => {
       shutdownReady = true;
       if (installUpdateRequested) {

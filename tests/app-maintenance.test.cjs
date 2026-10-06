@@ -8,7 +8,7 @@ let browser, bundle, css;
 before(async () => {
   const result = await build({
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import SessionList from './src/SessionList';import EngineDialog from './src/EngineDialog';import {useEngine} from './src/useEngine';window.ui={React,createRoot,flushSync,SessionList,EngineDialog,useEngine};`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import SessionList from './src/SessionList';import EngineDialog from './src/EngineDialog';import {useEngine} from './src/useEngine';import {setLocale} from './src/i18n';window.ui={React,createRoot,flushSync,SessionList,EngineDialog,useEngine,setLocale};`,
       loader: 'tsx',
       resolveDir: path.join(__dirname, '..'),
     },
@@ -150,6 +150,11 @@ test('extracted engine hook and dialog preserve login/check/refresh actions and 
               updateAvailable: true,
             },
           };
+        if (command === 'cli.login')
+          return {
+            ok: true,
+            data: { cancelled: false, status: { version: '1.0.1', authStatus: 'authenticated' } },
+          };
         if (command === 'cli.refresh')
           return { ok: true, data: { cli: { version: '1.0.1' }, models: {}, commands: [] } };
         return { ok: true, data: {} };
@@ -172,6 +177,7 @@ test('extracted engine hook and dialog preserve login/check/refresh actions and 
         busy: true,
         updateBlocked: true,
         onAction: engine.runEngineAction,
+        onCancelLogin: engine.cancelEngineLogin,
         onClose: () => {},
         onOnboarding: () => window.calls.push({ action: 'onboarding' }),
         onProviders: () => window.calls.push({ action: 'providers' }),
@@ -190,10 +196,10 @@ test('extracted engine hook and dialog preserve login/check/refresh actions and 
   await dialog.getByRole('button', { name: '检查引擎更新', exact: true }).click();
   await dialog.getByText('可更新至 1.0.2', { exact: true }).waitFor();
   await dialog.getByRole('button', { name: '刷新引擎与模型', exact: true }).click();
-  await page.waitForFunction(() => window.refreshed === 1);
+  await page.waitForFunction(() => window.refreshed === 2);
   assert.deepEqual(
-    await page.evaluate(() => window.calls.find((call) => call.command === 'system.open').payload),
-    { target: 'grok-login', cwd: 'C:/project' },
+    await page.evaluate(() => window.calls.filter((call) => call.command === 'cli.login').length),
+    1,
   );
   assert.equal(
     await page.evaluate(() =>
@@ -201,4 +207,143 @@ test('extracted engine hook and dialog preserve login/check/refresh actions and 
     ),
     true,
   );
+});
+
+async function loginFixture(t, language = 'zh-CN') {
+  const page = await fixture(t);
+  await page.evaluate((language) => {
+    const { React, createRoot, flushSync, EngineDialog, useEngine, setLocale } = window.ui;
+    setLocale(language);
+    window.calls = [];
+    window.notifications = [];
+    window.refreshed = 0;
+    window.cancelError = '';
+    window.desktop = {
+      request: async (command, payload) => {
+        window.calls.push({ command, payload });
+        if (command === 'cli.login')
+          return new Promise((resolve) => {
+            window.finishLogin = resolve;
+          });
+        if (command === 'cli.login.cancel') {
+          if (window.cancelError) return { ok: false, error: window.cancelError };
+          window.finishLogin({ ok: true, data: { cancelled: true } });
+          return { ok: true, data: { cancelled: true } };
+        }
+        if (command === 'cli.refresh')
+          return { ok: true, data: { cli: { version: '1.0.46' }, models: {}, commands: [] } };
+        throw new Error(`Unexpected command ${command}`);
+      },
+    };
+    function Harness() {
+      const engine = useEngine({
+        getCwd: () => 'C:/project',
+        isUpdateBlocked: () => false,
+        hasSession: () => false,
+        onRefresh: () => window.refreshed++,
+        onUpdated: async () => {},
+        notify: (message) => window.notifications.push(message),
+      });
+      return React.createElement(EngineDialog, {
+        status: engine.cliStatus,
+        authLabel: engine.engineAuthLabel,
+        action: engine.engineAction,
+        error: engine.engineError,
+        busy: false,
+        updateBlocked: false,
+        onAction: engine.runEngineAction,
+        onCancelLogin: engine.cancelEngineLogin,
+        onClose: () => {},
+        onOnboarding: () => {},
+        onProviders: () => {},
+      });
+    }
+    flushSync(() =>
+      createRoot(document.getElementById('root')).render(React.createElement(Harness)),
+    );
+  }, language);
+  return page;
+}
+
+for (const language of ['zh-CN', 'en']) {
+  test(`engine sign-in stays pending until verified then refreshes automatically (${language})`, async (t) => {
+    const page = await loginFixture(t, language);
+    const english = language === 'en';
+    const login = page.getByRole('button', {
+      name: english ? 'Sign in to Grok Build' : '登录 Grok Build',
+      exact: true,
+    });
+    await login.click();
+    assert.equal(await login.isDisabled(), true);
+    assert.equal(await login.locator('.spin').count(), 1);
+    await page
+      .getByRole('status')
+      .filter({ hasText: english ? 'official authorization page' : '官方授权页面' })
+      .waitFor();
+    await page.evaluate(() => {
+      document.querySelector('.engine-actions button:nth-child(3)').click();
+    });
+    assert.equal(
+      await page.evaluate(() => window.calls.filter((c) => c.command === 'cli.login').length),
+      1,
+    );
+    assert.equal(await page.evaluate(() => window.refreshed), 0);
+    assert.deepEqual(await page.evaluate(() => window.notifications), []);
+    await page.evaluate(() =>
+      window.finishLogin({
+        ok: true,
+        data: {
+          cancelled: false,
+          status: { path: 'C:/grok.exe', version: '1.0.46', authStatus: 'authenticated' },
+        },
+      }),
+    );
+    await page.getByText(english ? 'Signed in' : '已登录', { exact: true }).waitFor();
+    await page.waitForFunction(() => window.refreshed === 1 && window.notifications.length === 1);
+    assert.equal(await login.isDisabled(), false);
+    assert.equal(
+      await page
+        .getByRole('button', { name: english ? 'Cancel sign-in' : '取消登录', exact: true })
+        .count(),
+      0,
+    );
+  });
+}
+
+test('engine sign-in reports failed verification and allows retry instead of announcing success', async (t) => {
+  const page = await loginFixture(t);
+  const login = page.getByRole('button', { name: '登录 Grok Build', exact: true });
+  await login.click();
+  await page.evaluate(() =>
+    window.finishLogin({
+      ok: true,
+      data: { cancelled: false, status: { authStatus: 'required' } },
+    }),
+  );
+  await page.getByRole('alert').filter({ hasText: '未完成登录验证' }).waitFor();
+  assert.equal(await login.isDisabled(), false);
+  assert.equal(await page.evaluate(() => window.refreshed), 0);
+  assert.deepEqual(await page.evaluate(() => window.notifications), []);
+  await login.click();
+  await page.evaluate(() => window.finishLogin({ ok: false, error: 'Official sign-in failed' }));
+  await page.getByRole('alert').filter({ hasText: 'Official sign-in failed' }).waitFor();
+  assert.equal(await login.isDisabled(), false);
+});
+
+test('engine sign-in cancellation leaves no success or error; failed cancellation remains retryable', async (t) => {
+  const page = await loginFixture(t, 'en');
+  const login = page.getByRole('button', { name: 'Sign in to Grok Build', exact: true });
+  await login.click();
+  await page.evaluate(() => (window.cancelError = 'Process still running'));
+  const cancel = page.getByRole('button', { name: 'Cancel sign-in', exact: true });
+  await cancel.click();
+  await page.getByRole('alert').filter({ hasText: 'Unable to cancel sign-in' }).waitFor();
+  assert.equal(await login.isDisabled(), true);
+  await page.evaluate(() => (window.cancelError = ''));
+  await cancel.click();
+  await cancel.waitFor({ state: 'hidden' });
+  assert.equal(await login.isDisabled(), false);
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.equal(await page.evaluate(() => window.refreshed), 0);
+  assert.deepEqual(await page.evaluate(() => window.notifications), []);
 });

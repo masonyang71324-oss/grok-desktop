@@ -614,7 +614,10 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
               ...window.engineStatus,
               ...(payload?.checkUpdate ? { latestVersion: '1.0.47', updateAvailable: true } : {}),
             };
-          else if (command === 'tasks.list') data = [];
+          else if (command === 'cli.login') {
+            window.engineStatus.authStatus = 'authenticated';
+            data = { cancelled: false, status: window.engineStatus };
+          } else if (command === 'tasks.list') data = [];
           else if (command === 'checkpoints.detail') data = window.checkpoint;
           else if (command === 'dialog.project') data = 'C:/project';
           else if (command === 'project.open')
@@ -692,8 +695,8 @@ test('home distinguishes engine authentication from a connected transport and ex
   const dialog = page.getByRole('dialog', { name: 'Grok Build 引擎', exact: true });
   await dialog.getByRole('button', { name: '登录 Grok Build', exact: true }).click();
   assert.deepEqual(
-    await page.evaluate(() => window.calls.find((call) => call.command === 'system.open').payload),
-    { target: 'grok-login', cwd: '' },
+    await page.evaluate(() => window.calls.filter((call) => call.command === 'cli.login').length),
+    1,
   );
   await dialog.getByRole('button', { name: '检查引擎更新', exact: true }).click();
   await dialog.getByText('可更新至 1.0.47', { exact: true }).waitFor();
@@ -866,7 +869,7 @@ test('obsolete saved model defaults display the advertised catalog default witho
   assert.equal(await page.evaluate(() => window.settings.modelId), 'grok-code-fast-1');
 });
 
-test('a prompt authentication failure updates readiness and its recovery starts native login without losing the draft', async (t) => {
+test('a prompt authentication failure updates readiness and recovery signs in without resending the draft', async (t) => {
   const page = await fixture(t, { authStatus: 'authenticated' });
   await page.locator('.home-engine-status').getByText('已登录', { exact: true }).waitFor();
   await page.evaluate(() => {
@@ -886,12 +889,19 @@ test('a prompt authentication failure updates readiness and its recovery starts 
   await page.locator('.home-engine-status').getByText('需要登录', { exact: true }).waitFor();
   await page.getByRole('button', { name: '打开 Grok 登录', exact: true }).click();
   assert.deepEqual(
-    await page.evaluate(() => window.calls.find((call) => call.command === 'system.open').payload),
-    { target: 'grok-login', cwd: 'C:/project' },
+    await page.evaluate(() => window.calls.filter((call) => call.command === 'cli.login').length),
+    1,
   );
   assert.equal(
     await page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true }).inputValue(),
     'Keep request after login',
+  );
+  await page.locator('.home-engine-status').getByText('已登录', { exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.command === 'session.send').length,
+    ),
+    1,
   );
 });
 

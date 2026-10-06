@@ -18,6 +18,18 @@ export const runtimeUpgrades: Record<string, string> = {
   安装进度: 'Installation progress',
   '登录 Grok': 'Sign in to Grok',
   '已验证登录状态。': 'Sign-in status verified.',
+  '在浏览器完成官方授权，登录状态将自动更新。':
+    'Complete official authorization in your browser. Sign-in status will update automatically.',
+  '请在浏览器的官方授权页面完成登录，完成后自动刷新。':
+    'Complete sign-in on the official authorization page in your browser. This will refresh automatically.',
+  '点击登录将在浏览器打开官方授权页面，完成后自动刷新引擎与模型。':
+    'Sign-in opens the official authorization page in your browser. The engine and models refresh automatically afterward.',
+  '未完成登录验证，请重试或重新检查登录。':
+    'Sign-in could not be verified. Retry or check sign-in again.',
+  'Grok Build 已登录，引擎与模型已刷新。':
+    'Signed in to Grok Build. The engine and models have been refreshed.',
+  取消登录: 'Cancel sign-in',
+  '无法取消登录，请重试。': 'Unable to cancel sign-in. Please try again.',
   '在官方登录窗口完成登录，然后重新检查。':
     'Complete sign-in in the official login window, then check again.',
   打开官方登录: 'Open official sign-in',

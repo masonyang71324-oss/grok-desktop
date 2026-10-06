@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "1.11.3",
+  "version": "1.11.4",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -14,7 +14,7 @@
     "start": "electron .",
     "build": "tsc --noEmit && vite build",
     "test": "node --test tests/*.test.cjs",
-    "test:e2e": "node tests/e2e-smoke.cjs && node tests/e2e-lifecycle.cjs && node tests/e2e-recovery.cjs && node tests/e2e-workflows.cjs && node tests/e2e-images.cjs && node tests/e2e-word.cjs && node tests/e2e-documents.cjs && node tests/e2e-upgrades.cjs && node tests/e2e-review-fixes.cjs && node tests/e2e-access.cjs && node tests/e2e-draft-force-exit.cjs && node tests/e2e-usability.cjs && node tests/e2e-architecture.cjs && node tests/e2e-architecture-settings.cjs",
+    "test:e2e": "node tests/e2e-smoke.cjs && node tests/e2e-login.cjs && node tests/e2e-lifecycle.cjs && node tests/e2e-recovery.cjs && node tests/e2e-workflows.cjs && node tests/e2e-images.cjs && node tests/e2e-word.cjs && node tests/e2e-documents.cjs && node tests/e2e-upgrades.cjs && node tests/e2e-review-fixes.cjs && node tests/e2e-access.cjs && node tests/e2e-draft-force-exit.cjs && node tests/e2e-usability.cjs && node tests/e2e-architecture.cjs && node tests/e2e-architecture-settings.cjs",
     "test:e2e:upgrades": "node tests/e2e-upgrades.cjs",
     "bench:markdown": "node scripts/bench-markdown.cjs",
     "bench:conversation": "node scripts/bench-conversation.cjs",

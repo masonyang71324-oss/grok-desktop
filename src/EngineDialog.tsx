@@ -12,6 +12,7 @@ export default function EngineDialog({
   busy,
   updateBlocked,
   onAction,
+  onCancelLogin,
   onClose,
   onOnboarding,
   onProviders,
@@ -24,6 +25,7 @@ export default function EngineDialog({
   busy: boolean;
   updateBlocked: boolean;
   onAction: (action: EngineAction) => void | Promise<void>;
+  onCancelLogin: () => void | Promise<void>;
   onClose: () => void;
   onOnboarding: () => void;
   onProviders: () => void;
@@ -65,10 +67,10 @@ export default function EngineDialog({
         </p>
       )}
       <div className="engine-actions">
-        <button className="secondary-button" onClick={onOnboarding}>
+        <button className="secondary-button" disabled={!!action} onClick={onOnboarding}>
           {t('首次使用引导')}
         </button>
-        <button className="secondary-button" onClick={onProviders}>
+        <button className="secondary-button" disabled={!!action} onClick={onProviders}>
           {t('模型来源')}
         </button>
         <button
@@ -76,8 +78,14 @@ export default function EngineDialog({
           disabled={!!action}
           onClick={() => void onAction('login')}
         >
+          {action === 'login' && <Spinner />}
           {t('登录 Grok Build')}
         </button>
+        {action === 'login' && (
+          <button className="secondary-button" onClick={() => void onCancelLogin()}>
+            {t('取消登录')}
+          </button>
+        )}
         <button
           className="secondary-button"
           disabled={!!action}
@@ -103,7 +111,13 @@ export default function EngineDialog({
           {t('更新 Grok Build')}
         </button>
       </div>
-      <p className="engine-hint">{t('登录完成后，点击刷新引擎与模型。')}</p>
+      <p className="engine-hint" role={action === 'login' ? 'status' : undefined}>
+        {t(
+          action === 'login'
+            ? '请在浏览器的官方授权页面完成登录，完成后自动刷新。'
+            : '点击登录将在浏览器打开官方授权页面，完成后自动刷新引擎与模型。',
+        )}
+      </p>
       {busy && <p className="engine-hint">{t('等待所有任务结束后可更新引擎。')}</p>}
     </Modal>
   );

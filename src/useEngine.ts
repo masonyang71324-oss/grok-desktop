@@ -24,6 +24,7 @@ export function useEngine({
   const [engineAction, setEngineAction] = useState<EngineAction | ''>('');
   const [engineError, setEngineError] = useState('');
   const inFlight = useRef(false);
+  const cancellingLogin = useRef(false);
   async function readEngineStatus(checkUpdate = false) {
     try {
       const status = await request<CliStatus>(
@@ -43,8 +44,15 @@ export function useEngine({
     setEngineAction(action);
     setEngineError('');
     try {
-      if (action === 'login') await request('system.open', { target: 'grok-login', cwd: getCwd() });
-      else if (action === 'check') await readEngineStatus(true);
+      if (action === 'login') {
+        const result = await request<{ cancelled: boolean; status?: CliStatus }>('cli.login');
+        if (result.cancelled) return;
+        if (result.status?.authStatus !== 'authenticated')
+          throw new Error(t('未完成登录验证，请重试或重新检查登录。'));
+        setCliStatus(result.status);
+        onRefresh(await request<Bootstrap>('cli.refresh'));
+        notify(t('Grok Build 已登录，引擎与模型已刷新。'));
+      } else if (action === 'check') await readEngineStatus(true);
       else {
         if (action === 'update') {
           const result = await request<ManagementResult>('system.run', {
@@ -73,6 +81,18 @@ export function useEngine({
       setEngineAction('');
     }
   }
+  async function cancelEngineLogin() {
+    if (engineAction !== 'login' || cancellingLogin.current) return;
+    cancellingLogin.current = true;
+    setEngineError('');
+    try {
+      await request('cli.login.cancel');
+    } catch (error) {
+      setEngineError(t('无法取消登录，请重试。') + ' ' + errorText(error));
+    } finally {
+      cancellingLogin.current = false;
+    }
+  }
   const engineAuthStatus = cliStatus?.authStatus || 'unknown';
   const engineAuthLabel = t(
     engineAuthStatus === 'authenticated'
@@ -90,5 +110,6 @@ export function useEngine({
     engineAuthLabel,
     readEngineStatus,
     runEngineAction,
+    cancelEngineLogin,
   };
 }

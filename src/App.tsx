@@ -1361,11 +1361,10 @@ export default function App() {
     const action = classifyFailure(error).action;
     if (action === 'usage') setDialog('usage');
     else if (action === 'settings') setDialog('settings');
-    else if (action === 'login')
-      void request('system.open', { target: 'grok-login', cwd: cwdRef.current }).catch((e) =>
-        notify(errorText(e)),
-      );
-    else if (action === 'reconnect') {
+    else if (action === 'login') {
+      setDialog('engine');
+      void runEngineAction('login');
+    } else if (action === 'reconnect') {
       reconnectBudget.current.rearm(reconnectKey());
       if (sessionRef.current) {
         needsRestoreRef.current = true;
@@ -1783,6 +1782,7 @@ export default function App() {
     engineAuthLabel,
     readEngineStatus,
     runEngineAction,
+    cancelEngineLogin,
   } = useEngine({
     getCwd: () => cwdRef.current,
     isUpdateBlocked: () => engineBusy || transitionRef.current,
@@ -2997,6 +2997,7 @@ export default function App() {
             busy={engineBusy}
             updateBlocked={engineBusy || configuring || !!loadingSession || initializing}
             onAction={runEngineAction}
+            onCancelLogin={cancelEngineLogin}
             onClose={() => setDialog(null)}
             onOnboarding={() => setDialog('onboarding')}
             onProviders={() => setDialog('providers')}

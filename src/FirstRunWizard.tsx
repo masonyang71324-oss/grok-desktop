@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal } from './components';
+import { Modal, Spinner } from './components';
 import { useI18n } from './i18n';
 import { errorText } from './lib';
 import './runtime-upgrades.css';
@@ -40,7 +40,8 @@ export default function FirstRunWizard({
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState('');
-  const [loginOpened, setLoginOpened] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const loginInFlight = useRef(false);
   const alive = useRef(true);
   const installing = ['installing', 'verifying'].includes(install.status);
   useEffect(() => {
@@ -66,6 +67,7 @@ export default function FirstRunWizard({
       });
     return () => {
       alive.current = false;
+      if (loginInFlight.current) void request('cli.login.cancel').catch(() => {});
     };
   }, [request]);
   async function action(operation: () => Promise<void>) {
@@ -94,7 +96,38 @@ export default function FirstRunWizard({
     const result = await request('cli.install.cancel');
     if (alive.current) setInstall(result);
   }
+  async function loginCli() {
+    if (loginInFlight.current) return;
+    loginInFlight.current = true;
+    setLoggingIn(true);
+    try {
+      const result: { cancelled: boolean; status?: WizardCliStatus } = await request('cli.login');
+      if (!alive.current || result.cancelled) return;
+      if (result.status?.authStatus !== 'authenticated')
+        throw new Error(t('未完成登录验证，请重试或重新检查登录。'));
+      setCli(result.status);
+    } finally {
+      loginInFlight.current = false;
+      if (alive.current) setLoggingIn(false);
+    }
+  }
+  async function cancelLogin() {
+    setError('');
+    try {
+      await request('cli.login.cancel');
+    } catch (e) {
+      throw new Error(t('无法取消登录，请重试。') + ' ' + errorText(e));
+    }
+  }
   async function close() {
+    if (loginInFlight.current) {
+      try {
+        await cancelLogin();
+      } catch (e) {
+        if (alive.current) setError(errorText(e));
+        return;
+      }
+    }
     if (installing) {
       try {
         await cancelInstall();
@@ -172,27 +205,33 @@ export default function FirstRunWizard({
         {cli.version && (
           <section aria-label={t('登录 Grok')}>
             <h3>2. {t('登录 Grok')}</h3>
-            <p>{signedIn ? t('已验证登录状态。') : t('在官方登录窗口完成登录，然后重新检查。')}</p>
+            <p>
+              {signedIn ? t('已验证登录状态。') : t('在浏览器完成官方授权，登录状态将自动更新。')}
+            </p>
             <div className="runtime-actions">
               {!signedIn && (
+                <button disabled={checking || busy} onClick={() => void action(loginCli)}>
+                  {loggingIn && <Spinner />}
+                  {t('打开官方登录')}
+                </button>
+              )}
+              {loggingIn && (
                 <button
-                  disabled={checking || busy}
                   onClick={() =>
-                    void action(async () => {
-                      await request('cli.login');
-                      if (alive.current) setLoginOpened(true);
+                    void cancelLogin().catch((e) => {
+                      if (alive.current) setError(errorText(e));
                     })
                   }
                 >
-                  {t('打开官方登录')}
+                  {t('取消登录')}
                 </button>
               )}
               <button disabled={checking || busy} onClick={() => void action(recheck)}>
                 {t('重新检查登录')}
               </button>
             </div>
-            {loginOpened && !signedIn && (
-              <p role="status">{t('登录窗口已打开。完成后请重新检查登录。')}</p>
+            {loggingIn && (
+              <p role="status">{t('请在浏览器的官方授权页面完成登录，完成后自动刷新。')}</p>
             )}
             {cli.error && <p className="runtime-error">{cli.error}</p>}
           </section>
@@ -220,7 +259,7 @@ export default function FirstRunWizard({
           </p>
         )}
         <div className="runtime-actions runtime-footer">
-          <button disabled={busy && !installing} onClick={() => void close()}>
+          <button disabled={busy && !installing && !loggingIn} onClick={() => void close()}>
             {t('稍后设置')}
           </button>
           <button

@@ -16,7 +16,7 @@ async function mount(t, component, props, setup) {
   await page.evaluate(setup);
   const output = buildSync({
     stdin: {
-      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import Component from './src/${component}'; createRoot(document.getElementById('root')).render(<Component {...(${props})}/>);`,
+      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import Component from './src/${component}'; import {setLocale} from './src/i18n'; setLocale(window.testLanguage); createRoot(document.getElementById('root')).render(<Component {...(${props})}/>);`,
       loader: 'tsx',
       resolveDir: path.join(__dirname, '..'),
     },
@@ -145,4 +145,101 @@ test('wizard persists chosen CLI path before checking its actual version', async
   await page.getByRole('button', { name: '选择 Grok 程序', exact: true }).click();
   await page.getByText('已检测到 Grok 1.0.46', { exact: false }).waitFor({ timeout: 1500 });
   assert.equal(await page.evaluate(() => window.selectedPath), 'C:/chosen/grok.exe');
+});
+
+async function wizardLoginFixture(t) {
+  const page = await mount(
+    t,
+    'FirstRunWizard',
+    `{request:window.call,onComplete:cwd=>window.completed.push(cwd),onClose:()=>window.closeCount++}`,
+    () => {
+      window.calls = [];
+      window.completed = [];
+      window.closeCount = 0;
+      window.cancelError = '';
+      window.call = async (command) => {
+        window.calls.push(command);
+        if (command === 'cli.status')
+          return { version: '1.0.46', path: 'C:/grok.exe', authStatus: 'required' };
+        if (command === 'cli.install.state') return { status: 'idle', log: '' };
+        if (command === 'cli.login')
+          return new Promise((resolve, reject) => {
+            window.finishLogin = resolve;
+            window.failLogin = reject;
+          });
+        if (command === 'cli.login.cancel') {
+          if (window.cancelError) throw new Error(window.cancelError);
+          window.finishLogin({ cancelled: true });
+          return { cancelled: true };
+        }
+        if (command === 'dialog.project') return 'C:/project';
+        throw new Error(command);
+      };
+    },
+  );
+  return page;
+}
+
+test('wizard completes after official sign-in without an extra status-check click', async (t) => {
+  const page = await wizardLoginFixture(t);
+  await page.getByRole('button', { name: '选择项目目录', exact: true }).click();
+  const login = page.getByRole('button', { name: '打开官方登录', exact: true });
+  await login.click();
+  await page.getByRole('status').filter({ hasText: '官方授权页面' }).waitFor({ timeout: 3000 });
+  assert.equal(await login.isDisabled(), true);
+  assert.equal(
+    await page.getByRole('button', { name: '重新检查登录', exact: true }).isDisabled(),
+    true,
+  );
+  assert.equal(
+    await page.getByRole('button', { name: '开始使用', exact: true }).isDisabled(),
+    true,
+  );
+  await page.evaluate(() =>
+    window.finishLogin({
+      cancelled: false,
+      status: { version: '1.0.46', path: 'C:/grok.exe', authStatus: 'authenticated' },
+    }),
+  );
+  await page.getByText('已验证登录状态。', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '开始使用', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.completed), ['C:/project']);
+  assert.equal(await page.evaluate(() => window.calls.filter((c) => c === 'cli.status').length), 1);
+});
+
+test('wizard cancellation and failed verification retain the project and allow retry', async (t) => {
+  const page = await wizardLoginFixture(t);
+  await page.getByRole('button', { name: '选择项目目录', exact: true }).click();
+  const login = page.getByRole('button', { name: '打开官方登录', exact: true });
+  await login.click();
+  await page.getByRole('button', { name: '取消登录', exact: true }).click({ timeout: 3000 });
+  await page.getByRole('button', { name: '取消登录', exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('alert').count(), 0);
+  assert.equal(await page.getByText('C:/project', { exact: true }).isVisible(), true);
+  await login.click();
+  await page.evaluate(() =>
+    window.finishLogin({ cancelled: false, status: { authStatus: 'unknown' } }),
+  );
+  await page.getByRole('alert').filter({ hasText: '未完成登录验证' }).waitFor();
+  assert.equal(
+    await page.getByRole('button', { name: '开始使用', exact: true }).isDisabled(),
+    true,
+  );
+});
+
+test('closing a pending wizard cancels its sign-in and cancellation errors keep it open', async (t) => {
+  const page = await wizardLoginFixture(t);
+  await page.getByRole('button', { name: '打开官方登录', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: '官方授权页面' }).waitFor({ timeout: 3000 });
+  await page.evaluate(() => (window.cancelError = 'Process still running'));
+  await page.getByRole('button', { name: '稍后设置', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: '无法取消登录' }).waitFor();
+  assert.equal(await page.evaluate(() => window.closeCount), 0);
+  await page.evaluate(() => (window.cancelError = ''));
+  await page.getByRole('button', { name: '稍后设置', exact: true }).click();
+  await page.waitForFunction(() => window.closeCount === 1);
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((c) => c === 'cli.login.cancel').length),
+    2,
+  );
 });

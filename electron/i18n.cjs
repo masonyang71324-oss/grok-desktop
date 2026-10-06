@@ -50,6 +50,17 @@ const english = {
   所选模型不支持此上下文窗口: 'The selected model does not support this context window',
   '无法检查 Grok 登录状态，请检查网络后重试。':
     'Could not check Grok sign-in status. Check your connection and try again.',
+  'Grok Build 登录已关闭。': 'Grok Build sign-in is closed.',
+  '无法启动 Grok Build 登录，请检查引擎路径后重试。':
+    'Could not start Grok Build sign-in. Check the engine path and try again.',
+  'Grok Build 登录未完成，请检查浏览器授权和网络后重试。':
+    'Grok Build sign-in did not complete. Check browser authorization and your connection, then try again.',
+  'Grok Build 登录等待超时，请重新点击登录并完成浏览器授权。':
+    'Grok Build sign-in timed out. Start sign-in again and complete authorization in your browser.',
+  '无法停止 Grok Build 登录，请关闭登录窗口后重试。':
+    'Could not stop Grok Build sign-in. Close the sign-in window and try again.',
+  '官方授权已结束，但尚未确认登录成功。请检查网络后重试。':
+    'Official authorization has ended, but sign-in could not be confirmed. Check your connection and try again.',
   '无法检查 Grok Build 更新，请检查网络后重试。':
     'Could not check for Grok Build updates. Check your connection and try again.',
   '更新后未找到对应版本的 Grok Build，请在设置中检查程序路径。':
