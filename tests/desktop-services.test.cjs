@@ -138,7 +138,7 @@ test('notifications only alert in the background and clear on focus without task
     type: 'app-update',
     state: { status: 'available', availableVersion: '1.4.1' },
   });
-  assert.equal(shown[2].options.body, 'Grok Desktop 1.4.1 可以更新');
+  assert.equal(shown[2].options.body, 'Grok Build Desktop 1.4.1 可以更新');
   notifications.receive({ type: 'task-finished', status: 'completed' });
   assert.equal(shown[3].options.body, '任务已完成');
   notifications.receive({ type: 'task-finished', status: 'cancelled' });

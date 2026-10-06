@@ -107,7 +107,7 @@ export default function FirstRunWizard({
   }
   const signedIn = cli.authStatus === 'authenticated';
   return (
-    <Modal title={t('欢迎使用 Grok Desktop')} onClose={() => void close()} wide>
+    <Modal title={t('欢迎使用 Grok Build Desktop')} onClose={() => void close()} wide>
       <div className="first-run-wizard runtime-upgrades">
         <p>{t('完成程序、登录和项目设置，即可开始对话。')}</p>
         {checking && <p role="status">{t('正在检查 Grok 程序和安装状态…')}</p>}

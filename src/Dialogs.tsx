@@ -444,7 +444,7 @@ export function SettingsDialog({
       onClose={onClose}
       footer={
         <>
-          <span className="muted">Grok Desktop {bootstrap?.version || ''}</span>
+          <span className="muted">Grok Build Desktop {bootstrap?.version || ''}</span>
           <button
             className="primary-button"
             disabled={saving || languageSaving || sizeSaving}

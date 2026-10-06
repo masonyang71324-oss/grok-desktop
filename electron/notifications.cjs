@@ -26,7 +26,7 @@ function createNotifications({
             ? t('任务已停止')
             : t('任务遇到问题，请返回查看');
     else if (event.type === 'app-update' && event.state?.status === 'available')
-      body = t('Grok Desktop {version} 可以更新', {
+      body = t('Grok Build Desktop {version} 可以更新', {
         version: event.state.availableVersion || '',
       });
     if (!body) return;
@@ -34,7 +34,7 @@ function createNotifications({
     if (!Notification.isSupported()) return;
     try {
       current?.close();
-      current = new Notification({ title: 'Grok Desktop', body, silent: true });
+      current = new Notification({ title: 'Grok Build Desktop', body, silent: true });
       current.on('click', () => {
         if (win.isDestroyed()) return;
         if (win.isMinimized()) win.restore();

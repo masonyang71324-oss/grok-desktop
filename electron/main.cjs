@@ -1248,7 +1248,7 @@ function createWindow() {
     minWidth: Math.min(980, area.width),
     minHeight: Math.min(680, area.height),
     show: false,
-    title: 'Grok Desktop',
+    title: 'Grok Build Desktop',
     backgroundColor: '#111517',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '../assets/icon.png'),

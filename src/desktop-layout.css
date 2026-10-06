@@ -1,48 +1,48 @@
-/* Selected unified-navigation layout. Scoped to the desktop shell. */
+/* Approved desktop composition: navigation, conversation, optional review pane. */
 .app.unified-layout,
 .app.unified-layout.inspector-hidden {
-  --navigation-width: clamp(224px, 19.5vw, 310px);
-  --reading-width: 1224px;
-  --faint: #8a96a3;
+  --navigation-width: clamp(240px, 18vw, 270px);
+  --context-width: 344px;
+  --reading-width: 920px;
   grid-template-columns: var(--navigation-width) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  grid-template-areas: 'navigation workspace' 'status status';
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'navigation header' 'navigation workspace' 'status status';
   font-size: 14px;
 }
 .app.unified-layout.sidebar-hidden,
 .app.unified-layout.sidebar-hidden.inspector-hidden {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'workspace' 'status';
+  grid-template-areas: 'header' 'workspace' 'status';
 }
 .unified-layout [hidden] {
   display: none !important;
 }
-:root[data-theme='light'] .app.unified-layout {
-  --faint: #64727c;
-}
 .unified-layout .sidebar {
   grid-area: navigation;
-  padding: 22px 16px 12px;
+  padding: 20px 14px 12px;
   gap: 0;
   min-width: 0;
 }
 .unified-layout .brand {
-  margin: 0 6px 24px;
-  height: 38px;
-  gap: 12px;
+  margin: 0 4px 20px;
+  min-height: 44px;
+  height: 44px;
+  gap: 10px;
 }
 .unified-layout .brand > div {
-  font-size: 28px;
+  min-width: 0;
+  font-size: 18px;
+  letter-spacing: -0.45px;
+  line-height: 1.2;
 }
 .unified-layout .brand > div > span {
-  font-size: 9px;
-}
-.unified-layout .brand-mark {
-  border-radius: 9px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 .unified-layout .new-conversation {
   min-height: 42px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   padding: 10px 13px;
   font-size: 14px;
   border-radius: 9px;
@@ -56,10 +56,10 @@
 }
 .unified-layout .navigation-tabs button {
   position: relative;
-  gap: 7px;
-  padding: 12px 4px;
+  gap: 6px;
+  padding: 11px 3px;
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
   border-bottom: 2px solid transparent;
 }
@@ -82,7 +82,7 @@
 }
 .unified-layout .project-switcher {
   position: relative;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 .unified-layout .project-switcher .section-label {
   position: absolute;
@@ -100,7 +100,7 @@
   padding: 10px;
   border: 0;
   border-radius: 8px;
-  min-height: 54px;
+  min-height: 48px;
   background: transparent;
 }
 .unified-layout .project-button:hover,
@@ -215,23 +215,30 @@
   overflow: hidden;
 }
 .unified-layout .topbar {
-  min-height: 64px;
-  height: 64px;
+  grid-area: header;
+  min-height: 60px;
+  height: auto;
   flex-shrink: 0;
-  padding: 0 26px;
-  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 22px;
+  gap: 10px 16px;
   border-bottom: 1px solid var(--border-soft);
 }
 .unified-layout .breadcrumb {
+  flex: 1 1 150px;
   min-width: 0;
   font-size: 14px;
-  gap: 12px;
+  gap: 8px;
 }
 .unified-layout .breadcrumb > span {
   max-width: 300px;
 }
 .unified-layout .topbar-actions {
-  gap: 7px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
 }
 .unified-layout .topbar-actions .icon-button {
   width: 34px;
@@ -242,7 +249,7 @@
   height: 34px;
   border: 1px solid var(--border-soft);
   border-radius: 7px;
-  padding: 0 10px;
+  padding: 0 9px;
   font-size: 13px;
   color: var(--muted);
 }
@@ -250,16 +257,34 @@
   color: var(--text);
   background: var(--surface-hover);
 }
+.unified-layout .header-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 13px;
+}
+.unified-layout .header-search > kbd {
+  margin-left: 8px;
+}
+.unified-layout .header-action > span {
+  white-space: nowrap;
+}
 .unified-layout .thread {
-  padding: 0 32px;
+  padding: 0 24px;
   min-height: 0;
 }
 .unified-layout .conversation {
   max-width: var(--reading-width);
-  padding: 34px 24px 12px;
+  padding: 30px 0 12px;
 }
 .unified-layout .message {
-  margin-bottom: 30px;
+  margin-bottom: 28px;
   gap: 14px;
 }
 .unified-layout .message-avatar {
@@ -271,8 +296,8 @@
 }
 .unified-layout .markdown,
 .unified-layout .user-text {
-  font-size: 16px;
-  line-height: 1.8;
+  font-size: 15px;
+  line-height: 1.85;
 }
 .unified-layout .markdown pre,
 .unified-layout .markdown code:not(pre code) {
@@ -285,23 +310,22 @@
   margin-left: auto;
 }
 .unified-layout .message.user .message-content {
-  border: 0;
-  border-radius: 10px;
-  background: var(--surface-hover);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface);
   padding: 12px 16px;
 }
 .unified-layout .message.user .message-author {
   display: none;
 }
 .unified-layout .tool-row {
-  border: 0;
-  border-bottom: 1px solid var(--border-soft);
-  border-radius: 0;
-  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface);
   font-size: 13px;
 }
 .unified-layout .tool-row > summary {
-  padding: 12px 4px;
+  padding: 12px;
 }
 .unified-layout .tool-row[open] {
   background: var(--surface);
@@ -310,7 +334,7 @@
 .unified-layout .task-result-container {
   max-width: var(--reading-width);
   margin: 12px auto 20px;
-  padding: 0 24px;
+  padding: 0;
 }
 .unified-layout .task-outcome {
   background: transparent;
@@ -336,13 +360,13 @@
 }
 .unified-layout .composer-area {
   width: 100%;
-  max-width: calc(var(--reading-width) + 64px);
+  max-width: calc(var(--reading-width) + 48px);
   margin: 0 auto;
-  padding: 10px 32px 12px;
+  padding: 10px 24px 12px;
   flex-shrink: 0;
 }
 .unified-layout .composer {
-  border-radius: 12px;
+  border-radius: 14px;
   border-color: var(--border);
   background: var(--surface);
   box-shadow: none;
@@ -350,27 +374,43 @@
 }
 .unified-layout .composer:focus-within {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: none;
 }
 .unified-layout .composer > textarea {
   padding: 16px 18px 8px;
-  min-height: 78px;
+  min-height: 84px;
   max-height: 190px;
   font-size: 16px;
   line-height: 1.6;
 }
 .unified-layout .composer-toolbar {
-  padding: 9px 14px 13px;
+  align-items: flex-end;
+  padding: 9px 12px 12px;
   min-height: 54px;
   gap: 10px;
 }
 .unified-layout .composer-tools {
-  gap: 8px;
+  flex: 1;
+  gap: 8px 14px;
   flex-wrap: wrap;
   min-width: 0;
 }
+.unified-layout .composer-tools-primary,
+.unified-layout .composer-selectors {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.unified-layout .composer-tools-primary {
+  flex: 0 0 auto;
+  gap: 3px;
+}
+.unified-layout .composer-selectors {
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .unified-layout .composer-tools .icon-button {
-  width: 32px;
+  width: 34px;
   height: 34px;
   flex-shrink: 0;
 }
@@ -382,15 +422,15 @@
 .unified-layout .mode-control {
   min-height: 34px;
   margin: 0;
-  padding: 0 7px;
-  border: 1px solid var(--border-soft);
+  padding: 0 4px;
+  border: 0;
   border-radius: 7px;
 }
 .unified-layout .model-control {
-  max-width: 190px;
+  max-width: 180px;
 }
 .unified-layout .effort-trigger {
-  border: 1px solid var(--border-soft);
+  border: 1px solid transparent;
   color: var(--text);
   font-size: 13px;
 }
@@ -415,12 +455,12 @@
 .unified-layout .composer-bottom {
   margin-top: 9px;
   gap: 12px;
-  min-height: 34px;
+  min-height: 30px;
   font-size: 12px;
 }
 .unified-layout .composer-bottom > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .unified-layout .composer-bottom .queue-control {
   margin-left: auto;
@@ -445,9 +485,9 @@
   align-items: center;
   gap: 14px;
   min-width: 0;
-  min-height: 46px;
-  padding: 5px 18px;
-  border-top: 1px solid var(--border);
+  min-height: 38px;
+  padding: 3px 16px;
+  border-top: 1px solid var(--border-soft);
   background: var(--sidebar);
   z-index: 5;
 }
@@ -482,7 +522,7 @@
   border: 0;
   background: none;
   gap: 4px;
-  max-width: 470px;
+  max-width: 520px;
 }
 .unified-layout .home-update-status,
 .unified-layout .home-engine-status {
@@ -509,7 +549,7 @@
 }
 .unified-layout .welcome {
   max-width: var(--reading-width);
-  padding: 58px 20px 34px;
+  padding: 52px 12px 32px;
 }
 .unified-layout .welcome-orbit {
   display: none;
@@ -519,7 +559,7 @@
   margin-bottom: 12px;
 }
 .unified-layout .welcome h1 {
-  font-size: 32px;
+  font-size: 30px;
   letter-spacing: -0.5px;
   margin: 0 0 18px;
 }
@@ -534,7 +574,7 @@
   margin: 34px 0 24px;
 }
 .unified-layout .welcome-cards > button {
-  border: 0;
+  border: 1px solid var(--border-soft);
   border-radius: 9px;
   background: var(--surface);
   padding: 20px 16px;
@@ -552,17 +592,77 @@
   font-size: 12px;
 }
 .unified-layout .toast {
-  bottom: 62px;
+  bottom: 56px;
+}
+/* At smaller widths App moves context into the existing left Files tab. */
+.unified-layout .project-context-pane {
+  grid-area: context;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+.unified-layout .project-context-slot,
+.unified-layout .project-context-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+.unified-layout .project-context-pane .inspector {
+  position: static;
+  inset: auto;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  box-shadow: none;
+}
+.unified-layout .project-context-pane > .resize-horizontal {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 6;
+}
+.unified-layout .project-context-pane .inspector-title {
+  height: 60px;
+  min-height: 60px;
+  padding: 0 16px;
+  color: var(--text);
+  font-size: 14px;
+}
+.unified-layout .project-context-pane .inspector-tabs {
+  padding: 0 12px;
+}
+.unified-layout .project-context-pane .inspector-tabs button {
+  min-height: 42px;
+  font-size: 13px;
+}
+@media (min-width: 1100px) {
+  .app.unified-layout.inspector-visible {
+    grid-template-columns: var(--navigation-width) minmax(0, 1fr) var(--context-width);
+    grid-template-areas: 'navigation header header' 'navigation workspace context' 'status status status';
+  }
+  .app.unified-layout.sidebar-hidden.inspector-visible {
+    grid-template-columns: minmax(0, 1fr) var(--context-width);
+    grid-template-areas: 'header header' 'workspace context' 'status status';
+  }
 }
 @media (max-width: 1150px) {
   .app.unified-layout {
-    --navigation-width: 224px;
+    --navigation-width: 240px;
   }
   .unified-layout .sidebar {
     padding: 18px 12px 10px;
   }
   .unified-layout .topbar {
-    padding: 0 18px;
+    padding: 10px 16px;
     gap: 8px;
   }
   .unified-layout .breadcrumb {
@@ -573,6 +673,13 @@
   }
   .unified-layout .topbar-actions {
     gap: 3px;
+  }
+  .unified-layout .header-search > kbd {
+    display: none;
+  }
+  .unified-layout .header-search > span,
+  .unified-layout .topbar-actions .header-action > span {
+    display: none;
   }
   .unified-layout .thread {
     padding: 0 24px;
@@ -597,15 +704,33 @@
     padding: 5px 12px;
   }
   .unified-layout .home-version-bar {
-    max-width: 425px;
+    max-width: 430px;
   }
   .unified-layout .home-update-copy {
-    max-width: 130px;
+    max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .unified-layout .composer-bottom > span {
     display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .unified-layout .desktop-status-bar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 12px;
+  }
+  .unified-layout .home-version-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: none;
+    justify-content: flex-end;
+  }
+  .unified-layout .home-resource-bar {
+    justify-self: end;
+  }
+  .unified-layout .toast {
+    bottom: 90px;
   }
 }
 @media (max-height: 740px) {
@@ -657,7 +782,7 @@
   gap: 16px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface-raised);
   font-size: 13px;
 }
 .recovery-banner p {

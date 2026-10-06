@@ -1,9 +1,19 @@
 import { useI18n, setLocale } from './i18n';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowDown,
   ArrowRight,
-  ArrowUp,
+  Send,
   Check,
   ChevronDown,
   ChevronRight,
@@ -13,11 +23,14 @@ import {
   Download,
   Ellipsis,
   FolderOpen,
+  FileText,
+  Database,
   Gauge,
   Globe,
   Mic,
   GitCompareArrows,
   ListChecks,
+  LayoutGrid,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -38,7 +51,6 @@ import {
   TriangleAlert,
   Workflow,
   X,
-  Zap,
 } from 'lucide-react';
 import type {
   AcpUpdate,
@@ -108,6 +120,8 @@ import UsageStatus from './UsageStatus';
 import EffortControl from './EffortControl';
 import './navigation-panels.css';
 import './desktop-layout.css';
+import './desktop-brand.css';
+import './brand-mark.css';
 import TaskActivity from './TaskActivity';
 import TaskOutcome from './TaskOutcome';
 import { effortPresets } from './effort-presets.mjs';
@@ -219,10 +233,17 @@ export default function App() {
   const transitionRef = useRef(false);
   const [sidebar, setSidebar] = useState(true);
   const [navigationTab, setNavigationTab] = useState<'sessions' | 'files' | 'tasks'>('sessions');
-  const inspector = navigationTab === 'files';
+  const [contextOpen, setContextOpen] = useState(false);
+  const inspector = contextOpen || navigationTab === 'files';
   function setInspector(open: boolean) {
-    setNavigationTab(open ? 'files' : 'sessions');
-    if (open) setSidebar(true);
+    setContextOpen(open);
+    if (navigationTab === 'files') setNavigationTab('sessions');
+    if (open && window.innerWidth < 1100) setSidebar(true);
+  }
+  function chooseNavigationTab(next: 'sessions' | 'files' | 'tasks') {
+    if (next === 'files' || navigationTab === 'files' || window.innerWidth < 1100)
+      setContextOpen(false);
+    setNavigationTab(next);
   }
   const [inspectorTab, setInspectorTab] = useState<'files' | 'changes' | 'plan'>('files');
   const [sidebarWidth, setSidebarWidth] = useState(0),
@@ -232,6 +253,36 @@ export default function App() {
     width: window.innerWidth,
     height: window.innerHeight,
   });
+  const visibleNavigationTab = viewport.width < 1100 && contextOpen ? 'files' : navigationTab;
+  const rightContextVisible = viewport.width >= 1100 && contextOpen && navigationTab !== 'files';
+  const leftContextVisible = sidebar && visibleNavigationTab === 'files';
+  const contextVisible = rightContextVisible || leftContextVisible;
+  const leftContextSlot = useRef<HTMLDivElement>(null);
+  const rightContextSlot = useRef<HTMLDivElement>(null);
+  const [contextHost] = useState(() => {
+    const element = document.createElement('div');
+    element.className = 'project-context-content';
+    return element;
+  });
+  // Move a stable portal host: resizing never discards an open, unsaved file editor.
+  useLayoutEffect(() => {
+    const slot = rightContextVisible ? rightContextSlot.current : leftContextSlot.current;
+    slot?.appendChild(contextHost);
+    return () => contextHost.remove();
+  }, [rightContextVisible, contextHost]);
+  const preferredNavigationWidth = Math.min(
+    sidebarWidth || Math.max(224, Math.min(270, viewport.width * 0.18)),
+    Math.max(200, viewport.width - 600),
+  );
+  const contextMaxWidth = Math.min(
+    480,
+    Math.max(260, viewport.width - (sidebar ? preferredNavigationWidth : 0) - 480),
+  );
+  const contextWidth = Math.min(inspectorWidth || 340, contextMaxWidth);
+  const navigationWidth = Math.min(
+    preferredNavigationWidth,
+    Math.max(200, viewport.width - (rightContextVisible ? contextWidth : 0) - 480),
+  );
   const [conversationNavigation, setConversationNavigation] = useState(false);
   const [filePickerOwner, setFilePickerOwner] = useState<PreviewOwner | null>(null);
   const [previewOwner, setPreviewOwner] = useState<PreviewOwner | null>(null);
@@ -603,6 +654,11 @@ export default function App() {
         setNavigationTab(
           data.settings.ui?.navigationTab ||
             (data.settings.ui?.inspector === true ? 'files' : 'sessions'),
+        );
+        setContextOpen(
+          data.settings.ui?.inspector === true &&
+            !!data.settings.ui?.navigationTab &&
+            data.settings.ui.navigationTab !== 'files',
         );
         setInspectorTab(data.settings.ui?.inspectorTab || 'files');
         setSidebarWidth(data.settings.ui?.sidebarWidth || 0);
@@ -1810,18 +1866,19 @@ export default function App() {
   }
   return (
     <div
-      className={`app unified-layout ${sidebar ? '' : 'sidebar-hidden'} ${inspector ? '' : 'inspector-hidden'}`}
+      className={`app unified-layout ${sidebar ? '' : 'sidebar-hidden'} ${contextVisible ? '' : 'inspector-hidden'} ${rightContextVisible ? 'inspector-visible' : ''}`}
       style={
         {
-          '--navigation-width': `${Math.min(inspector ? inspectorWidth || Math.max(224, Math.min(310, viewport.width * 0.195)) : sidebarWidth || Math.max(224, Math.min(310, viewport.width * 0.195)), Math.max(200, viewport.width - 600))}px`,
+          '--navigation-width': `${navigationWidth}px`,
+          '--context-width': `${contextWidth}px`,
         } as React.CSSProperties
       }
     >
       <aside className="sidebar" hidden={!sidebar}>
         <div className="brand">
           <Brand />
-          <div>
-            Grok<span>DESKTOP</span>
+          <div className="brand-wordmark">
+            Grok Build<span>Desktop</span>
           </div>
           <IconButton label={t('收起侧边栏')} onClick={() => setSidebar(false)}>
             <PanelLeftClose size={17} />
@@ -1836,50 +1893,6 @@ export default function App() {
           <span>{t('新建会话')}</span>
           <kbd>Ctrl N</kbd>
         </button>
-        <div className="navigation-tabs" role="tablist" aria-label={t('工作区导航')}>
-          {(
-            [
-              { id: 'sessions', label: '会话', icon: <MessageSquare size={17} /> },
-              { id: 'files', label: '文件', icon: <FolderOpen size={17} /> },
-              { id: 'tasks', label: '任务', icon: <ListChecks size={17} /> },
-            ] as const
-          ).map((item, index) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={`navigation-${item.id}`}
-              aria-controls={`panel-${item.id}`}
-              aria-selected={navigationTab === item.id}
-              tabIndex={navigationTab === item.id ? 0 : -1}
-              onClick={() => setNavigationTab(item.id)}
-              onKeyDown={(event) => {
-                const keys = ['sessions', 'files', 'tasks'] as const;
-                const next =
-                  event.key === 'ArrowRight'
-                    ? (index + 1) % 3
-                    : event.key === 'ArrowLeft'
-                      ? (index + 2) % 3
-                      : event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? 2
-                          : null;
-                if (next !== null) {
-                  event.preventDefault();
-                  setNavigationTab(keys[next]);
-                  document.getElementById(`navigation-${keys[next]}`)?.focus();
-                }
-              }}
-            >
-              {item.icon}
-              <span>{t(item.label)}</span>
-              {item.id === 'tasks' && tasks.some((task) => task.permissions.length > 0) && (
-                <span className="navigation-attention" aria-label={t('等待审批')} />
-              )}
-            </button>
-          ))}
-        </div>
         <div className="project-switcher">
           <div className="section-label">
             <button
@@ -1920,13 +1933,57 @@ export default function App() {
             </div>
           )}
         </div>
+        <div className="navigation-tabs" role="tablist" aria-label={t('工作区导航')}>
+          {(
+            [
+              { id: 'sessions', label: '会话', icon: <MessageSquare size={17} /> },
+              { id: 'files', label: '文件', icon: <FolderOpen size={17} /> },
+              { id: 'tasks', label: '任务', icon: <ListChecks size={17} /> },
+            ] as const
+          ).map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`navigation-${item.id}`}
+              aria-controls={`panel-${item.id}`}
+              aria-selected={visibleNavigationTab === item.id}
+              tabIndex={visibleNavigationTab === item.id ? 0 : -1}
+              onClick={() => chooseNavigationTab(item.id)}
+              onKeyDown={(event) => {
+                const keys = ['sessions', 'files', 'tasks'] as const;
+                const next =
+                  event.key === 'ArrowRight'
+                    ? (index + 1) % 3
+                    : event.key === 'ArrowLeft'
+                      ? (index + 2) % 3
+                      : event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? 2
+                          : null;
+                if (next !== null) {
+                  event.preventDefault();
+                  chooseNavigationTab(keys[next]);
+                  document.getElementById(`navigation-${keys[next]}`)?.focus();
+                }
+              }}
+            >
+              {item.icon}
+              <span>{t(item.label)}</span>
+              {item.id === 'tasks' && tasks.some((task) => task.permissions.length > 0) && (
+                <span className="navigation-attention" aria-label={t('等待审批')} />
+              )}
+            </button>
+          ))}
+        </div>
         <div className="sidebar-panels">
           <section
             id="panel-sessions"
             className="navigation-panel session-panel"
             role="tabpanel"
             aria-labelledby="navigation-sessions"
-            hidden={navigationTab !== 'sessions'}
+            hidden={visibleNavigationTab !== 'sessions'}
           >
             <SessionList
               key={cwd}
@@ -1949,29 +2006,16 @@ export default function App() {
             className="navigation-panel"
             role="tabpanel"
             aria-labelledby="navigation-files"
-            hidden={navigationTab !== 'files'}
+            hidden={visibleNavigationTab !== 'files'}
           >
-            <Inspector
-              embedded
-              visible={sidebar && navigationTab === 'files'}
-              cwd={cwd}
-              plan={plan}
-              revision={revision}
-              tab={inspectorTab}
-              onTabChange={setInspectorTab}
-              openFile={fileToOpen}
-              onClose={() => setInspector(false)}
-              notify={notify}
-              onAddContext={addContext}
-              onEditorOpenChange={setEditorOpen}
-            />
+            <div ref={leftContextSlot} className="project-context-slot" />
           </section>
           <section
             id="panel-tasks"
             className="navigation-panel"
             role="tabpanel"
             aria-labelledby="navigation-tasks"
-            hidden={navigationTab !== 'tasks'}
+            hidden={visibleNavigationTab !== 'tasks'}
           >
             <TaskCenter
               embedded
@@ -2020,22 +2064,162 @@ export default function App() {
         <ResizeHandle
           axis="horizontal"
           label={t('调整侧栏宽度')}
-          value={
-            inspector
-              ? inspectorWidth || Math.min(310, viewport.width * 0.195)
-              : sidebarWidth || Math.min(310, viewport.width * 0.195)
-          }
+          value={navigationWidth}
           min={200}
-          max={Math.min(480, viewport.width - 600)}
-          onChange={inspector ? setInspectorWidth : setSidebarWidth}
-          onCommit={(value) => savePanelSize(inspector ? 'inspectorWidth' : 'sidebarWidth', value)}
+          max={Math.min(480, viewport.width - (rightContextVisible ? contextWidth : 0) - 480)}
+          onChange={setSidebarWidth}
+          onCommit={(value) => savePanelSize('sidebarWidth', value)}
           onReset={() => {
-            if (inspector) setInspectorWidth(0);
-            else setSidebarWidth(0);
-            savePanelSize(inspector ? 'inspectorWidth' : 'sidebarWidth', 0);
+            setSidebarWidth(0);
+            savePanelSize('sidebarWidth', 0);
           }}
         />
       </aside>
+      <header className="topbar">
+        <div className="breadcrumb">
+          {!sidebar && (
+            <IconButton label={t('展开侧边栏')} onClick={() => setSidebar(true)}>
+              <PanelLeftOpen size={18} />
+            </IconButton>
+          )}
+          <FolderOpen size={15} />
+          <button onClick={() => void openProject()} title={cwd}>
+            {cwd ? baseName(cwd) : t('工作空间')}
+          </button>
+          <ChevronRight size={13} />
+          <span title={currentTitle}>{currentTitle}</span>
+        </div>
+        <div className="topbar-actions">
+          {cwd && (
+            <ProjectAccessBar
+              cwd={cwd}
+              trusted={projectTrusted}
+              onChange={async () => {
+                const result = await request<{
+                  cwd: string;
+                  trusted: boolean;
+                  cancelled?: boolean;
+                }>('project.trust', { cwd });
+                if (result.cancelled) return;
+                setProjectTrusted(result.trusted);
+                if (result.trusted) await openProject(result.cwd);
+                else {
+                  setInspector(true);
+                  setInspectorTab('files');
+                }
+              }}
+              notify={notify}
+            />
+          )}
+          <button
+            type="button"
+            className="header-action header-search"
+            aria-label={t('搜索与提问目录')}
+            title={t('搜索与提问目录')}
+            aria-pressed={conversationNavigation}
+            onClick={() => setConversationNavigation((value) => !value)}
+            disabled={!rows.length}
+          >
+            <Search size={17} />
+            <span>{t('搜索')}</span>
+          </button>
+          <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
+            <Workflow size={17} />
+          </IconButton>
+          <button
+            className="header-action"
+            onClick={() => {
+              setInspector(true);
+              setInspectorTab('changes');
+            }}
+            disabled={!cwd}
+          >
+            <GitCompareArrows size={17} />
+            {t('查看变更')}
+          </button>
+          <button
+            className="header-action"
+            onClick={() => {
+              setInspector(true);
+              setInspectorTab('plan');
+            }}
+          >
+            <ListChecks size={17} />
+            {t('计划')}
+          </button>
+          <button
+            className="header-action"
+            aria-label={t('交互终端')}
+            title={t('交互终端')}
+            onClick={() => setDialog('terminal')}
+            disabled={!cwd}
+          >
+            <Terminal size={17} />
+            <span>{t('终端')}</span>
+          </button>
+          <button
+            className="header-action"
+            aria-label={t('网页预览')}
+            title={t('网页预览')}
+            onClick={() => void openWebPreview()}
+            disabled={!cwd || !!loadingSession}
+          >
+            <Globe size={17} />
+            <span>{t('预览')}</span>
+          </button>
+          <IconButton label={t('额度与上下文')} onClick={() => setDialog('usage')}>
+            <Gauge size={17} />
+          </IconButton>
+          {currentSummary && (
+            <div className="topbar-more">
+              <IconButton label={t('当前会话操作')} onClick={() => setTopbarMenu(!topbarMenu)}>
+                <Ellipsis size={18} />
+              </IconButton>
+              {topbarMenu && (
+                <div className="session-dropdown">
+                  <button
+                    onClick={() => {
+                      setRename(currentSummary);
+                      setRenameTitle(currentSummary.title);
+                      setTopbarMenu(false);
+                    }}
+                  >
+                    <Pencil size={14} />
+                    {t('重命名')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTopbarMenu(false);
+                      void exportSession(currentSummary);
+                    }}
+                  >
+                    <Download size={14} />
+                    {t('导出会话')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeleteTarget(currentSummary);
+                      setTopbarMenu(false);
+                    }}
+                    className="danger-text"
+                  >
+                    <Trash2 size={14} />
+                    {t('删除会话')}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="toolbar-divider" />
+          <IconButton
+            label={contextVisible ? t('收起项目上下文') : t('展开项目上下文')}
+            onClick={() => setInspector(!contextVisible)}
+            active={contextVisible}
+          >
+            {contextVisible ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          </IconButton>
+        </div>
+      </header>
       <main className="workspace">
         {recoveryWarnings.length > 0 && (
           <section className="recovery-banner" role="alert">
@@ -2075,137 +2259,6 @@ export default function App() {
             </button>
           </section>
         )}
-        <header className="topbar">
-          <div className="breadcrumb">
-            {!sidebar && (
-              <IconButton label={t('展开侧边栏')} onClick={() => setSidebar(true)}>
-                <PanelLeftOpen size={18} />
-              </IconButton>
-            )}
-            <FolderOpen size={15} />
-            <button onClick={() => void openProject()} title={cwd}>
-              {cwd ? baseName(cwd) : t('工作空间')}
-            </button>
-            <ChevronRight size={13} />
-            <span title={currentTitle}>{currentTitle}</span>
-          </div>
-          <div className="topbar-actions">
-            {cwd && (
-              <ProjectAccessBar
-                cwd={cwd}
-                trusted={projectTrusted}
-                onChange={async () => {
-                  const result = await request<{
-                    cwd: string;
-                    trusted: boolean;
-                    cancelled?: boolean;
-                  }>('project.trust', { cwd });
-                  if (result.cancelled) return;
-                  setProjectTrusted(result.trusted);
-                  if (result.trusted) await openProject(result.cwd);
-                  else {
-                    setInspector(true);
-                    setInspectorTab('files');
-                  }
-                }}
-                notify={notify}
-              />
-            )}
-            <IconButton
-              label={t('搜索与提问目录')}
-              active={conversationNavigation}
-              onClick={() => setConversationNavigation((value) => !value)}
-              disabled={!rows.length}
-            >
-              <Search size={17} />
-            </IconButton>
-            <IconButton label={t('任务中心')} onClick={() => setDialog('tasks')}>
-              <Workflow size={17} />
-            </IconButton>
-            <button
-              className="header-action"
-              onClick={() => {
-                setInspector(true);
-                setInspectorTab('changes');
-              }}
-              disabled={!cwd}
-            >
-              <GitCompareArrows size={17} />
-              {t('查看变更')}
-            </button>
-            <button
-              className="header-action"
-              onClick={() => {
-                setInspector(true);
-                setInspectorTab('plan');
-              }}
-            >
-              <ListChecks size={17} />
-              {t('计划')}
-            </button>
-            <IconButton label={t('交互终端')} onClick={() => setDialog('terminal')} disabled={!cwd}>
-              <Terminal size={17} />
-            </IconButton>
-            <IconButton
-              label={t('网页预览')}
-              onClick={() => void openWebPreview()}
-              disabled={!cwd || !!loadingSession}
-            >
-              <Globe size={17} />
-            </IconButton>
-            <IconButton label={t('额度与上下文')} onClick={() => setDialog('usage')}>
-              <Gauge size={17} />
-            </IconButton>
-            {currentSummary && (
-              <div className="topbar-more">
-                <IconButton label={t('当前会话操作')} onClick={() => setTopbarMenu(!topbarMenu)}>
-                  <Ellipsis size={18} />
-                </IconButton>
-                {topbarMenu && (
-                  <div className="session-dropdown">
-                    <button
-                      onClick={() => {
-                        setRename(currentSummary);
-                        setRenameTitle(currentSummary.title);
-                        setTopbarMenu(false);
-                      }}
-                    >
-                      <Pencil size={14} />
-                      {t('重命名')}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setTopbarMenu(false);
-                        void exportSession(currentSummary);
-                      }}
-                    >
-                      <Download size={14} />
-                      {t('导出会话')}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDeleteTarget(currentSummary);
-                        setTopbarMenu(false);
-                      }}
-                      className="danger-text"
-                    >
-                      <Trash2 size={14} />
-                      {t('删除会话')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="toolbar-divider" />
-            <IconButton
-              label={inspector && sidebar ? t('收起项目上下文') : t('展开项目上下文')}
-              onClick={() => setInspector(!(inspector && sidebar))}
-              active={inspector && sidebar}
-            >
-              {inspector && sidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-            </IconButton>
-          </div>
-        </header>
         {conversationNavigation && (
           <Suspense fallback={<Spinner />}>
             <ConversationNavigation
@@ -2238,10 +2291,10 @@ export default function App() {
                 {appUpdate.status === 'downloaded'
                   ? t('新版本已准备好')
                   : appUpdate.status === 'downloading'
-                    ? t('正在下载 Grok Desktop {version}', {
+                    ? t('正在下载 Grok Build Desktop {version}', {
                         version: appUpdate.availableVersion || '',
                       })
-                    : t('Grok Desktop {version} 可以更新', {
+                    : t('Grok Build Desktop {version} 可以更新', {
                         version: appUpdate.availableVersion || '',
                       })}
               </strong>
@@ -2552,106 +2605,112 @@ export default function App() {
             />
             <div className="composer-toolbar">
               <div className="composer-tools">
-                <IconButton
-                  label={t('添加文件或图片')}
-                  onClick={() => void attach()}
-                  disabled={initializing || !!loadingSession}
-                >
-                  <Paperclip size={18} />
-                </IconButton>
-                <IconButton
-                  label={t('引用项目文件')}
-                  onClick={() => setFilePickerOwner({ ...composerRef.current })}
-                  disabled={!cwd}
-                >
-                  <FolderOpen size={17} />
-                </IconButton>
-                <IconButton label={t('Windows 语音输入')} onClick={() => void dictate()}>
-                  <Mic size={17} />
-                </IconButton>
-                <IconButton label={t('打开动作库 · Ctrl K')} onClick={() => void openActions()}>
-                  <CommandIcon size={17} />
-                </IconButton>
-                <div className="toolbar-divider" />
-                <label className="model-control" title={t('选择模型')}>
-                  <Zap size={14} />
-                  <select
-                    ref={modelSelectRef}
-                    aria-label={t('选择模型')}
-                    value={currentModelId || ''}
-                    disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
-                    onChange={(e) => void configureSelection({ modelId: e.target.value })}
+                <div className="composer-tools-primary">
+                  <IconButton
+                    label={t('添加文件或图片')}
+                    onClick={() => void attach()}
+                    disabled={initializing || !!loadingSession}
                   >
-                    {!models.availableModels.length && <option value="">{t('Grok 默认')}</option>}
-                    {models.availableModels.map((model) => (
-                      <option key={model.modelId} value={model.modelId}>
-                        {model.name || model.modelId}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {effortOptions.length > 0 &&
-                  selectedModel?._meta?.supportsReasoningEffort !== false && (
-                    <EffortControl
-                      key={`${session?.sessionId || 'new'}:${currentModelId}`}
-                      options={effortOptions}
-                      value={currentEffort}
-                      presets={presets}
-                      modelName={selectedModel?.name || currentModelId || 'Grok'}
-                      disabled={busy || !!loadingSession || connection !== 'ready'}
-                      pending={configuring}
-                      onChange={(effort) => configureSelection({ effort })}
-                      onModelClick={() => {
-                        const modelSelect = modelSelectRef.current;
-                        modelSelect?.focus();
-                        try {
-                          modelSelect?.showPicker();
-                        } catch {
-                          /* The focused native select remains usable with the keyboard. */
+                    <Paperclip size={18} />
+                  </IconButton>
+                  <IconButton
+                    label={t('引用项目文件')}
+                    onClick={() => setFilePickerOwner({ ...composerRef.current })}
+                    disabled={!cwd}
+                  >
+                    <FileText size={17} />
+                  </IconButton>
+                  <IconButton label={t('Windows 语音输入')} onClick={() => void dictate()}>
+                    <Mic size={17} />
+                  </IconButton>
+                  <IconButton label={t('打开动作库 · Ctrl K')} onClick={() => void openActions()}>
+                    <LayoutGrid size={17} />
+                  </IconButton>
+                </div>
+                <div className="composer-selectors">
+                  <label className="model-control" title={t('选择模型')}>
+                    <select
+                      ref={modelSelectRef}
+                      aria-label={t('选择模型')}
+                      value={currentModelId || ''}
+                      disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
+                      onChange={(e) => void configureSelection({ modelId: e.target.value })}
+                    >
+                      {!models.availableModels.length && <option value="">{t('Grok 默认')}</option>}
+                      {models.availableModels.map((model) => (
+                        <option key={model.modelId} value={model.modelId}>
+                          {model.name || model.modelId}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {effortOptions.length > 0 &&
+                    selectedModel?._meta?.supportsReasoningEffort !== false && (
+                      <EffortControl
+                        key={`${session?.sessionId || 'new'}:${currentModelId}`}
+                        options={effortOptions}
+                        value={currentEffort}
+                        presets={presets}
+                        modelName={selectedModel?.name || currentModelId || 'Grok'}
+                        disabled={busy || !!loadingSession || connection !== 'ready'}
+                        pending={configuring}
+                        onChange={(effort) => configureSelection({ effort })}
+                        onModelClick={() => {
+                          const modelSelect = modelSelectRef.current;
+                          modelSelect?.focus();
+                          try {
+                            modelSelect?.showPicker();
+                          } catch {
+                            /* The focused native select remains usable with the keyboard. */
+                          }
+                        }}
+                      />
+                    )}
+                  {!!session && contextWindows.length > 1 && (
+                    <label className="context-control" title={t('上下文窗口')}>
+                      <Database size={16} />
+                      <select
+                        aria-label={t('上下文窗口')}
+                        value={currentContextWindow}
+                        disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
+                        onChange={(event) =>
+                          void configureSelection({ contextWindow: Number(event.target.value) })
                         }
-                      }}
-                    />
+                      >
+                        {!currentContextWindow && <option value="">{t('默认上下文')}</option>}
+                        {contextWindows.map((tokens) => (
+                          <option key={tokens} value={tokens}>
+                            {Math.round(tokens / 1000)}K
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   )}
-                {!!session && contextWindows.length > 1 && (
-                  <label className="context-control" title={t('上下文窗口')}>
-                    <select
-                      aria-label={t('上下文窗口')}
-                      value={currentContextWindow}
-                      disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
-                      onChange={(event) =>
-                        void configureSelection({ contextWindow: Number(event.target.value) })
-                      }
-                    >
-                      {!currentContextWindow && <option value="">{t('默认上下文')}</option>}
-                      {contextWindows.map((tokens) => (
-                        <option key={tokens} value={tokens}>
-                          {Math.round(tokens / 1000)}K
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {!!session?.modes?.availableModes?.length && (
-                  <label className="mode-control" title={t('会话模式')}>
-                    <select
-                      aria-label={t('会话模式')}
-                      value={session.modes.currentModeId}
-                      disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
-                      onChange={(event) => void configureSelection({ modeId: event.target.value })}
-                    >
-                      {session.modes.availableModes.map((mode) => (
-                        <option key={mode.id} value={mode.id}>
-                          {{
-                            agent: t('执行'),
-                            ask: t('问答'),
-                            plan: t('规划'),
-                            default: t('默认模式'),
-                          }[mode.id] || mode.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+                  {!!session?.modes?.availableModes?.length && (
+                    <label className="mode-control" title={t('会话模式')}>
+                      <Settings2 size={16} />
+                      <select
+                        aria-label={t('会话模式')}
+                        value={session.modes.currentModeId}
+                        disabled={busy || configuring || !!loadingSession || connection !== 'ready'}
+                        onChange={(event) =>
+                          void configureSelection({ modeId: event.target.value })
+                        }
+                      >
+                        {session.modes.availableModes.map((mode) => (
+                          <option key={mode.id} value={mode.id}>
+                            {{
+                              agent: t('执行'),
+                              ask: t('问答'),
+                              plan: t('规划'),
+                              default: t('默认模式'),
+                            }[mode.id] || mode.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
               </div>
               {busy && !workflowControl ? (
                 <>
@@ -2692,7 +2751,7 @@ export default function App() {
                   title={t('发送 · Enter')}
                   aria-label={t('发送消息')}
                 >
-                  <ArrowUp size={19} />
+                  <Send size={19} />
                 </button>
               )}
             </div>
@@ -2727,6 +2786,44 @@ export default function App() {
           </div>
         </div>
       </main>
+      <aside
+        className="project-context-pane"
+        hidden={!rightContextVisible}
+        aria-label={t('项目上下文')}
+      >
+        <div ref={rightContextSlot} className="project-context-slot" />
+        <ResizeHandle
+          axis="horizontal"
+          reverse
+          label={t('调整项目上下文宽度')}
+          value={contextWidth}
+          min={260}
+          max={contextMaxWidth}
+          onChange={setInspectorWidth}
+          onCommit={(value) => savePanelSize('inspectorWidth', value)}
+          onReset={() => {
+            setInspectorWidth(0);
+            savePanelSize('inspectorWidth', 0);
+          }}
+        />
+      </aside>
+      {createPortal(
+        <Inspector
+          embedded={!rightContextVisible}
+          visible={contextVisible}
+          cwd={cwd}
+          plan={plan}
+          revision={revision}
+          tab={inspectorTab}
+          onTabChange={setInspectorTab}
+          openFile={fileToOpen}
+          onClose={() => setInspector(false)}
+          notify={notify}
+          onAddContext={addContext}
+          onEditorOpenChange={setEditorOpen}
+        />,
+        contextHost,
+      )}
       <footer className="desktop-status-bar" aria-label={t('工作区状态')}>
         <div className="sidebar-status">
           <span
@@ -2740,7 +2837,7 @@ export default function App() {
             <button
               type="button"
               className={`home-update-status ${appUpdate.status}`}
-              title={t('点击检查 Grok Desktop 更新')}
+              title={t('点击检查 Grok Build Desktop 更新')}
               disabled={appUpdate.status === 'checking'}
               onClick={() => {
                 if (
@@ -2756,7 +2853,7 @@ export default function App() {
                 );
               }}
             >
-              <span className="home-update-product">Grok Desktop</span>
+              <span className="home-update-product">Grok Build Desktop</span>
               <strong>v{appUpdate.currentVersion}</strong>
               <span className="home-update-separator" aria-hidden="true">
                 ·

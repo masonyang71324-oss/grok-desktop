@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "private": true,
   "license": "UNLICENSED",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "description": "Grok Build desktop workspace with English and Simplified Chinese UI",
   "main": "electron/main.cjs",
-  "author": "Grok Desktop",
+  "author": "Grok Build Desktop",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "start": "electron .",
@@ -73,7 +73,8 @@
   },
   "build": {
     "appId": "local.grok.desktop",
-    "productName": "Grok Desktop",
+    "productName": "Grok Build Desktop",
+    "executableName": "Grok Desktop",
     "directories": {
       "output": "release"
     },
@@ -110,7 +111,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Grok Desktop",
+      "shortcutName": "Grok Build Desktop",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },

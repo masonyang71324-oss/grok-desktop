@@ -212,7 +212,7 @@ async function screenshot(name) {
     await launch();
     await bounds(1280, 850);
     await engineAction('首次使用引导');
-    const wizard = page.getByRole('dialog', { name: '欢迎使用 Grok Desktop', exact: true });
+    const wizard = page.getByRole('dialog', { name: '欢迎使用 Grok Build Desktop', exact: true });
     await wizard.locator('.runtime-ready').filter({ hasText: '已检测到 Grok 1.0.46' }).waitFor();
     assert.equal(
       await wizard.getByRole('button', { name: '安装官方稳定版', exact: true }).count(),
@@ -280,7 +280,10 @@ async function screenshot(name) {
     await page.locator('.message.user.conversation-jump').waitFor();
     await page.locator('header').getByRole('button', { name: '查看变更', exact: true }).click();
     await page.locator('.inspector .change-row').filter({ hasText: 'fixture.txt' }).click();
+    const fullDiff = page.getByRole('button', { name: '查看完整差异', exact: true });
     const diff = page.getByRole('dialog', { name: '文件变更', exact: true });
+    await fullDiff.or(diff).first().waitFor({ state: 'visible' });
+    if (await fullDiff.isVisible()) await fullDiff.click();
     await diff.getByRole('button', { name: '并排', exact: true }).click();
     assert.ok((await diff.locator('.diff-split-row').count()) > 0);
     assert.ok((await diff.locator('mark').count()) > 0);

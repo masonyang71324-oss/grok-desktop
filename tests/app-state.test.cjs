@@ -86,7 +86,8 @@ async function fixture(
     lazy: () => () => null,
     useState(initial) {
       const slot = index++;
-      if (!(slot in hookSlots)) hookSlots[slot] = initial;
+      if (!(slot in hookSlots))
+        hookSlots[slot] = typeof initial === 'function' ? initial() : initial;
       return [
         hookSlots[slot],
         (value) => {
@@ -114,6 +115,11 @@ async function fixture(
         effectSlots[slot] = deps;
         effects.push(callback);
       }
+    },
+    // This harness extracts App's state return before JSX, so no DOM refs mount.
+    // Preserve hook ordering/effects; browser tests cover real portal movement.
+    useLayoutEffect(callback, deps) {
+      react.useEffect(callback, deps);
     },
   };
   function render() {
@@ -302,6 +308,8 @@ async function fixture(
     require: (id) => modules[id] || {},
     crypto: require('node:crypto').webcrypto,
     window: {
+      innerWidth: 1280,
+      innerHeight: 800,
       localStorage: storage,
       desktop: {
         async pathsForFiles(files) {
@@ -327,7 +335,10 @@ async function fixture(
         windowEvents.delete(name);
       },
     },
-    document: { documentElement: { dataset: {} } },
+    document: {
+      documentElement: { dataset: {} },
+      createElement: () => ({ className: '', remove() {} }),
+    },
   };
   vm.runInNewContext(compiled, context, { filename: 'App.review.transpiled.cjs' });
   App = context.exports.default;

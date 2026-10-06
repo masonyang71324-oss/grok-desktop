@@ -20,9 +20,7 @@ import type { TimelineRow } from './timeline.mjs';
 export function Brand({ small = false }: { small?: boolean }) {
   return (
     <span className={`brand-mark ${small ? 'small' : ''}`} aria-hidden="true">
-      <svg viewBox="0 0 32 32">
-        <path d="M7 24 24 7M10 7h14v14M6 15v11h11" />
-      </svg>
+      <img src="./brand-mark.png" width="64" height="64" alt="" draggable={false} />
     </span>
   );
 }

@@ -1,5 +1,5 @@
 export const runtimeUpgrades: Record<string, string> = {
-  '欢迎使用 Grok Desktop': 'Welcome to Grok Desktop',
+  '欢迎使用 Grok Build Desktop': 'Welcome to Grok Build Desktop',
   '完成程序、登录和项目设置，即可开始对话。':
     'Set up the CLI, sign in and choose a project to start chatting.',
   '正在检查 Grok 程序和安装状态…': 'Checking the Grok CLI and installation state…',
@@ -53,8 +53,8 @@ export const runtimeUpgrades: Record<string, string> = {
   环境变量名称: 'Environment variable name',
   'API 协议': 'API protocol',
   '上下文窗口（可选）': 'Context window (optional)',
-  '环境变量在启动 Grok Desktop 前设置。已有内联密钥与其他配置会保留。':
-    'Set environment variables before starting Grok Desktop. Existing inline keys and other settings are preserved.',
+  '环境变量在启动 Grok Build Desktop 前设置。已有内联密钥与其他配置会保留。':
+    'Set environment variables before starting Grok Build Desktop. Existing inline keys and other settings are preserved.',
   保存模型: 'Save model',
   休眠: 'Sleeping',
 };

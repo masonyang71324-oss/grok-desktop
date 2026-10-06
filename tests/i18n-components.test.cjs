@@ -206,16 +206,18 @@ test('an already-open new-file diff updates generated labels without translating
     );
   });
   await page.locator('.change-row').click();
-  await page.getByRole('dialog').waitFor();
+  await page.getByRole('button', { name: '查看完整差异', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.waitFor();
   await page.evaluate(() => window.ui.flushSync(() => window.ui.setLocale('en')));
-  assert.deepEqual(await page.locator('.diff-line-content').allTextContents(), [
+  assert.deepEqual(await dialog.locator('.diff-line-content').allTextContents(), [
     'New file 中文.txt',
     '+新文件 原始内容',
     '+… 内容已截断',
     '… Content truncated',
   ]);
   assert.match(await page.locator('.tree-heading').textContent(), /Detached HEAD/);
-  assert.deepEqual(await page.locator('.diff-add .diff-line-number').allTextContents(), [
+  assert.deepEqual(await dialog.locator('.diff-add .diff-line-number').allTextContents(), [
     '',
     '1',
     '',

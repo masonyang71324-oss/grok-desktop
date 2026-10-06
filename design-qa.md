@@ -46,3 +46,36 @@ Interaction findings resolved: saving a native range temporarily removed keyboar
 Packaged verification found an asset-path issue that was invisible in Vite: relative image URLs inside CSS variables resolved against `dist/assets/`. Moving background-image declarations directly onto their elements correctly resolves against the document. The packaged smoke test now decodes both images and captures the control, and passed after the fix.
 
 Validation: 624/624 full automated tests passed; after the image-path correction, 30/30 related component/App tests and the packaged Electron smoke workflow passed. The packaged workflow also covers configuration/default reset, streaming, permissions, history, drafts and both languages, with no renderer errors. Build, formatting and diff checks passed. NSIS installation exited 0 and the installed executable reports 1.10.1.0. No unresolved P0/P1/P2 finding in this bounded change.
+
+## 1.11.0 — complete approved branding and desktop UI
+
+Final result: passed.
+
+### Source and comparison evidence
+
+- Approved logo sheet: `C:/Users/Administrator/.codex/generated_images/01a06f68-7ef7-7550-9181-99c69ff0f133/exec-710a4c65-f2ce-494c-9f1e-86e6e75ab765.png`. The selected square G was extracted into a flat green application badge with ImageGen; `public/brand-mark.png` is the project-owned source for renderer and packaged icon sizes.
+- Full-page direction subsequently cropped and edited by the user: `exec-d0f46cb2-2f9f-48b0-8f67-f1c0f29630a5.png` in the same generated-images directory (1536 × 1024). Later composer correction: `E:/ZCode工作区域/grok-build-composer-preview/public/reference-composer.png`; retain the final flat energy slider from 1.10.1.
+- Current full production components rendered with synthetic local data: `test-results/brand-ui-wide.jpg`, 1440 × 960. English/light responsive evidence: `brand-ui-narrow-en.jpg`, 980 × 820. Combined visual evidence: `brand-ui-comparison.jpg`, showing source and implementation together at 768 × 512 each without cropping or changing aspect ratio. Full-size captures were also inspected for readable control/font details.
+- These comparison screenshots contain test conversations and example usage, not the user's account data. Actual packaged workflows additionally capture the real Electron renderer under `test-results/upgrades/packaged/` and verify the shipped brand image and window title.
+
+### Findings and fixes
+
+- [P1, resolved] 1.10.1 applied only the effort control. The selected logo, full display name, whole desktop palette/composition and refined composer are now integrated. Sidebar and assistant marks, executable icon, window title, installer metadata and shortcut name are updated together.
+- [P2, resolved] The original left-only inspector could not show conversations beside a review pane. Wide windows now have an independent collapsible right pane. A single Inspector uses a stable movable portal host; repeated right/left docking does not recreate an editor or discard its unsaved content.
+- [P2, resolved] Changing to a narrow window initially opened the full diff dialog automatically. Inline diff state now follows the pane without opening a modal; the full view opens only after an explicit action.
+- [P2, resolved] English narrow-screen labels pushed a context control onto its own third header row. Secondary header controls switch to named, tooltipped icons at the smaller breakpoint. All controls remain available; no horizontal viewport overflow was observed.
+
+### Fidelity and behavior
+
+Typography uses the existing Windows UI stack and readable 14–16px content/control hierarchy, with a two-line Grok Build Desktop wordmark. The main layout follows the selected navigation/conversation/review composition and full-width header/status strip, while widths remain user-resizable. The later approved composer replaces the source's repeated field labels and separators. Colors use dark graphite, cool emerald accents and flat surfaces; light mode remains legible. The approved raster G and existing icon library are used, with no handcrafted replacement glyph. Copy uses live model capabilities, localized controls and actual runtime facts; mock timestamps, model options and account figures are not installed as application content.
+
+Inline diff preserves full diff, side-by-side, context folding and add-to-context actions. File editing, queued tasks, approvals, terminals, previews, usage, engine details and software updates remain available. Native window controls and existing data/installation identity are intentionally retained even though the visible product name changed.
+
+### Verification
+
+- 628/628 automated tests passed. The app-state test double was updated for the new layout hook; its original state/attachment/recovery assertions remain unchanged.
+- Packaged smoke workflow passed, including streamed tasks, permissions, history, drafts, both languages, shipped energy/logo images and the new window title; no renderer errors.
+- All 10 packaged upgrade workflows passed, including conversation search/diffs, clipboard, file attachments, Office previews, native terminal, web preview, resizing/persistence and small-window controls.
+- Build, changed-file formatting and diff checks passed. Installer exited 0; the installed executable reports version 1.11.0.0 and product name Grok Build Desktop. Its extracted Windows icon is the approved green G (`test-results/installed-brand-icon.png`). The desktop shortcut targets the same historical executable/data installation, and the running window title is Grok Build Desktop.
+
+No unresolved P0/P1/P2 findings remain in the checked states. Whole-product screen-reader certification and every possible upstream custom model catalog are outside this visual integration review.

@@ -5,7 +5,7 @@ export async function request<T = any>(
   payload?: any,
   options: { timeoutMs?: number } = {},
 ): Promise<T> {
-  if (!window.desktop) throw new Error(t('请通过 Grok Desktop 桌面程序打开此界面。'));
+  if (!window.desktop) throw new Error(t('请通过 Grok Build Desktop 桌面程序打开此界面。'));
   // Human dialogs and state-changing operations keep their main-process lifetime.
   // A renderer timeout does not cancel an IPC operation, so only safe reads use it by default.
   const safeRead =

@@ -98,7 +98,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             gh release edit $env:GITHUB_REF_NAME @releaseFlags --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $env:GITHUB_REF_NAME $assets --title "Grok Desktop $version" --generate-notes --verify-tag @releaseFlags --repo $env:GITHUB_REPOSITORY
+            gh release create $env:GITHUB_REF_NAME $assets --title "Grok Build Desktop $version" --generate-notes --verify-tag @releaseFlags --repo $env:GITHUB_REPOSITORY
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:

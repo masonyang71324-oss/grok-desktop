@@ -410,6 +410,19 @@ async function assertEffort(value, label) {
       .locator('.effort-popup')
       .screenshot({ path: path.join(root, 'test-results/effort-packaged.png') });
     pass('energy-slider-packaged-assets');
+    assert.equal(
+      await page
+        .locator('.brand-mark img')
+        .first()
+        .evaluate(async (image) => {
+          await image.decode();
+          return image.naturalWidth > 0;
+        }),
+      true,
+      'packaged approved brand image must load',
+    );
+    assert.equal(await page.title(), 'Grok Build Desktop');
+    pass('approved-brand-and-window-title');
     await page.getByRole('button', { name: '重置推理深度', exact: true }).click();
     await assertEffort('medium', '标准');
     assert.equal(await contextControl.inputValue(), '500000');
@@ -471,7 +484,9 @@ async function assertEffort(value, label) {
     await page.locator('.tool-diff').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(screenshots, 'e2e-diff.png') });
     await page
-      .getByRole('button', { name: new RegExp('Grok Desktop v' + version.replaceAll('.', '\\.')) })
+      .getByRole('button', {
+        name: new RegExp('Grok Build Desktop v' + version.replaceAll('.', '\\.')),
+      })
       .click();
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: path.join(screenshots, 'e2e-settings.png') });

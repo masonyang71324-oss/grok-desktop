@@ -1,6 +1,11 @@
 export const app: Record<string, string> = {
   工作区导航: 'Workspace navigation',
   工作区状态: 'Workspace status',
+  调整项目上下文宽度: 'Resize project context',
+  终端: 'Terminal',
+  预览: 'Preview',
+  文件差异: 'File diff',
+  查看完整差异: 'Open full diff',
   会话: 'Chats',
   任务: 'Tasks',
   任务队列: 'Task queue',
@@ -161,11 +166,11 @@ export const app: Record<string, string> = {
   '正在打开…': 'Opening…',
   设置已保存: 'Settings saved',
   新版本已准备好: 'Update ready',
-  '正在下载 Grok Desktop {version}': 'Downloading Grok Desktop {version}',
+  '正在下载 Grok Build Desktop {version}': 'Downloading Grok Build Desktop {version}',
   '下载进度 {percent}%': 'Download progress {percent}%',
   '正在下载…': 'Downloading…',
   '更新操作失败，请稍后重试。': 'The update action failed. Try again shortly.',
-  'Grok Desktop {version} 可以更新': 'Grok Desktop {version} is available',
+  'Grok Build Desktop {version} 可以更新': 'Grok Build Desktop {version} is available',
   '更新已下载，重启后自动完成安装。': 'The update is downloaded and will install after restart.',
   '便携版需要从官方下载页获取新版本。':
     'Download the new portable edition from the official release page.',
@@ -181,7 +186,7 @@ export const app: Record<string, string> = {
   检查失败: 'Check failed',
   开发模式: 'Development',
   检查更新: 'Check for updates',
-  '点击检查 Grok Desktop 更新': 'Check for Grok Desktop updates',
+  '点击检查 Grok Build Desktop 更新': 'Check for Grok Build Desktop updates',
   'Grok Build 引擎详情': 'Grok Build engine details',
   'Grok Build 引擎': 'Grok Build engine',
   '用于运行 Grok 会话的本机引擎。': 'The local engine that runs your Grok conversations.',
@@ -228,7 +233,8 @@ export const app: Record<string, string> = {
   '操作权限：{mode}': 'Permissions: {mode}',
   'Grok 已记住的允许或拒绝规则仍然有效。':
     'Allow and deny rules already remembered by Grok still apply.',
-  '请通过 Grok Desktop 桌面程序打开此界面。': 'Open this interface in the Grok Desktop app.',
+  '请通过 Grok Build Desktop 桌面程序打开此界面。':
+    'Open this interface in the Grok Build Desktop app.',
   '读取等待超时，请稍后刷新。': 'The request timed out. Refresh and try again.',
   '不支持的操作。': 'This operation is not supported.',
 };

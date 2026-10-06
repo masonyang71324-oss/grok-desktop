@@ -138,7 +138,11 @@ class GrokClient {
       );
       const initialized = await this._request('initialize', {
         protocolVersion: 1,
-        clientInfo: { name: 'grok-desktop', title: 'Grok Desktop', version: this.clientVersion },
+        clientInfo: {
+          name: 'grok-desktop',
+          title: 'Grok Build Desktop',
+          version: this.clientVersion,
+        },
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       });
       if (this._proc !== child) throw new Error(t('Grok 连接已关闭'));

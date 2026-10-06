@@ -245,7 +245,7 @@ test('directory expansion responses cannot populate a different project', async 
   assert.equal(await page.locator('.file-row[title="src/old-child.txt"]').count(), 0);
 });
 
-test('diff responses cannot open a modal in a different project', async (t) => {
+test('diff responses cannot open a preview or modal in a different project', async (t) => {
   const page = await fixture(t);
   await page.getByRole('button', { name: '变更', exact: true }).click();
   await hold(page, 'workspace.diff');
@@ -257,6 +257,7 @@ test('diff responses cannot open a modal in a different project', async (t) => {
   await release(page, 'workspace.diff');
   await page.evaluate(() => new Promise(requestAnimationFrame));
   assert.equal(await page.getByRole('dialog').count(), 0);
+  assert.equal(await page.locator('.context-diff-preview').count(), 0);
 });
 
 test('CRLF editor text compares normalized content and passes the original line ending on save', async (t) => {
@@ -500,8 +501,12 @@ test('diff line numbers distinguish removed and added lines and restart at each 
   });
   await page.getByRole('button', { name: '变更', exact: true }).click();
   await page.locator('.change-row').click();
-  await page.getByRole('dialog').waitFor();
-  const rows = await page
+  await page.locator('.context-diff-preview').waitFor();
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  await page.getByRole('button', { name: '查看完整差异', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '文件变更', exact: true });
+  await dialog.waitFor();
+  const rows = await dialog
     .locator('.diff-unified-row')
     .evaluateAll((elements) =>
       elements

@@ -91,6 +91,7 @@ export default function Inspector({
   const [saving, setSaving] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [diff, setDiff] = useState<{ path: string; text: string } | null>(null);
+  const [diffDialog, setDiffDialog] = useState(false);
   const [officePath, setOfficePath] = useState<string | null>(null);
   const [picker, setPicker] = useState<{ cwd: string; add: (file: Attachment) => void } | null>(
     null,
@@ -292,8 +293,10 @@ export default function Inspector({
         path: change.path,
         staged: change.staged,
       });
-      if (isCurrent(context) && context.diff === version)
+      if (isCurrent(context) && context.diff === version) {
         setDiff({ path: change.path, text: result.text });
+        setDiffDialog(embedded);
+      }
     } catch (e) {
       if (isCurrent(context) && context.diff === version) notify(errorText(e));
     }
@@ -488,6 +491,7 @@ export default function Inspector({
                   changes.changes.map((change, index) => (
                     <button
                       className="change-row"
+                      aria-pressed={diff?.path === change.path}
                       key={change.path + '-' + index}
                       onClick={() => void openDiff(change)}
                       title={t('查看文件差异')}
@@ -511,6 +515,37 @@ export default function Inspector({
                   <EmptyBox icon={<Check size={24} />} heading={t('工作区干净')}>
                     {t('当前没有未提交的文件变更。')}
                   </EmptyBox>
+                )}
+                {diff && !diffDialog && (
+                  <section className="context-diff-preview" aria-label={t('文件差异')}>
+                    <div className="context-diff-heading">
+                      <strong title={diff.path}>{baseName(diff.path)}</strong>
+                      <button className="text-button" onClick={() => setDiffDialog(true)}>
+                        {t('查看完整差异')}
+                      </button>
+                    </div>
+                    {diff.text ? (
+                      <DiffViewer text={diff.text} />
+                    ) : (
+                      <p>{t('没有可显示的文本差异')}</p>
+                    )}
+                    {onAddContext && (
+                      <button
+                        className="text-button"
+                        disabled={!diff.text}
+                        onClick={() =>
+                          onAddContext({
+                            name: diff.path + ' (diff)',
+                            path: '',
+                            kind: 'text',
+                            text: diff.text,
+                          })
+                        }
+                      >
+                        {t('添加差异到上下文')}
+                      </button>
+                    )}
+                  </section>
                 )}
               </>
             ) : changes.unavailable === 'git-not-found' ? (
@@ -674,6 +709,7 @@ export default function Inspector({
           </Modal>,
         )}
       {diff &&
+        diffDialog &&
         renderDialog(
           <Modal
             title={t('文件变更')}
@@ -681,7 +717,8 @@ export default function Inspector({
             wide
             onClose={() => {
               contextRef.current.diff += 1;
-              setDiff(null);
+              setDiffDialog(false);
+              if (embedded) setDiff(null);
             }}
           >
             <div className="diff-view">

@@ -89,16 +89,14 @@ test('navigation persists without a debounce and dragging saves its final size o
   assert.equal(
     await page.evaluate(() =>
       window.calls.some(
-        (call) => call.command === 'settings.save' && call.payload.ui?.inspectorWidth,
+        (call) => call.command === 'settings.save' && call.payload.ui?.sidebarWidth,
       ),
     ),
     false,
   );
   await page.mouse.up();
   await page.waitForFunction(() =>
-    window.calls.some(
-      (call) => call.command === 'settings.save' && call.payload.ui?.inspectorWidth,
-    ),
+    window.calls.some((call) => call.command === 'settings.save' && call.payload.ui?.sidebarWidth),
   );
 });
 
@@ -137,6 +135,188 @@ test('unified navigation preserves the composer and exposes files, tasks and foo
     'true',
   );
   assert.equal(await page.locator('.inspector').isVisible(), true);
+});
+
+test('wide project context stays independent of sessions, tasks, and sidebar visibility', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: '打开项目文件夹', exact: true }).click();
+  const navigation = page.getByRole('tablist', { name: '工作区导航' });
+  const context = page.locator('.project-context-pane');
+  const draft = page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true });
+  await draft.fill('两侧面板都不能影响这段草稿');
+  await page.locator('header').getByRole('button', { name: '查看变更', exact: true }).click();
+  await context.getByText('工作区干净', { exact: true }).waitFor();
+  assert.equal(
+    await navigation.getByRole('tab', { name: '会话', exact: true }).getAttribute('aria-selected'),
+    'true',
+  );
+  assert.equal(
+    await page.getByRole('button', { name: 'My existing session', exact: true }).isVisible(),
+    true,
+  );
+  assert.equal(await page.locator('.inspector').count(), 1);
+  const bounds = await context.boundingBox();
+  const workspace = await page.locator('.workspace').boundingBox();
+  assert.ok(bounds.x >= workspace.x + workspace.width - 1 && bounds.x + bounds.width <= 1441);
+  await navigation.getByRole('tab', { name: '任务', exact: true }).click();
+  await page
+    .locator('.task-center-embedded')
+    .getByText('暂无活跃或待处理任务', { exact: true })
+    .waitFor();
+  await page.locator('header').getByRole('button', { name: '计划', exact: true }).click();
+  assert.equal(
+    await context.getByRole('button', { name: '计划', exact: true }).getAttribute('class'),
+    'active',
+  );
+  assert.equal(
+    await navigation.getByRole('tab', { name: '任务', exact: true }).getAttribute('aria-selected'),
+    'true',
+  );
+  await page.getByRole('button', { name: '收起侧边栏', exact: true }).click();
+  assert.equal(await navigation.isVisible(), false);
+  assert.equal(await context.isVisible(), true);
+  assert.equal(
+    await page.getByRole('button', { name: '收起项目上下文', exact: true }).isVisible(),
+    true,
+  );
+  assert.equal(await draft.inputValue(), '两侧面板都不能影响这段草稿');
+  await page.getByRole('button', { name: '收起项目上下文', exact: true }).click();
+  await context.waitFor({ state: 'hidden' });
+  assert.equal(await navigation.isVisible(), false);
+  await page.getByRole('button', { name: '展开侧边栏', exact: true }).click();
+  assert.equal(
+    await navigation.getByRole('tab', { name: '任务', exact: true }).getAttribute('aria-selected'),
+    'true',
+  );
+});
+
+test('right context resizing saves its own width only on release and leaves sidebar width unchanged', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: '展开项目上下文', exact: true }).click();
+  const handle = page.getByRole('separator', { name: '调整项目上下文宽度', exact: true });
+  const bounds = await handle.boundingBox();
+  const before = Number(await handle.getAttribute('aria-valuenow'));
+  const sidebarWidth = await page.evaluate(() => window.settings.ui.sidebarWidth);
+  await page.evaluate(() => {
+    window.calls = [];
+  });
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 - 36, bounds.y + 40);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) => call.command === 'settings.save' && call.payload.ui?.inspectorWidth,
+      ),
+    ),
+    false,
+  );
+  const resized = Number(await handle.getAttribute('aria-valuenow'));
+  assert.ok(resized > before, 'dragging the left edge left increases the right context width');
+  await page.mouse.up();
+  await page.waitForFunction((expected) => window.settings.ui.inspectorWidth === expected, resized);
+  assert.equal(await page.evaluate(() => window.settings.ui.sidebarWidth), sidebarWidth);
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.filter(
+          (call) => call.command === 'settings.save' && call.payload.ui?.inspectorWidth,
+        ).length,
+    ),
+    1,
+  );
+});
+
+test('right context previews a diff inline and preserves full review and add-context actions', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    window.workspaceChanges = [{ path: 'notes.txt', status: 'M', staged: false }];
+  });
+  await page.getByRole('button', { name: '打开项目文件夹', exact: true }).click();
+  await page.locator('header').getByRole('button', { name: '查看变更', exact: true }).click();
+  const context = page.locator('.project-context-pane');
+  await context.locator('.change-row').filter({ hasText: 'notes.txt' }).click();
+  const preview = page.locator('.context-diff-preview');
+  await preview.waitFor();
+  assert.match(await preview.textContent(), /old text/);
+  assert.match(await preview.textContent(), /new text/);
+  assert.equal(await page.getByRole('dialog', { name: '文件变更', exact: true }).count(), 0);
+  for (const width of [980, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForFunction(
+      (wide) => Boolean(document.querySelector('.project-context-pane .inspector')) === wide,
+      width >= 1100,
+    );
+    assert.equal(await preview.count(), 1);
+    assert.equal(await preview.isVisible(), true);
+    assert.match(await preview.textContent(), /new text/);
+    assert.equal(await page.getByRole('dialog', { name: '文件变更', exact: true }).count(), 0);
+  }
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.command === 'workspace.diff').length,
+    ),
+    1,
+  );
+  await preview.getByRole('button', { name: '查看完整差异', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '文件变更', exact: true });
+  await dialog.getByRole('button', { name: '并排', exact: true }).click();
+  assert.ok((await dialog.locator('.diff-split-row').count()) > 0);
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await preview.isVisible(), true);
+  await preview.getByRole('button', { name: '添加差异到上下文', exact: true }).click();
+  await page.locator('.attachment-name').filter({ hasText: 'notes.txt (diff)' }).waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.command === 'workspace.diff').length,
+    ),
+    1,
+  );
+});
+
+test('a single file editor preserves unsaved edits when context moves between wide and narrow layouts', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    window.workspaceEntries = [{ name: 'notes.txt', path: 'notes.txt', isDirectory: false }];
+  });
+  await page.getByRole('button', { name: '打开项目文件夹', exact: true }).click();
+  await page.getByRole('button', { name: '展开项目上下文', exact: true }).click();
+  await page.locator('.inspector .file-row').filter({ hasText: 'notes.txt' }).click();
+  const dialog = page.getByRole('dialog', { name: 'notes.txt', exact: true });
+  const editor = dialog.getByRole('textbox', { name: '文件内容', exact: true });
+  const draft = '尚未保存的编辑\nKeep my exact draft 123';
+  await editor.fill(draft);
+  const readCount = await page.evaluate(
+    () => window.calls.filter((call) => call.command === 'workspace.read').length,
+  );
+  for (const width of [980, 1440]) {
+    await page.setViewportSize({ width, height: 820 });
+    await page.waitForFunction(
+      (wide) => Boolean(document.querySelector('.project-context-pane .inspector')) === wide,
+      width >= 1100,
+    );
+    assert.equal(await page.locator('.inspector').count(), 1);
+    assert.equal(await dialog.count(), 1);
+    assert.equal(await editor.inputValue(), draft);
+    await dialog.getByText('有未保存的修改', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.settings.ui.navigationTab), 'sessions');
+  }
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.command === 'workspace.read').length,
+    ),
+    readCount,
+  );
+  assert.equal(
+    await page.evaluate(() => window.calls.some((call) => call.command === 'workspace.save')),
+    false,
+  );
 });
 
 test('expanded task results stay in the thread scroll while the send control remains visible with a long draft', async (t) => {
@@ -319,6 +499,21 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
             };
           else if (command === 'sessions.list')
             data = [{ sessionId: 'existing', cwd: 'C:/project', title: 'My existing session' }];
+          else if (command === 'workspace.list') data = window.workspaceEntries || [];
+          else if (command === 'workspace.changes')
+            data = { isGit: true, branch: 'main', changes: window.workspaceChanges || [] };
+          else if (command === 'workspace.diff')
+            data = {
+              text: '--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1 @@\n-old text\n+new text\n',
+            };
+          else if (command === 'workspace.read')
+            data = {
+              path: payload.path,
+              text: 'Original file\n',
+              truncated: false,
+              mtimeMs: 1,
+              eol: 'lf',
+            };
           else if (command === 'session.load' || command === 'session.new') data = window.snapshot;
           else if (command === 'session.send' && window.sendError)
             return { ok: false, error: window.sendError };
@@ -361,7 +556,10 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
 test('home distinguishes engine authentication from a connected transport and exposes login/check actions', async (t) => {
   const page = await fixture(t);
   await page.locator('.home-engine-status').getByText('需要登录', { exact: true }).waitFor();
-  assert.match(await page.locator('.home-update-status').textContent(), /Grok Desktop.*1\.4\.2/);
+  assert.match(
+    await page.locator('.home-update-status').textContent(),
+    /Grok Build Desktop.*1\.4\.2/,
+  );
   assert.match(await page.locator('.home-engine-status').textContent(), /Grok Build.*1\.0\.46/);
   await page.getByRole('button', { name: 'Grok Build 引擎详情', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Grok Build 引擎', exact: true });
@@ -508,12 +706,19 @@ test('home engine actions and context labels are available in English', async (t
   const engineBounds = await page
     .getByRole('button', { name: 'Grok Build engine details', exact: true })
     .boundingBox();
-  const workspaceBounds = await page.locator('.workspace').boundingBox();
+  const footerBounds = await page.locator('.desktop-status-bar').boundingBox();
   assert.ok(
-    engineBounds.x >= workspaceBounds.x &&
-      engineBounds.x + engineBounds.width <= workspaceBounds.x + workspaceBounds.width,
-    'Engine access must remain inside the workspace when both panels are open',
+    engineBounds.x >= footerBounds.x &&
+      engineBounds.x + engineBounds.width <= footerBounds.x + footerBounds.width &&
+      engineBounds.y >= footerBounds.y &&
+      engineBounds.y + engineBounds.height <= footerBounds.y + footerBounds.height &&
+      footerBounds.x + footerBounds.width <= 1121 &&
+      footerBounds.y + footerBounds.height <= 821,
+    'Engine access must remain inside the full-width status bar and viewport with both panels open',
   );
+  await page
+    .getByRole('button', { name: 'Grok Build engine details', exact: true })
+    .click({ trial: true });
   await page.screenshot({ path: path.join(__dirname, '../test-results/home-engine-panels.png') });
 });
 

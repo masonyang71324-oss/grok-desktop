@@ -242,7 +242,7 @@ export default function ProviderSettings({
               disabled: busy,
             })}
             <p className="runtime-note">
-              {t('环境变量在启动 Grok Desktop 前设置。已有内联密钥与其他配置会保留。')}
+              {t('环境变量在启动 Grok Build Desktop 前设置。已有内联密钥与其他配置会保留。')}
             </p>
             <div className="runtime-actions">
               <button type="button" disabled={busy} onClick={() => setForm(false)}>

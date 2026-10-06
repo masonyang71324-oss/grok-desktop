@@ -1,0 +1,424 @@
+/* Shared desktop surfaces. The approved G artwork lives in the brand component. */
+.unified-layout .message.user .message-avatar {
+  display: none;
+}
+.context-diff-preview {
+  margin: 20px 12px 12px;
+  min-width: 0;
+}
+.context-diff-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.context-diff-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.context-diff-heading button {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.context-diff-preview .structured-diff {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.context-diff-preview .diff-controls {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  font-size: 11px;
+}
+.context-diff-preview .diff-controls button {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.context-diff-preview .structured-diff-lines {
+  max-height: 360px;
+  overflow: auto;
+}
+.context-diff-preview .diff-line-content {
+  font-size: 12px;
+}
+.context-diff-preview > .text-button {
+  margin-top: 10px;
+}
+.unified-layout .change-row[aria-pressed='true'] {
+  border-color: var(--brand-green);
+  background: var(--accent-soft);
+}
+html:root {
+  --bg: #0d110f;
+  --sidebar: #0a0e0c;
+  --panel: #111713;
+  --surface: #171e1a;
+  --surface-hover: #202c25;
+  --surface-raised: #1c2620;
+  --border: #324239;
+  --border-soft: #243128;
+  --text: #edf4ef;
+  --muted: #a4b2aa;
+  --faint: #81958a;
+  --accent: #45ca88;
+  --accent-soft: #152e21;
+  --accent-text: #081c11;
+  --brand-green: #239b62;
+  --danger: #f09a96;
+  --text-secondary: var(--muted);
+  --surface-2: var(--surface-raised);
+  --shadow: 0 14px 44px #0005;
+}
+html:root[data-theme='light'] {
+  --bg: #f8faf8;
+  --sidebar: #eff4f0;
+  --panel: #f4f8f5;
+  --surface: #fff;
+  --surface-hover: #e6efe8;
+  --surface-raised: #f0f6f2;
+  --border: #c5d5c9;
+  --border-soft: #dae5dd;
+  --text: #192c21;
+  --muted: #51695a;
+  --faint: #64796b;
+  --accent: #18764b;
+  --accent-soft: #e0efe4;
+  --accent-text: #fff;
+  --brand-green: #18764b;
+  --danger: #b34240;
+  --shadow: 0 14px 44px #203a2824;
+}
+
+.app.unified-layout {
+  color: var(--text);
+  background: var(--bg);
+}
+.app.unified-layout .sidebar {
+  background: var(--sidebar);
+}
+.unified-layout .new-conversation {
+  justify-content: flex-start;
+  border-color: color-mix(in srgb, var(--brand-green) 40%, var(--border));
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 500;
+}
+.unified-layout .new-conversation > svg {
+  color: var(--accent);
+}
+.unified-layout .new-conversation:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand-green) 17%, var(--surface));
+  border-color: var(--brand-green);
+}
+.unified-layout .new-conversation > kbd {
+  margin-left: auto;
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--brand-green) 28%, var(--border));
+}
+.unified-layout .project-icon {
+  background: transparent;
+  color: var(--text);
+}
+.unified-layout .project-button {
+  border: 1px solid transparent;
+}
+.unified-layout .project-button:hover,
+.unified-layout .project-button.active {
+  border-color: var(--border-soft);
+}
+.unified-layout .project-button small {
+  color: var(--muted);
+}
+.unified-layout .navigation-tabs button {
+  font-weight: 500;
+}
+.unified-layout .navigation-tabs button[aria-selected='true'] {
+  color: var(--text);
+}
+.unified-layout .navigation-tabs button[aria-selected='true'] svg {
+  color: var(--accent);
+}
+.unified-layout .search-input {
+  background: var(--surface);
+  border-color: var(--border-soft);
+  border-radius: 8px;
+}
+.unified-layout .search-input:focus-within {
+  border-color: var(--brand-green);
+}
+.unified-layout .history-heading {
+  color: var(--muted);
+  font-weight: 500;
+}
+.unified-layout .session-list-panel .session-select {
+  min-height: 44px;
+  height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.unified-layout .session-item.selected {
+  background: color-mix(in srgb, var(--brand-green) 13%, var(--surface));
+}
+.unified-layout .session-item.selected::before {
+  width: 3px;
+  height: 24px;
+  background: var(--accent);
+}
+.unified-layout .session-item .session-select > svg {
+  width: 16px;
+}
+.unified-layout .session-item.selected .session-select {
+  font-weight: 500;
+}
+.unified-layout .session-item .session-select small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.unified-layout .sidebar-bottom > button,
+.unified-layout .sidebar-bottom-row > button {
+  border-radius: 7px;
+  color: var(--muted);
+}
+.unified-layout .sidebar-bottom > button:hover,
+.unified-layout .sidebar-bottom-row > button:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.unified-layout .sidebar-bottom > button > svg:first-child,
+.unified-layout .sidebar-bottom-row > button > svg:first-child {
+  color: var(--text);
+}
+
+.unified-layout .topbar {
+  background: var(--bg);
+}
+.unified-layout .breadcrumb > span {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.unified-layout .breadcrumb > button {
+  color: var(--muted);
+  font-size: 12px;
+}
+.unified-layout .header-action {
+  color: var(--text);
+  background: var(--surface);
+  font-weight: 400;
+}
+.unified-layout .topbar-actions .icon-button {
+  border-radius: 7px;
+  color: var(--muted);
+}
+.unified-layout .topbar-actions .icon-button:hover {
+  color: var(--text);
+}
+.unified-layout .topbar-actions .icon-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.unified-layout .project-access {
+  border-color: var(--border-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+.unified-layout .project-access.restricted {
+  color: var(--accent);
+}
+.unified-layout .message-author {
+  color: var(--text);
+  font-weight: 600;
+}
+.unified-layout .message.user .message-content {
+  background: var(--surface-hover);
+}
+.unified-layout .tool-row[open] {
+  border-color: var(--border);
+}
+.unified-layout .tool-row.failed {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border-soft));
+}
+.unified-layout .tool-row summary:hover {
+  background: color-mix(in srgb, var(--surface-hover) 65%, transparent);
+}
+.unified-layout .task-outcome {
+  color: var(--muted);
+}
+.unified-layout .task-outcome-summary-row strong {
+  color: var(--text);
+}
+.unified-layout .welcome-kicker {
+  color: var(--accent);
+}
+.unified-layout .welcome h1 {
+  font-weight: 600;
+}
+.unified-layout .welcome-cards > button {
+  box-shadow: none;
+}
+.unified-layout .welcome-cards > button:hover {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
+.unified-layout .composer {
+  border-color: var(--border);
+  background: var(--surface);
+}
+.unified-layout .composer > textarea {
+  background: transparent;
+  color: var(--text);
+}
+.unified-layout .composer > textarea::placeholder {
+  color: var(--muted);
+}
+.unified-layout .composer > .resize-vertical {
+  margin: 0;
+  height: 6px;
+  opacity: 0.45;
+}
+.unified-layout .composer-tools-primary .icon-button {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--text);
+}
+.unified-layout .composer-tools-primary .icon-button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface-hover);
+}
+.unified-layout .composer-selectors select {
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.unified-layout .composer-selectors select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.unified-layout .composer-selectors .effort-trigger {
+  color: var(--text);
+  font-size: 14px;
+  box-shadow: none;
+}
+.unified-layout .composer-selectors .effort-trigger[aria-expanded='true'] {
+  border-color: var(--brand-green);
+  background: var(--surface-hover);
+}
+.unified-layout .model-control > svg {
+  color: var(--muted);
+}
+.unified-layout .send-button,
+.unified-layout .primary-button {
+  color: var(--accent-text);
+  background: var(--brand-green);
+  box-shadow: none;
+}
+.unified-layout .send-button:disabled {
+  color: var(--faint);
+  background: var(--surface-hover);
+}
+.unified-layout .send-button.stop {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+.unified-layout .primary-button.danger {
+  background: var(--danger);
+  color: #30110f;
+}
+.unified-layout .composer-bottom {
+  padding: 0 2px;
+}
+.unified-layout .permission-trigger {
+  padding: 4px 2px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.unified-layout .permission-trigger:hover,
+.unified-layout .permission-trigger[aria-expanded='true'] {
+  border-color: transparent;
+  background: var(--surface);
+}
+.unified-layout .permission-trigger strong {
+  font-weight: 400;
+}
+.unified-layout .composer-bottom .queue-control {
+  color: var(--muted);
+}
+.unified-layout .composer-bottom .queue-control:hover {
+  color: var(--text);
+}
+
+.unified-layout .project-context-pane .tree-heading {
+  padding: 14px 16px;
+  color: var(--text);
+}
+.unified-layout .project-context-pane .change-row {
+  margin: 4px 12px;
+  width: calc(100% - 24px);
+  min-height: 44px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.unified-layout .project-context-pane .change-row:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+}
+.unified-layout .project-context-pane .change-row strong {
+  font-size: 13px;
+}
+.unified-layout .project-context-pane .file-row {
+  min-height: 34px;
+}
+.unified-layout .project-context-pane .plan-item {
+  padding: 12px;
+  margin: 4px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.unified-layout .project-context-pane .inspector-footer {
+  background: var(--panel);
+  border-top-color: var(--border-soft);
+}
+.unified-layout .desktop-status-bar {
+  color: var(--muted);
+  background: var(--sidebar);
+}
+.unified-layout .home-update-status strong,
+.unified-layout .home-engine-status strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.unified-layout .home-update-product,
+.unified-layout .home-update-separator {
+  color: var(--muted);
+}
+.unified-layout .home-resource-bar .usage-status-detail {
+  padding: 2px 0;
+}
+.unified-layout .home-resource-bar .usage-status-caption {
+  font-size: 11px;
+}
+.unified-layout .home-update-status.available,
+.unified-layout .home-update-status.downloaded {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+@media (max-height: 740px) {
+  .unified-layout .session-list-panel .session-select {
+    min-height: 40px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+}
