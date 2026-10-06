@@ -22,6 +22,9 @@
 .interactive-terminal .xterm {
   height: 100%;
 }
+:root[data-theme='light'] .interactive-terminal {
+  background: #fff;
+}
 .conversation-jump {
   outline: 2px solid var(--accent);
   outline-offset: 5px;

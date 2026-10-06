@@ -131,6 +131,27 @@ async function assertEffort(value, label) {
     );
     pass('initialize-version');
 
+    phase = 'appearance-selection-and-restart';
+    const appearance = page.getByRole('combobox', { name: '外观主题', exact: true });
+    await appearance.selectOption('light');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+    assert.equal((await request('bootstrap')).settings.theme, 'light');
+    await app.close();
+    await launch();
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+    assert.equal(
+      await page.getByRole('combobox', { name: '外观主题', exact: true }).inputValue(),
+      'light',
+    );
+    assert.equal(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource), 'light');
+    const windowBackground = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getBackgroundColor(),
+    );
+    assert.ok(windowBackground.toLowerCase().endsWith('ffffff'));
+    await page.getByRole('combobox', { name: '外观主题', exact: true }).selectOption('dark');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+    pass('appearance-selection-persists-across-restart');
+
     phase = 'engine-home-status';
     const engine = await request('cli.status', { checkUpdate: true });
     assert.equal(engine.authStatus, 'authenticated');

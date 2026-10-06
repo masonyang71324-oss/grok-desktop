@@ -1,6 +1,7 @@
 export const app: Record<string, string> = {
   工作区导航: 'Workspace navigation',
   工作区状态: 'Workspace status',
+  外观主题: 'Appearance theme',
   调整项目上下文宽度: 'Resize project context',
   终端: 'Terminal',
   预览: 'Preview',

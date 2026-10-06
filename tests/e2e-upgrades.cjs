@@ -398,6 +398,9 @@ async function screenshot(name) {
     pass();
 
     phase = 'native-terminal-input-hidden-retention-stop-restart';
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.getByRole('combobox', { name: '外观主题', exact: true }).selectOption('system');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
     await page.getByRole('button', { name: '交互终端', exact: true }).click();
     const terminalDialog = page.getByRole('dialog', { name: '交互终端', exact: true });
     await terminalDialog.locator('.xterm-helper-textarea').waitFor();
@@ -406,6 +409,7 @@ async function screenshot(name) {
       return state?.status === 'running' && state.log.includes('PS ') && state;
     }, 'Native PowerShell did not start');
     const terminalId = terminal.id;
+    const terminalElement = await terminalDialog.locator('.xterm').elementHandle();
     // Write via xterm's actual keyboard/input path and check terminal output, not echoed input.
     await terminalDialog
       .locator('.xterm-helper-textarea')
@@ -415,6 +419,25 @@ async function screenshot(name) {
       const state = await request('terminal.state', { id: terminalId });
       return state.log.includes('UPGRADE_PTY_OK') && state.log.includes(project) && state;
     }, 'xterm input did not reach native PTY');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForFunction(() => {
+      const viewport = document.querySelector('.interactive-terminal .xterm-scrollable-element');
+      return viewport && getComputedStyle(viewport).backgroundColor === 'rgb(255, 255, 255)';
+    });
+    assert.equal(
+      await terminalElement.evaluate(
+        (node) => node === document.querySelector('.interactive-terminal .xterm'),
+      ),
+      true,
+    );
+    assert.equal((await request('terminal.state', { cwd: project })).id, terminalId);
+    assert.match((await request('terminal.state', { id: terminalId })).log, /UPGRADE_PTY_OK/);
+    await screenshot('terminal-light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.waitForFunction(() => {
+      const viewport = document.querySelector('.interactive-terminal .xterm-scrollable-element');
+      return viewport && getComputedStyle(viewport).backgroundColor === 'rgb(17, 21, 23)';
+    });
     await screenshot('terminal-zh');
     await page.keyboard.press('Escape');
     assert.equal((await request('terminal.state', { id: terminalId })).status, 'running');
@@ -437,6 +460,8 @@ async function screenshot(name) {
     }, 'Explicit restart did not create a new terminal');
     await terminalDialog.getByRole('button', { name: '停止终端', exact: true }).click();
     await page.keyboard.press('Escape');
+    await page.getByRole('combobox', { name: '外观主题', exact: true }).selectOption('dark');
+    await page.emulateMedia({ colorScheme: null });
     pass();
 
     phase = 'isolated-web-module-render-and-capture-original-draft';

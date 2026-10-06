@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import './desktop-tools.css';
@@ -14,6 +14,34 @@ type State = {
   sequence: number;
   exitCode?: number;
 };
+function terminalTheme(): ITheme {
+  if (document.documentElement.dataset.theme !== 'light')
+    return { background: '#111517', foreground: '#e2e8ed' };
+  return {
+    background: '#ffffff',
+    foreground: '#202625',
+    cursor: '#18764b',
+    cursorAccent: '#ffffff',
+    selectionBackground: '#cfe5d8',
+    selectionForeground: '#202625',
+    black: '#242929',
+    red: '#a32627',
+    green: '#18764b',
+    yellow: '#805900',
+    blue: '#245d99',
+    magenta: '#7845a9',
+    cyan: '#176778',
+    white: '#606968',
+    brightBlack: '#626a69',
+    brightRed: '#b32f34',
+    brightGreen: '#247347',
+    brightYellow: '#856000',
+    brightBlue: '#286aa7',
+    brightMagenta: '#8750a4',
+    brightCyan: '#20717d',
+    brightWhite: '#353d3a',
+  };
+}
 export default function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => void }) {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null),
@@ -36,12 +64,19 @@ export default function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: 
       fontFamily: 'Cascadia Mono, Consolas, monospace',
       fontSize: 13,
       scrollback: 4000,
-      theme: { background: '#111517', foreground: '#e2e8ed' },
+      theme: terminalTheme(),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current!);
     terminalRef.current = terminal;
+    const themeObserver = new MutationObserver(() => {
+      terminal.options.theme = terminalTheme();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
     const resize = () => {
       try {
         fit.fit();
@@ -107,6 +142,7 @@ export default function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: 
       live = false;
       unsubscribe();
       observer.disconnect();
+      themeObserver.disconnect();
       input.dispose();
       terminal.dispose();
       terminalRef.current = null;

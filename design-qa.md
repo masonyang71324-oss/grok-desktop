@@ -79,3 +79,15 @@ Inline diff preserves full diff, side-by-side, context folding and add-to-contex
 - Build, changed-file formatting and diff checks passed. Installer exited 0; the installed executable reports version 1.11.0.0 and product name Grok Build Desktop. Its extracted Windows icon is the approved green G (`test-results/installed-brand-icon.png`). The desktop shortcut targets the same historical executable/data installation, and the running window title is Grok Build Desktop.
 
 No unresolved P0/P1/P2 findings remain in the checked states. Whole-product screen-reader certification and every possible upstream custom model catalog are outside this visual integration review.
+
+## 1.11.1 — selectable dark and white themes
+
+Final result: passed.
+
+The approved 1.11.0 desktop layout/branding remains the visual source; the user's new direction is a complete selectable black/white pair. Actual matching-state captures are `test-results/theme-black.jpg` and `theme-white.jpg`, each 1440 × 960 CSS/image pixels. `themes-comparison.jpg` places both together at 690 × 460 without changing aspect ratio. The focused small-window check is `themes-narrow.jpg` (980 × 820), including the visible native theme selector. Captures contain only synthetic test conversations.
+
+The main toolbar now exposes localized Dark, Light and System options, including with the sidebar hidden. Selection persists through the existing settings API; no additional preference store was introduced. Typography, layout proportions, icon assets, copy and core controls stay the same between palettes. Light mode uses neutral white/gray surfaces while green remains the shared brand accent. Its diff text and portal danger-button foregrounds were corrected for readability. The native window and initial renderer derive startup colors from the saved Electron theme; system preference changes update the existing terminal colors without recreating it.
+
+Manual browser verification covered switching both directions and opening the selector at the narrower width; no clipping or substantive visual mismatch was found. Automated coverage includes exact theme persistence, retained drafts/attachments, system changes versus fixed themes, failure rollback and focus preservation. 631/631 full tests passed; after the startup-color adjustment, 39/39 related state/UI checks passed. The final packaged smoke workflow confirms selection across restart, native light mode and window background, all existing main flows and no renderer errors. The 10 packaged upgrade workflows additionally verified light/dark xterm colors with the same terminal DOM, process id and retained output. An outdated xterm viewport selector was corrected to the installed xterm 6 scrollable element during test verification.
+
+Build, formatting and diff checks passed. NSIS installation exited 0; the installed application reports 1.11.1.0 and retains its existing data/install identity. No unresolved P0/P1/P2 issue remains in this scope.

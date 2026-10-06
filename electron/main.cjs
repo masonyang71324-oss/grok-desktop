@@ -1249,7 +1249,7 @@ function createWindow() {
     minHeight: Math.min(680, area.height),
     show: false,
     title: 'Grok Build Desktop',
-    backgroundColor: '#111517',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d110f' : '#ffffff',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '../assets/icon.png'),
     webPreferences: {

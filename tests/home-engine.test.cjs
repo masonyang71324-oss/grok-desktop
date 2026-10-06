@@ -137,6 +137,133 @@ test('unified navigation preserves the composer and exposes files, tasks and foo
   assert.equal(await page.locator('.inspector').isVisible(), true);
 });
 
+test('the appearance shortcut persists its selection without replacing drafts or attachments and stays available without the sidebar', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.evaluate(() => {
+    const request = window.desktop.request;
+    window.desktop.request = (command, payload) =>
+      command === 'dialog.attach'
+        ? Promise.resolve({
+            ok: true,
+            data: [
+              { name: 'keep.txt', path: 'C:/keep.txt', kind: 'text', text: 'Keep this attachment' },
+            ],
+          })
+        : request(command, payload);
+  });
+  const draft = page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true });
+  await draft.fill('切换主题也保留这段任务');
+  await page.getByRole('button', { name: '添加文件或图片', exact: true }).click();
+  await page.locator('.attachment-name').filter({ hasText: 'keep.txt' }).waitFor();
+  const appearance = page.getByRole('combobox', { name: '外观主题', exact: true });
+  await appearance.selectOption('light');
+  await page.waitForFunction(
+    () => document.documentElement.dataset.theme === 'light' && window.settings.theme === 'light',
+  );
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.calls
+        .filter((call) => call.command === 'settings.save' && call.payload.theme)
+        .map((call) => call.payload),
+    ),
+    [{ theme: 'light' }],
+  );
+  assert.equal(await draft.inputValue(), '切换主题也保留这段任务');
+  assert.equal(await page.locator('.attachment-name').count(), 1);
+  assert.equal(await page.locator('.attachment-name').textContent(), 'keep.txt');
+  await appearance.selectOption('light');
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.filter((call) => call.command === 'settings.save' && call.payload.theme)
+          .length,
+    ),
+    1,
+  );
+  await page.getByRole('button', { name: '收起侧边栏', exact: true }).click();
+  assert.equal(await appearance.isVisible(), true);
+  await appearance.selectOption('dark');
+  await page.waitForFunction(
+    () => document.documentElement.dataset.theme === 'dark' && window.settings.theme === 'dark',
+  );
+  assert.equal(await draft.inputValue(), '切换主题也保留这段任务');
+  assert.equal(await page.locator('.attachment-name').textContent(), 'keep.txt');
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((call) => call.command === 'bootstrap').length),
+    1,
+  );
+});
+
+test('system appearance follows media changes while a fixed theme remains fixed', async (t) => {
+  const page = await fixture(t, { language: 'en', authStatus: 'authenticated' });
+  const appearance = page.getByRole('combobox', { name: 'Appearance theme', exact: true });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await appearance.selectOption('system');
+  await page.waitForFunction(
+    () => document.documentElement.dataset.theme === 'light' && window.settings.theme === 'system',
+  );
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  assert.equal(await appearance.inputValue(), 'system');
+  await appearance.selectOption('light');
+  await page.waitForFunction(
+    () => document.documentElement.dataset.theme === 'light' && window.settings.theme === 'light',
+  );
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
+  assert.equal(await appearance.inputValue(), 'light');
+  assert.equal(await page.evaluate(() => window.settings.theme), 'light');
+});
+
+test('a pending appearance save is disabled and a failed save keeps the previous theme', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.evaluate(() => {
+    const request = window.desktop.request;
+    window.desktop.request = (command, payload) =>
+      command === 'settings.save' && payload.theme
+        ? new Promise((resolve) => {
+            window.rejectThemeSave = () => resolve({ ok: false, error: 'Theme save failed' });
+          })
+        : request(command, payload);
+  });
+  const appearance = page.getByRole('combobox', { name: '外观主题', exact: true });
+  await appearance.focus();
+  await appearance.selectOption('light');
+  await page.waitForFunction(
+    () =>
+      typeof window.rejectThemeSave === 'function' &&
+      document.querySelector('select[aria-label="外观主题"]').disabled,
+  );
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  assert.equal(await page.evaluate(() => window.settings.theme), 'dark');
+  const failureNotice = page.locator('.toast').filter({ hasText: 'Theme save failed' }).waitFor();
+  await page.evaluate(() => window.rejectThemeSave());
+  await failureNotice;
+  await page.waitForFunction(
+    () => !document.querySelector('select[aria-label="外观主题"]').disabled,
+  );
+  assert.equal(await appearance.inputValue(), 'dark');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  assert.equal(await appearance.evaluate((node) => node === document.activeElement), true);
+  await appearance.selectOption('light');
+  await page.waitForFunction(
+    () => document.querySelector('select[aria-label="外观主题"]').disabled,
+  );
+  const draft = page.getByRole('textbox', { name: '发送给 Grok 的消息', exact: true });
+  await draft.fill('保存期间继续输入');
+  await page.evaluate(() => window.rejectThemeSave());
+  await page.waitForFunction(
+    () => !document.querySelector('select[aria-label="外观主题"]').disabled,
+  );
+  assert.equal(await draft.evaluate((node) => node === document.activeElement), true);
+  assert.equal(await draft.inputValue(), '保存期间继续输入');
+  assert.equal(await appearance.inputValue(), 'dark');
+});
+
 test('wide project context stays independent of sessions, tasks, and sidebar visibility', async (t) => {
   const page = await fixture(t, { authStatus: 'authenticated' });
   await page.setViewportSize({ width: 1440, height: 900 });

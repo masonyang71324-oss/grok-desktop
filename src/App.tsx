@@ -118,6 +118,7 @@ import './workspace-upgrades.css';
 import './desktop-tools.css';
 import UsageStatus from './UsageStatus';
 import EffortControl from './EffortControl';
+import ThemeControl from './ThemeControl';
 import './navigation-panels.css';
 import './desktop-layout.css';
 import './desktop-brand.css';
@@ -147,7 +148,8 @@ import {
 const defaults: Settings = {
   language: 'zh-CN',
   grokPath: '',
-  theme: 'dark',
+  // Electron applies the saved native theme before creating this renderer.
+  theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
   modelId: '',
   effort: '',
   permissionMode: 'ask',
@@ -969,7 +971,7 @@ export default function App() {
       buffer.dispose();
     };
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () =>
       (document.documentElement.dataset.theme =
@@ -2170,6 +2172,17 @@ export default function App() {
           <IconButton label={t('额度与上下文')} onClick={() => setDialog('usage')}>
             <Gauge size={17} />
           </IconButton>
+          <ThemeControl
+            value={settings.theme}
+            disabled={initializing}
+            onChange={async (theme) => {
+              try {
+                await saveSettings({ theme });
+              } catch (error) {
+                notify(errorText(error));
+              }
+            }}
+          />
           {currentSummary && (
             <div className="topbar-more">
               <IconButton label={t('当前会话操作')} onClick={() => setTopbarMenu(!topbarMenu)}>

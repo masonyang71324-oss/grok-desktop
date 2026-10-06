@@ -75,23 +75,32 @@ html:root {
   --shadow: 0 14px 44px #0005;
 }
 html:root[data-theme='light'] {
-  --bg: #f8faf8;
-  --sidebar: #eff4f0;
-  --panel: #f4f8f5;
+  --bg: #fafafa;
+  --sidebar: #f4f5f5;
+  --panel: #f7f8f8;
   --surface: #fff;
-  --surface-hover: #e6efe8;
-  --surface-raised: #f0f6f2;
-  --border: #c5d5c9;
-  --border-soft: #dae5dd;
-  --text: #192c21;
-  --muted: #51695a;
-  --faint: #64796b;
+  --surface-hover: #ecefef;
+  --surface-raised: #f5f6f6;
+  --border: #cfd5d3;
+  --border-soft: #e0e5e3;
+  --text: #202625;
+  --muted: #5c6562;
+  --faint: #6a746f;
   --accent: #18764b;
   --accent-soft: #e0efe4;
   --accent-text: #fff;
   --brand-green: #18764b;
   --danger: #b34240;
-  --shadow: 0 14px 44px #203a2824;
+  --shadow: 0 14px 44px #0000001c;
+}
+/* Modals are portalled to body, outside .unified-layout. */
+html:root[data-theme='light'] .primary-button.danger {
+  color: #fff;
+}
+/* Keep word highlights readable while the row backgrounds retain +/- meaning. */
+html:root[data-theme='light'] .structured-diff .diff-add,
+html:root[data-theme='light'] .structured-diff .diff-remove {
+  color: var(--text);
 }
 
 .app.unified-layout {
