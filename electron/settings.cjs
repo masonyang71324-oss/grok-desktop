@@ -83,7 +83,7 @@ function normalizeSettings(input = {}) {
     ui: {
       zoomPercent: normalizeZoomPercent(input.ui?.zoomPercent),
       sidebar: input.ui?.sidebar !== false,
-      inspector: input.ui?.inspector !== false,
+      inspector: input.ui?.inspector === true,
       navigationTab: ['sessions', 'files', 'tasks'].includes(input.ui?.navigationTab)
         ? input.ui.navigationTab
         : input.ui?.inspector === true

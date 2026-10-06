@@ -198,6 +198,20 @@ test('settings retain UI/window preferences and resolve GROK_HOME without a pers
   assert.equal(settings.window.maximized, true);
 });
 
+test('missing inspector preference preserves session navigation and explicit pane choices', () => {
+  for (const input of [{}, { ui: {} }]) {
+    const { ui } = normalizeSettings(input);
+    assert.equal(ui.inspector, false, 'an absent preference must not open the context pane');
+    assert.equal(ui.navigationTab, 'sessions');
+  }
+  for (const inspector of [false, true]) {
+    const { ui } = normalizeSettings({ ui: { inspector, navigationTab: 'sessions' } });
+    assert.equal(ui.inspector, inspector);
+    assert.equal(ui.navigationTab, 'sessions');
+  }
+  assert.equal(normalizeSettings({ ui: { inspector: true } }).ui.navigationTab, 'files');
+});
+
 test('draft keystrokes debounce disk serialization while flush and session switches save immediately', async (t) => {
   const { createDraftStore } = await import('../src/drafts.mjs');
   t.mock.timers.enable({ apis: ['setTimeout'] });
