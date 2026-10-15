@@ -6,7 +6,8 @@ const { getLocale } = require('./i18n.cjs');
 const messages = {
   '请选择有效的 Office 文件。': 'Select a valid Office file.',
   '暂不支持此 Office 预览格式。': 'This Office preview format is unsupported.',
-  'Office 排版预览支持不超过 10 MB 的文件。': 'Office layout preview supports files up to 10 MB.',
+  'Office 排版预览最多处理 10 MB，此限制仅适用于预览；可用默认程序打开原文件。':
+    'Office layout preview processes up to 10 MB. This is only a preview limit; open the original file in its default app.',
   'Office 排版预览超时，请用默认程序打开原文件。':
     'Office layout preview timed out. Open the original file with the default app.',
   '无法读取排版预览。请用默认程序打开原文件，或另存为 DOCX、XLSX、PPTX 后重试。':
@@ -43,10 +44,14 @@ async function previewOffice({ path: filename }, { timeoutMs = 30000 } = {}) {
   const stat = await fs.stat(filename);
   if (!stat.isFile()) throw new Error(message('请选择有效的 Office 文件。'));
   if (stat.size > 10 * 1024 * 1024)
-    throw new Error(message('Office 排版预览支持不超过 10 MB 的文件。'));
+    throw new Error(
+      message('Office 排版预览最多处理 10 MB，此限制仅适用于预览；可用默认程序打开原文件。'),
+    );
   const bytes = await fs.readFile(filename);
   if (bytes.length > 10 * 1024 * 1024)
-    throw new Error(message('Office 排版预览支持不超过 10 MB 的文件。'));
+    throw new Error(
+      message('Office 排版预览最多处理 10 MB，此限制仅适用于预览；可用默认程序打开原文件。'),
+    );
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'office-preview-worker.cjs'), {
       workerData: { bytes, extension },

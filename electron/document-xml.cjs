@@ -8,13 +8,14 @@ const XML_LIMIT = 32 * 1024 * 1024;
 function error(code, message = code) {
   return Object.assign(new Error(message), { code });
 }
-function createOutput() {
+function createOutput({ maxTextBytes = TEXT_LIMIT } = {}) {
   const parts = [];
   let size = 0;
   return {
+    maxTextBytes,
     add(value) {
       size += Buffer.byteLength(value, 'utf8');
-      if (size > TEXT_LIMIT) throw error('text-limit');
+      if (size > maxTextBytes) throw error('text-limit');
       parts.push(value);
     },
     finish() {
@@ -27,7 +28,7 @@ function createOutput() {
 function decodeXml(bytes) {
   if (typeof bytes === 'string') return bytes;
   const b = Buffer.from(bytes);
-  if (b.length > XML_LIMIT) throw error('text-limit');
+  if (b.length > XML_LIMIT) throw error('resource-limit');
   let encoding = 'utf-8';
   if ((b[0] === 0xff && b[1] === 0xfe) || (b[0] === 0x3c && b[1] === 0)) encoding = 'utf-16le';
   if ((b[0] === 0xfe && b[1] === 0xff) || (b[0] === 0 && b[1] === 0x3c)) encoding = 'utf-16be';
@@ -56,7 +57,7 @@ function parseXml(bytes, { xhtml = false } = {}) {
     }
   });
   parser.on('opentag', (tag) => {
-    if (++count > 250000 || stack.length > 128) throw error('text-limit');
+    if (++count > 250000 || stack.length > 128) throw error('resource-limit');
     const node = { local: tag.local, uri: tag.uri, attrs: tag.attributes, children: [] };
     if (stack.length) stack.at(-1).children.push(node);
     else root = node;
@@ -123,7 +124,7 @@ async function readZip(bytes) {
           total += chunk.length;
           if (size > XML_LIMIT || total > 64 * 1024 * 1024) {
             stream.pause();
-            reject(error('text-limit'));
+            reject(error('resource-limit'));
           } else chunks.push(chunk);
         });
         stream.on('error', reject);

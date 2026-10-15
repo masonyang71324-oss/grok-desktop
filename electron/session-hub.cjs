@@ -297,10 +297,6 @@ class SessionHub {
     // Future schedules do not write now; active tasks, subagents and workflows do.
     if (!['scheduled_task_created', 'scheduled_task_deleted'].includes(event.kind))
       entry.activity.onEvent(event);
-    if (!entry.activity.background.size && entry.backgroundDone) {
-      entry.backgroundDone();
-      entry.backgroundDone = null;
-    }
     if (event.type === 'turn-start' && foreground) {
       foreground.accepted = true;
       event.startedAt = foreground.startedAt;
@@ -334,7 +330,22 @@ class SessionHub {
     }
     if (event.type === 'permission-resolved') {
       entry.permissions.delete(event.requestId);
-      if (entry.running && !entry.permissions.size) entry.status = 'running';
+      if (!entry.permissions.size)
+        entry.status = entry.control
+          ? 'running'
+          : entry.running
+            ? entry.running.finishing
+              ? 'background'
+              : 'running'
+            : entry.error
+              ? 'error'
+              : entry.paused
+                ? 'paused'
+                : 'idle';
+    }
+    if (!entry.activity.background.size && !entry.permissions.size && entry.backgroundDone) {
+      entry.backgroundDone();
+      entry.backgroundDone = null;
     }
     if (event.type === 'update' && foreground) {
       event.update = { ...event.update, _desktopTurnId: foreground.turnId };
@@ -393,6 +404,7 @@ class SessionHub {
     }
     this.emit(event);
     if (event.type !== 'update') this._changed();
+    if (event.type === 'permission-resolved' && !entry.running) this._drain();
   }
 
   async newSession(payload) {
@@ -460,7 +472,12 @@ class SessionHub {
       if (entry.control) throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
       return this._track(this._sendControl(entry, payload));
     }
-    if (entry.running || entry.queue.length || this.locks.has(this._key(entry.cwd)))
+    if (
+      entry.running ||
+      entry.permissions.size ||
+      entry.queue.length ||
+      this.locks.has(this._key(entry.cwd))
+    )
       return this.enqueue(payload);
     entry.paused = false;
     return this._start(entry, this._item({ ...payload, cwd: entry.cwd }));
@@ -521,7 +538,7 @@ class SessionHub {
       entry.error = event.message;
     }
     entry.control = null;
-    entry.status = 'background';
+    entry.status = entry.permissions.size ? 'waiting' : 'background';
     control.resolve();
     this._changed();
   }
@@ -560,6 +577,7 @@ class SessionHub {
     for (const entry of this.sessions.values()) {
       if (
         entry.running ||
+        entry.permissions.size ||
         entry.paused ||
         !entry.queue.length ||
         this.locks.has(this._key(entry.cwd))
@@ -661,10 +679,13 @@ class SessionHub {
     entry.error = failed ? event.message : entry.error;
     try {
       await running.preparing;
-      while ((entry.activity.background.size || entry.control) && !this.closed) {
-        entry.status = 'background';
+      while (
+        (entry.activity.background.size || entry.permissions.size || entry.control) &&
+        !this.closed
+      ) {
+        entry.status = entry.permissions.size ? 'waiting' : 'background';
         this._changed();
-        if (entry.activity.background.size)
+        if (entry.activity.background.size || entry.permissions.size)
           await new Promise((resolve) => {
             entry.backgroundDone = resolve;
           });
@@ -707,14 +728,15 @@ class SessionHub {
       ...(checkpoint?.checkpointSkipped ? { checkpointSkipped: true } : {}),
     };
     entry.running = null;
-    entry.permissions.clear();
-    entry.status = entry.interrupted
-      ? 'interrupted'
-      : entry.error
-        ? 'error'
-        : entry.paused
-          ? 'paused'
-          : 'idle';
+    entry.status = entry.permissions.size
+      ? 'waiting'
+      : entry.interrupted
+        ? 'interrupted'
+        : entry.error
+          ? 'error'
+          : entry.paused
+            ? 'paused'
+            : 'idle';
     this.locks.delete(this._key(entry.cwd));
     this._changed();
     this.emit({
@@ -733,7 +755,13 @@ class SessionHub {
     else entry.status = 'paused';
     if (entry.control) entry.control.cancelling = true;
     this._changed();
-    if (!entry.client.activeTurn) return;
+    if (
+      !entry.client.activeTurn &&
+      !entry.client._preparing &&
+      !entry.permissions.size &&
+      !entry.client._permissions?.size
+    )
+      return;
     return entry.client.cancel(payload);
   }
 

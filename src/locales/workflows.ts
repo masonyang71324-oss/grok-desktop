@@ -8,6 +8,10 @@ export const workflows: Record<string, string> = {
     'Word text is extracted automatically. Click an attachment to preview.',
   '正在读取附件…': 'Reading attachment…',
   '以下为发送给 Grok 的文字。': 'This is the text that will be sent to Grok.',
+  '为保持流畅，大文件暂不生成排版预览；可继续发送或用默认程序打开原文件。':
+    'To keep the app responsive, layout preview is skipped for large files. You can still send the attachment or open the original in its default app.',
+  '当前仅显示预览摘录；发送使用完整内容，不会截掉其余部分。':
+    'Only an excerpt is shown here. Sending uses the complete content without dropping the remaining text.',
   移除: 'Remove',
   运行: 'Run',
   停止: 'Stop',

@@ -222,6 +222,8 @@ export default function App() {
         dataUrl?: string;
         notice?: string;
         native?: boolean;
+        truncated?: boolean;
+        layoutAvailable?: boolean;
         loading?: boolean;
         error?: string;
       })
@@ -953,7 +955,10 @@ export default function App() {
         setRun(null);
         setPending(false);
         setCancelling(false);
-        setPermissions((items) => items.filter((item) => item.sessionId !== event.sessionId));
+        // Background tools may still need approval after the foreground reply ends.
+        // Successful completion leaves those requests to permission-resolved/tasks-changed.
+        if (event.type === 'turn-error' || reason === 'cancelled')
+          setPermissions((items) => items.filter((item) => item.sessionId !== event.sessionId));
         if (event.type === 'turn-error') {
           setTurnError(event.message);
           updateAuthentication(event.message);
@@ -1472,6 +1477,8 @@ export default function App() {
         dataUrl?: string;
         notice?: string;
         native?: boolean;
+        truncated?: boolean;
+        layoutAvailable?: boolean;
       }>('attachment.preview', {
         path: file.path,
       });
@@ -3044,39 +3051,45 @@ export default function App() {
             onClose={() => setAttachmentPreview(null)}
             wide={canPreviewOffice(attachmentPreview.path)}
           >
-            {canPreviewOffice(attachmentPreview.path) && (
-              <>
-                <div className="desktop-tool-actions">
-                  <button
-                    className={officeLayout ? 'primary-button' : 'secondary-button'}
-                    onClick={() => setOfficeLayout(true)}
-                  >
-                    {t('排版预览')}
-                  </button>
-                  <button
-                    className={!officeLayout ? 'primary-button' : 'secondary-button'}
-                    onClick={() => setOfficeLayout(false)}
-                  >
-                    {t('文字内容')}
-                  </button>
-                </div>
-                {officeLayout && (
-                  <OfficePreview
-                    path={attachmentPreview.path}
-                    name={attachmentPreview.name}
-                    onExternal={() => {
-                      void request('system.open', {
-                        target: 'file',
-                        path: attachmentPreview.path,
-                      }).catch((error) => notify(errorText(error)));
-                    }}
-                  />
-                )}
-              </>
-            )}
+            {canPreviewOffice(attachmentPreview.path) &&
+              !attachmentPreview.loading &&
+              attachmentPreview.layoutAvailable !== false && (
+                <>
+                  <div className="desktop-tool-actions">
+                    <button
+                      className={officeLayout ? 'primary-button' : 'secondary-button'}
+                      onClick={() => setOfficeLayout(true)}
+                    >
+                      {t('排版预览')}
+                    </button>
+                    <button
+                      className={!officeLayout ? 'primary-button' : 'secondary-button'}
+                      onClick={() => setOfficeLayout(false)}
+                    >
+                      {t('文字内容')}
+                    </button>
+                  </div>
+                  {officeLayout && (
+                    <OfficePreview
+                      path={attachmentPreview.path}
+                      name={attachmentPreview.name}
+                      onExternal={() => {
+                        void request('system.open', {
+                          target: 'file',
+                          path: attachmentPreview.path,
+                        }).catch((error) => notify(errorText(error)));
+                      }}
+                    />
+                  )}
+                </>
+              )}
             <div
               hidden={
-                officeLayout && canPreviewOffice(attachmentPreview.path) && !attachmentPreview.error
+                officeLayout &&
+                canPreviewOffice(attachmentPreview.path) &&
+                !attachmentPreview.error &&
+                !attachmentPreview.loading &&
+                attachmentPreview.layoutAvailable !== false
               }
             >
               {attachmentPreview.dataUrl && (
@@ -3138,7 +3151,17 @@ export default function App() {
                   )}
                 </>
               )}
-              {attachmentPreview.notice && (
+              {attachmentPreview.layoutAvailable === false && (
+                <p className="attachment-notice">
+                  {t('为保持流畅，大文件暂不生成排版预览；可继续发送或用默认程序打开原文件。')}
+                </p>
+              )}
+              {attachmentPreview.truncated && (
+                <p className="attachment-notice">
+                  {t('当前仅显示预览摘录；发送使用完整内容，不会截掉其余部分。')}
+                </p>
+              )}
+              {attachmentPreview.notice && !attachmentPreview.truncated && (
                 <p className="attachment-notice">{t('以下为发送给 Grok 的文字。')}</p>
               )}
               {attachmentPreview.native && (

@@ -62,6 +62,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/e2e-login.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/e2e-large-attachments.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test tests/terminal-native.test.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/e2e-workflows.cjs

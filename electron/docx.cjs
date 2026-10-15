@@ -2,12 +2,15 @@
 const { StringDecoder } = require('node:string_decoder');
 const OpenOfficeExtractor = require('word-extractor/lib/open-office-extractor');
 const BufferReader = require('word-extractor/lib/buffer-reader');
+const FileReader = require('word-extractor/lib/file-reader');
 
 // word-extractor is pinned to 1.0.4: retain its document semantics while fixing
 // split UTF-8 chunks and modern textboxes without duplicating alternate markup.
 class DocxExtractor extends OpenOfficeExtractor {
-  constructor() {
+  constructor({ maxTextBytes = 1024 * 1024 } = {}) {
     super();
+    this.maxTextBytes = maxTextBytes;
+    this.textBytes = 0;
     // These Word containers use the same document XML; VBA parts are never read.
     for (const type of [
       'application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml',
@@ -54,8 +57,14 @@ class DocxExtractor extends OpenOfficeExtractor {
       if (node.name === 'mc:AlternateContent') alternates.pop();
     });
     parser.on('text', (text) => {
-      if (!skipped && ['content', 'cell', 'textbox'].includes(this._context?.[0]))
+      if (!skipped && ['content', 'cell', 'textbox'].includes(this._context?.[0])) {
+        this.textBytes += Buffer.byteLength(text);
+        if (this.textBytes > this.maxTextBytes)
+          throw Object.assign(new Error('Local Word conversion text budget exceeded'), {
+            code: 'text-limit',
+          });
         this._pieces.push(text);
+      }
     });
     return parser;
   }
@@ -71,4 +80,12 @@ class DocxExtractor extends OpenOfficeExtractor {
   }
 }
 
-module.exports = (bytes) => new DocxExtractor().extract(new BufferReader(bytes));
+module.exports = async (source, options = {}) => {
+  const reader = typeof source === 'string' ? new FileReader(source) : new BufferReader(source);
+  await reader.open();
+  try {
+    return await new DocxExtractor(options).extract(reader);
+  } finally {
+    await reader.close();
+  }
+};

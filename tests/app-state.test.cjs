@@ -728,6 +728,75 @@ test('active task switching retains runtime and isolates background connection a
   }
 });
 
+test('normal foreground completion retains a background approval until its authoritative resolution', async () => {
+  const f = await fixture();
+  try {
+    await f.view.loadConversation(summaries[0]);
+    await settle();
+    f.emit({ type: 'turn-start', sessionId: 'session-a', turnId: 'parent-turn' });
+    for (const sessionId of ['session-a', 'session-b'])
+      f.emit({
+        type: 'permission',
+        sessionId,
+        requestId: 17,
+        params: { sessionId, toolCall: { title: 'Background task needs approval' }, options: [] },
+      });
+    await settle();
+    assert.equal(f.view.selectedPermission.sessionId, 'session-a');
+    f.emit({
+      type: 'turn-end',
+      sessionId: 'session-a',
+      turnId: 'parent-turn',
+      result: { stopReason: 'end_turn' },
+    });
+    await settle();
+    assert.equal(f.view.run, null);
+    assert.equal(f.view.permissions.length, 2);
+    assert.equal(f.view.selectedPermission.sessionId, 'session-a');
+    f.emit({ type: 'permission-resolved', sessionId: 'session-a', requestId: 17 });
+    await settle();
+    assert.equal(f.view.permissions.length, 1);
+    assert.equal(f.view.selectedPermission.sessionId, 'session-b');
+    assert.equal(f.view.selectedPermission.requestId, 17);
+    f.emit({ type: 'permission-resolved', sessionId: 'session-b', requestId: 17 });
+    await settle();
+    assert.equal(f.view.selectedPermission, undefined);
+  } finally {
+    f.close();
+  }
+});
+
+for (const outcome of ['error', 'cancelled'])
+  test(`${outcome} foreground completion clears its approvals without clearing another session`, async () => {
+    const f = await fixture();
+    try {
+      await f.view.loadConversation(summaries[0]);
+      await settle();
+      f.emit({ type: 'turn-start', sessionId: 'session-a', turnId: 'parent-turn' });
+      for (const sessionId of ['session-a', 'session-b'])
+        f.emit({
+          type: 'permission',
+          sessionId,
+          requestId: 17,
+          params: { sessionId, options: [] },
+        });
+      f.emit({
+        type: outcome === 'error' ? 'turn-error' : 'turn-end',
+        sessionId: 'session-a',
+        turnId: 'parent-turn',
+        ...(outcome === 'error'
+          ? { message: 'Explicit task failure' }
+          : { result: { stopReason: 'cancelled' } }),
+      });
+      await settle();
+      assert.equal(f.view.permissions.length, 1);
+      assert.equal(f.view.selectedPermission.sessionId, 'session-b');
+      assert.equal(f.view.selectedPermission.requestId, 17);
+    } finally {
+      f.close();
+    }
+  });
+
 test('explicit queue preserves inline context and image submission reaches the main process without native capability', async () => {
   const f = await fixture();
   try {

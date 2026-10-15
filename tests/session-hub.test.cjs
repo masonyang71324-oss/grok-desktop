@@ -192,6 +192,74 @@ test('two sessions isolate permission IDs, cancellation and live reload snapshot
   assert.equal(hub.listTasks()[1].status, 'waiting');
 });
 
+test('background approvals stay waiting after the parent ends and keep the workspace queue locked', async (t) => {
+  let checkpoints = 0;
+  const { hub, clients } = fixture({
+    afterTurn: async () => {
+      checkpoints++;
+    },
+  });
+  t.after(() => hub.dispose());
+  const a = await hub.newSession({ cwd: '/same' });
+  const b = await hub.newSession({ cwd: '/same' });
+  await hub.send({ ...a, text: 'start background worker' });
+  clients[1].background(true);
+  clients[1].permission();
+  clients[1].finish();
+  await tick();
+  assert.equal(hub.listTasks()[0].status, 'waiting');
+  assert.equal((await hub.loadSession(a)).runtime.permissions.length, 1);
+  assert.ok((await hub.send({ ...b, text: 'queued next' })).queueId);
+  clients[1].background(false);
+  await tick();
+  assert.equal(checkpoints, 0, 'An unresolved tool approval can still permit workspace writes');
+  assert.deepEqual(clients[2].sent, []);
+  hub.respondPermission({ sessionId: a.sessionId, requestId: 1, optionId: 'yes' });
+  await tick();
+  assert.equal(checkpoints, 1);
+  assert.deepEqual(clients[2].sent, ['queued next']);
+});
+
+test('late background approval resolution restores background status and keeps same IDs isolated', async (t) => {
+  const { hub, clients } = fixture();
+  t.after(() => hub.dispose());
+  const a = await hub.newSession({ cwd: '/a' });
+  const b = await hub.newSession({ cwd: '/b' });
+  for (const [session, client] of [
+    [a, clients[1]],
+    [b, clients[2]],
+  ]) {
+    await hub.send({ ...session, text: 'background' });
+    client.background(true);
+    client.finish();
+  }
+  await tick();
+  clients[1].permission();
+  clients[2].permission();
+  assert.throws(() => hub.respondPermission({ requestId: 1, optionId: 'yes' }));
+  hub.respondPermission({ sessionId: a.sessionId, requestId: 1, optionId: 'yes' });
+  assert.equal(hub.listTasks()[0].status, 'background');
+  assert.equal(hub.listTasks()[1].status, 'waiting');
+  assert.equal((await hub.loadSession(b)).runtime.permissions.length, 1);
+  clients[1].background(false);
+  hub.respondPermission({ sessionId: b.sessionId, requestId: 1, optionId: 'yes' });
+  clients[2].background(false);
+  await tick();
+});
+
+test('cancel forwards to clear approvals when the foreground prompt has already ended', async (t) => {
+  const { hub, clients } = fixture();
+  t.after(() => hub.dispose());
+  const a = await hub.newSession({ cwd: '/a' });
+  await hub.send({ ...a, text: 'background' });
+  clients[1].background(true);
+  clients[1].finish();
+  await tick();
+  clients[1].permission();
+  await hub.cancel(a);
+  assert.equal(clients[1].cancelled, true);
+});
+
 test('cached text compaction preserves live deltas, turn boundaries, attachments and session isolation', async (t) => {
   const { hub, clients, events } = fixture();
   t.after(() => hub.dispose());

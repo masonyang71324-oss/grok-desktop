@@ -821,6 +821,147 @@ test('cancel keeps the turn active until server completion and settles permissio
   assert.ok(f.events.some((e) => e.type === 'permission-resolved' && e.requestId === 'p'));
 });
 
+test('successful foreground completion preserves pending and later background approvals', async (t) => {
+  const f = fixture(t);
+  await f.client.newSession({ cwd: 'C:\\project' });
+  await f.client.send({ sessionId: 'session-a', text: 'start a background subagent' });
+  await tick();
+  f.child().deliver({
+    jsonrpc: '2.0',
+    method: '_x.ai/session_notification',
+    params: {
+      sessionId: 'session-a',
+      update: { sessionUpdate: 'subagent_spawned', subagent_id: 'background-worker' },
+    },
+  });
+  const request = (id) =>
+    f.child().deliver({
+      jsonrpc: '2.0',
+      id,
+      method: 'session/request_permission',
+      params: { sessionId: 'session-a', options: [{ optionId: 'once', kind: 'allow_once' }] },
+    });
+  request('before-parent-end');
+  f.child().reply(f.child().prompt, { stopReason: 'end_turn' });
+  await tick();
+  assert.equal(f.client.activeTurn, null);
+  assert.equal(
+    f.received.some((item) => item.id === 'before-parent-end' && !item.method),
+    false,
+  );
+  assert.equal(
+    f.events.some((item) => item.type === 'permission-resolved'),
+    false,
+  );
+  request('after-parent-end');
+  await tick();
+  for (const requestId of ['before-parent-end', 'after-parent-end']) {
+    f.client.respondPermission({ requestId, optionId: 'once' });
+    assert.deepEqual(
+      f.received.find((item) => item.id === requestId && !item.method).result.outcome,
+      { outcome: 'selected', optionId: 'once' },
+    );
+  }
+});
+
+for (const permissionMode of ['read', 'auto']) {
+  test(`known-session background approvals honor ${permissionMode} mode after the parent completes`, async (t) => {
+    const f = fixture(t, () => false, { authorizeRead: async () => true });
+    await f.client.newSession({ cwd: 'C:\\project', permissionMode });
+    await f.client.send({ sessionId: 'session-a', text: 'start work' });
+    await tick();
+    f.child().reply(f.child().prompt, { stopReason: 'end_turn' });
+    await tick();
+    f.child().deliver({
+      jsonrpc: '2.0',
+      id: 'background-policy',
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'session-a',
+        toolCall: structuredClone(readPermissions.read_file),
+        options: [{ optionId: 'once', kind: 'allow_once' }],
+      },
+    });
+    await tick();
+    assert.deepEqual(
+      f.received.find((item) => item.id === 'background-policy' && !item.method)?.result.outcome,
+      { outcome: 'selected', optionId: 'once' },
+    );
+  });
+}
+
+test('a read authorization still answers its live request after normal foreground completion', async (t) => {
+  let finishCheck;
+  const f = fixture(t, () => false, {
+    authorizeRead: () =>
+      new Promise((resolve) => {
+        finishCheck = resolve;
+      }),
+  });
+  await f.client.newSession({ cwd: 'C:\\project', permissionMode: 'read' });
+  await f.client.send({ sessionId: 'session-a', text: 'start work' });
+  await tick();
+  f.child().deliver({
+    jsonrpc: '2.0',
+    id: 'checked-after-parent-end',
+    method: 'session/request_permission',
+    params: {
+      sessionId: 'session-a',
+      toolCall: structuredClone(readPermissions.read_file),
+      options: [{ optionId: 'once', kind: 'allow_once' }],
+    },
+  });
+  await tick();
+  f.child().reply(f.child().prompt, { stopReason: 'end_turn' });
+  await tick();
+  finishCheck(true);
+  await tick();
+  assert.deepEqual(
+    f.received
+      .filter((item) => item.id === 'checked-after-parent-end' && !item.method)
+      .map((item) => item.result.outcome),
+    [{ outcome: 'selected', optionId: 'once' }],
+  );
+});
+
+for (const operation of ['cancel', 'delete', 'dispose', 'error']) {
+  test(`${operation} clears pending background approvals without a foreground turn`, async (t) => {
+    const f = fixture(t, (req, child) => {
+      if (req.method !== '_x.ai/session/delete') return false;
+      child.reply(req, { success: true });
+      return true;
+    });
+    await f.client.newSession({ cwd: 'C:\\project' });
+    f.child().deliver({
+      jsonrpc: '2.0',
+      id: 'pending-background',
+      method: 'session/request_permission',
+      params: { sessionId: 'session-a', options: [{ optionId: 'once', kind: 'allow_once' }] },
+    });
+    await tick();
+    if (operation === 'cancel') await f.client.cancel({ sessionId: 'session-a' });
+    else if (operation === 'delete') await f.client.deleteSession({ sessionId: 'session-a' });
+    else if (operation === 'dispose') f.client.dispose();
+    else f.child().emit('exit', 1, null);
+    await tick();
+    assert.throws(
+      () => f.client.respondPermission({ requestId: 'pending-background', optionId: 'once' }),
+      /失效/,
+    );
+    assert.equal(
+      f.events.filter(
+        (item) => item.type === 'permission-resolved' && item.requestId === 'pending-background',
+      ).length,
+      1,
+    );
+    if (operation === 'cancel' || operation === 'delete')
+      assert.deepEqual(
+        f.received.find((item) => item.id === 'pending-background' && !item.method)?.result.outcome,
+        { outcome: 'cancelled' },
+      );
+  });
+}
+
 test('split UTF8 stderr keeps Chinese diagnostics intact when the agent exits', async (t) => {
   const f = fixture(t);
   await f.client.newSession({ cwd: 'C:\\project' });
@@ -1400,7 +1541,13 @@ test('a read approval whose stdin closes during path authorization settles throu
   assert.equal(f.events.filter((event) => event.type === 'permission').length, 0);
 });
 
-for (const interruptedBy of ['manual-rejection', 'mode-change', 'cancel', 'turn-end', 'id-reuse']) {
+for (const interruptedBy of [
+  'manual-rejection',
+  'mode-change',
+  'cancel',
+  'turn-error',
+  'id-reuse',
+]) {
   test(`a pending read path check cannot approve after ${interruptedBy}`, async (t) => {
     let finishCheck;
     let checked = false;
@@ -1437,7 +1584,12 @@ for (const interruptedBy of ['manual-rejection', 'mode-change', 'cancel', 'turn-
     else if (interruptedBy === 'mode-change')
       f.client.setPermissionMode({ sessionId: 'session-a', permissionMode: 'ask' });
     else if (interruptedBy === 'cancel') cancelled = f.client.cancel({ sessionId: 'session-a' });
-    else f.child().reply(f.child().prompt, { stopReason: 'end_turn' });
+    else
+      f.child().deliver({
+        jsonrpc: '2.0',
+        id: f.child().prompt.id,
+        error: { code: -32603, message: 'turn failed' },
+      });
     if (interruptedBy === 'id-reuse') {
       request.params.toolCall = structuredClone(readPermissions.run_terminal_command);
       f.child().deliver(request);
@@ -1482,6 +1634,34 @@ test('after reconnect a loaded session defaults to ask and its prior mode can be
   assert.deepEqual(
     f.received.find((item) => item.id === 'restored-auto' && !item.method).result.outcome,
     { outcome: 'selected', optionId: 'once' },
+  );
+});
+
+test('cancel aborts attachment preparation before the native prompt is submitted', async (t) => {
+  const f = fixture(t);
+  await f.client.newSession({ cwd: 'C:\\project' });
+  let signal;
+  t.mock.method(f.client, '_promptContent', (_text, _attachments, options) => {
+    signal = options.signal;
+    return new Promise((_resolve, reject) =>
+      signal.addEventListener(
+        'abort',
+        () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })),
+        { once: true },
+      ),
+    );
+  });
+  const sending = f.client.send({ sessionId: 'session-a', text: 'read large documents' });
+  await tick();
+  assert.equal(signal.aborted, false);
+  const rejected = assert.rejects(sending, { name: 'AbortError' });
+  await f.client.cancel({ sessionId: 'session-a' });
+  await rejected;
+  assert.equal(signal.aborted, true);
+  assert.equal(f.client._preparing, null);
+  assert.equal(
+    f.received.some((req) => req.method === 'session/prompt'),
+    false,
   );
 });
 

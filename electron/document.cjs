@@ -45,13 +45,32 @@ const failures = {
   'parse-failed': '无法读取文档。请确认文件未加密且能正常打开，或另存为 PDF、DOCX、XLSX 后重试。',
   unsupported: '暂不支持此文件的内部格式。请用原软件另存为 PDF、DOCX 或 XLSX 后重试。',
   empty: '文档中没有可提取的文字或数据。扫描文档请另存为 PDF 或图片后添加。',
-  'text-limit': '文档提取内容超过 1 MB，请拆分文档后重试。',
-  timeout: '文档读取超时，请拆分文档或另存为 PDF 后重试。',
+  'text-limit':
+    '本地文档转换内容超过 {limit} MB 的处理预算；这不是 Grok Build 的文件大小限制。请另存为 PDF 后添加。',
+  'input-limit':
+    '此格式需要本地转换，文件超过 {limit} MB 的转换处理预算。请另存为 PDF 后添加；这不是 Grok Build 的文件大小限制。',
+  timeout: '本地文档转换超时，请另存为 PDF 后添加；这不是 Grok Build 的文件大小限制。',
+  'resource-limit': '本地文档转换达到结构或内存处理上限，请另存为 PDF 后添加；原文件未更改。',
 };
-function extractDocument(bytes, extension, { timeoutMs = 30000 } = {}) {
+/** @typedef {{timeoutMs?: number, maxTextBytes?: number, maxInputBytes?: number, signal?: AbortSignal}} DocumentOptions */
+/** @param {Buffer|string} source @param {string} extension @param {DocumentOptions} [options] */
+function extractDocument(
+  source,
+  extension,
+  { timeoutMs = 30000, maxTextBytes = 1024 * 1024, maxInputBytes = 128 * 1024 * 1024, signal } = {},
+) {
+  const aborted = () =>
+    Object.assign(new Error(t('已取消发送。')), { name: 'AbortError', code: 'ABORT_ERR' });
+  if (signal?.aborted) return Promise.reject(aborted());
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'document-worker.cjs'), {
-      workerData: { bytes, extension, kind: documentKind(extension) },
+      workerData: {
+        ...(typeof source === 'string' ? { filename: source } : { bytes: source }),
+        extension,
+        kind: documentKind(extension),
+        maxTextBytes,
+        maxInputBytes,
+      },
       resourceLimits: { maxOldGenerationSizeMb: 256 },
     });
     let settled = false;
@@ -59,25 +78,58 @@ function extractDocument(bytes, extension, { timeoutMs = 30000 } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       const complete = () =>
-        error ? reject(new Error(t(failures[error] || failures['parse-failed']))) : resolve(text);
+        error
+          ? reject(
+              error === 'aborted'
+                ? aborted()
+                : Object.assign(
+                    new Error(
+                      t(failures[error] || failures['parse-failed'], {
+                        limit:
+                          (error === 'input-limit' ? maxInputBytes : maxTextBytes) / (1024 * 1024),
+                      }),
+                    ),
+                    {
+                      code:
+                        error === 'text-limit'
+                          ? 'DOCUMENT_TEXT_LIMIT'
+                          : error === 'input-limit'
+                            ? 'DOCUMENT_INPUT_LIMIT'
+                            : error === 'timeout'
+                              ? 'DOCUMENT_TIMEOUT'
+                              : error === 'resource-limit'
+                                ? 'DOCUMENT_RESOURCE_LIMIT'
+                                : 'DOCUMENT_PARSE_FAILED',
+                    },
+                  ),
+            )
+          : resolve(text);
       void worker.terminate().then(complete, complete);
     };
     const timer = setTimeout(() => finish('timeout'), timeoutMs);
+    const onAbort = () => finish('aborted');
+    signal?.addEventListener('abort', onAbort, { once: true });
     worker.once('message', ({ error, text }) => finish(error, text));
-    worker.once('error', () => finish('parse-failed'));
+    worker.once(
+      'error',
+      /** @param {Error & {code?: string}} error */ (error) =>
+        finish(error.code === 'ERR_WORKER_OUT_OF_MEMORY' ? 'resource-limit' : 'parse-failed'),
+    );
     worker.once('exit', () => finish('parse-failed'));
   });
 }
-async function documentText(bytes, extension, name) {
-  return `${name}\n${documentNotice(extension)}\n\n${await extractDocument(bytes, extension)}`;
+/** @param {Buffer|string} source @param {string} extension @param {string} name @param {DocumentOptions} [options] */
+async function documentText(source, extension, name, options) {
+  return `${name}\n${documentNotice(extension)}\n\n${await extractDocument(source, extension, options)}`;
 }
 function nativePrompt(filename, extension) {
   const details =
     extension === '.pdf'
       ? 'View the PDF pages visually, including scanned text, tables and images. For long PDFs use the pages parameter in batches (at most 20 pages per call); continue until all pages relevant to the request are read. State the page range actually read and any omissions.'
       : extension === '.pptx'
-        ? 'Read the slide text and speaker notes. Continue with offset/limit if the tool truncates output. Do not claim to have viewed embedded images or charts unless you actually inspect them.'
+        ? 'Read the slide text and speaker notes. If the native output is truncated, use an approved local extraction tool to read the remaining slide text in batches; do not repeat the same truncated native read or claim full coverage. Do not claim to have viewed embedded images or charts unless you actually inspect them.'
         : 'Read notebook cells and existing outputs. Do not execute the notebook merely to read it.';
   return `Attached local document (JSON-encoded absolute path): ${JSON.stringify(filename)}\nUse the built-in read_file tool to read this exact file before answering. ${details} If reading fails, explain the actual error and do not guess the contents.`;
 }

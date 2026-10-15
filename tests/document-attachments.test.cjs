@@ -45,9 +45,9 @@ test('plain text still works when embedded resources are unavailable', async (t)
   const a = await file(t, '说明.txt', '中文说明');
   assert.match((await preparePrompt('', [a], {}))[0].text, /中文说明/);
 });
-test('native input size, invalid signature and missing files fail before send', async (t) => {
+test('native invalid signatures and missing files still fail before send', async (t) => {
   const a = await file(t, 'large.pdf', Buffer.alloc(10 * 1024 * 1024 + 1));
-  await assert.rejects(preparePrompt('', [a], {}), /10 MB/);
+  await assert.rejects(preparePrompt('', [a], {}), /PDF/);
   await fs.writeFile(a.path, 'not a pdf');
   await assert.rejects(preparePrompt('', [a], {}), /PDF/);
   await fs.unlink(a.path);

@@ -33,7 +33,7 @@ test('a Word-only request works without ACP embedded context support', async () 
   assert.match(prompt[0].text, /Some random text/);
 });
 
-test('damaged and oversized Word attachments fail explicitly and keep the supplied draft', async (t) => {
+test('damaged Word attachments of either size fail explicitly and keep the supplied draft', async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'word attachments '));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'broken.doc');
@@ -45,7 +45,10 @@ test('damaged and oversized Word attachments fail explicitly and keep the suppli
   );
   assert.equal(attachments[0].path, file);
   await fs.writeFile(file, Buffer.alloc(10 * 1024 * 1024 + 1));
-  await assert.rejects(preparePrompt('', attachments, { embeddedContext: true }), /10 MB/);
+  await assert.rejects(
+    preparePrompt('', attachments, { embeddedContext: true }),
+    /无法读取 Word|Could not read Word/,
+  );
 });
 
 test('Chinese punctuation and table values survive extraction', async () => {
@@ -56,15 +59,16 @@ test('Chinese punctuation and table values survive extraction', async () => {
   assert.match(text, /维护费[\s\S]*12800 元/);
 });
 
-test('empty documents and excessive extracted text fail instead of silently sending partial content', async () => {
+test('empty documents fail and long previews explicitly identify their excerpt', async () => {
   await assert.rejects(
     previewAttachment({ path: path.join(__dirname, 'fixtures/word/empty.docx') }),
     /没有可提取|No extractable/,
   );
-  await assert.rejects(
-    previewAttachment({ path: path.join(__dirname, 'fixtures/word/oversized-text.docx') }),
-    /1 MB/,
-  );
+  const preview = await previewAttachment({
+    path: path.join(__dirname, 'fixtures/word/oversized-text.docx'),
+  });
+  assert.equal(preview.truncated, true);
+  assert.ok(preview.text.length <= 65536);
   const file = path.join(__dirname, 'fixtures/word/large-text.docx');
   await assert.rejects(
     preparePrompt(

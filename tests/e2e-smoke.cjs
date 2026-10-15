@@ -266,7 +266,8 @@ async function assertEffort(value, label) {
     pass('external-file-open-and-reveal');
 
     phase = 'stream';
-    await send('MOCK_STREAM');
+    // Keep the streaming state observable while a Windows CI click finishes.
+    await send('MOCK_SLOW');
     await page.locator('.message.assistant .live-label').waitFor();
     await waitEnd();
     assert.ok(

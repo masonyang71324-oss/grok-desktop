@@ -208,7 +208,11 @@ async function msgText(bytes) {
   });
 }
 
-module.exports = async function extractRichDocument(input, extension) {
+module.exports = async function extractRichDocument(
+  input,
+  extension,
+  { maxTextBytes = TEXT_LIMIT } = {},
+) {
   try {
     const bytes = Buffer.from(input);
     if (!bytes.length) throw failure('empty', 'Empty document');
@@ -221,8 +225,8 @@ module.exports = async function extractRichDocument(input, extension) {
     else throw failure('unsupported', 'Unsupported rich document extension');
     text = text.replace(/\r\n?/g, '\n').trim();
     if (!text) throw failure('empty', 'Document has no readable text');
-    if (Buffer.byteLength(text, 'utf8') > TEXT_LIMIT)
-      throw failure('text-limit', 'Document text exceeds 1 MB');
+    if (Buffer.byteLength(text, 'utf8') > maxTextBytes)
+      throw failure('text-limit', 'Local document conversion text budget exceeded');
     return text;
   } catch (error) {
     if (['empty', 'text-limit', 'unsupported', 'parse-failed'].includes(error.code)) throw error;

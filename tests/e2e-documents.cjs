@@ -165,7 +165,8 @@ async function run(english) {
         name: english ? 'Text content' : '文字内容',
         exact: true,
       });
-      if (await textTab.count()) await textTab.click();
+      // XLSX has a layout tab once asynchronous attachment preparation completes.
+      if (index === 1) await textTab.click();
       await preview.locator('.attachment-preview').filter({ hasText: expected }).waitFor();
       await preview
         .locator('.attachment-notice')

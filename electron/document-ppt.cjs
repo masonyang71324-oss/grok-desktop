@@ -24,7 +24,7 @@ function readBinary(bytes, output) {
   const stream = Buffer.from(streamEntry.content);
   let count = 0;
   function record(buffer, offset, end = buffer.length, type) {
-    if (++count > 250000) throw error('text-limit');
+    if (++count > 250000) throw error('resource-limit');
     if (!Number.isInteger(offset) || offset < 0 || offset + 8 > end)
       throw error('parse-failed', 'Invalid PPT record offset');
     const flags = buffer.readUInt16LE(offset);
@@ -134,7 +134,7 @@ function readBinary(bytes, output) {
   function drawingText(container, outlines = []) {
     const used = new Set();
     function walk(parent, depth = 0) {
-      if (depth > 64) throw error('text-limit');
+      if (depth > 64) throw error('resource-limit');
       for (const child of children(parent)) {
         if (child.type === 0xf00d) {
           for (const atom of children(child)) {
@@ -256,7 +256,7 @@ async function readOoxml(bytes, output) {
   if (!hasText) throw error('empty');
 }
 
-module.exports = async function extractPresentation(bytes, extension) {
+module.exports = async function extractPresentation(bytes, extension, options = {}) {
   try {
     const ext = extension.toLowerCase().replace(/^\./, '');
     if (
@@ -277,14 +277,15 @@ module.exports = async function extractPresentation(bytes, extension) {
     )
       throw error('unsupported');
     const buffer = Buffer.from(bytes);
-    const output = createOutput();
+    const output = createOutput(options);
     if (buffer.subarray(0, 2).equals(Buffer.from('PK'))) await readOoxml(buffer, output);
     else if (buffer.subarray(0, 8).equals(Buffer.from('d0cf11e0a1b11ae1', 'hex')))
       readBinary(buffer, output);
     else throw error('unsupported');
     return output.finish();
   } catch (err) {
-    if (['empty', 'text-limit', 'unsupported', 'parse-failed'].includes(err.code)) throw err;
+    if (['empty', 'text-limit', 'resource-limit', 'unsupported', 'parse-failed'].includes(err.code))
+      throw err;
     throw error('parse-failed', err.message);
   }
 };

@@ -1,5 +1,4 @@
 const {
-  TEXT_LIMIT,
   error,
   createOutput,
   parseXml,
@@ -33,7 +32,7 @@ function readOdf(root, output) {
     if (node.uri === TEXT && node.local === 's') {
       const count = Number(attr(node, 'c', TEXT) || 1);
       if (!Number.isSafeInteger(count) || count < 1) throw error('parse-failed');
-      if (count > TEXT_LIMIT) throw error('text-limit');
+      if (count > output.maxTextBytes) throw error('text-limit');
       output.add(' '.repeat(count));
       return;
     }
@@ -148,10 +147,10 @@ async function readEpub(zip, output) {
   }
 }
 
-module.exports = async function extractStructured(bytes, extension) {
+module.exports = async function extractStructured(bytes, extension, options = {}) {
   const ext = extension.toLowerCase().replace(/^\./, '');
   try {
-    const output = createOutput();
+    const output = createOutput(options);
     if (ext === 'ofd') await readOfd(await readZip(bytes), output);
     else if (ext === 'epub') await readEpub(await readZip(bytes), output);
     else if (['odt', 'ott', 'odp', 'otp', 'fodt', 'fodp', 'uot', 'uop'].includes(ext)) {
@@ -163,7 +162,8 @@ module.exports = async function extractStructured(bytes, extension) {
     } else throw error('unsupported');
     return output.finish();
   } catch (err) {
-    if (['empty', 'text-limit', 'unsupported', 'parse-failed'].includes(err.code)) throw err;
+    if (['empty', 'text-limit', 'resource-limit', 'unsupported', 'parse-failed'].includes(err.code))
+      throw err;
     throw error('parse-failed', err.message);
   }
 };

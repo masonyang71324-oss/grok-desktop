@@ -97,7 +97,11 @@ async function spreadsheetInput(bytes, extension) {
   return { source: xml };
 }
 
-module.exports = async function extractSpreadsheet(input, extension) {
+module.exports = async function extractSpreadsheet(
+  input,
+  extension,
+  { maxTextBytes = TEXT_LIMIT } = {},
+) {
   try {
     const bytes = Buffer.from(input);
     const ext = String(extension).toLowerCase().replace(/^\./, '');
@@ -123,7 +127,8 @@ module.exports = async function extractSpreadsheet(input, extension) {
     let cells = 0;
     function append(line) {
       size += Buffer.byteLength(line, 'utf8') + 1;
-      if (size > TEXT_LIMIT) throw failure('text-limit', 'Spreadsheet text exceeds 1 MB');
+      if (size > maxTextBytes)
+        throw failure('text-limit', 'Local spreadsheet conversion text budget exceeded');
       lines.push(line);
     }
     for (const name of workbook.SheetNames) {

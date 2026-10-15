@@ -227,9 +227,11 @@ const attachmentStorage = createAttachmentStorage({
   directory: attachmentsDirectory,
   referencedPaths: async () => {
     const paths = [...draftAttachmentPaths];
-    for (const entry of client.sessions.values())
+    for (const entry of client.sessions.values()) {
+      paths.push(...entry.client.generatedAttachmentPaths);
       for (const item of [...entry.queue, ...(entry.running ? [entry.running.item] : [])])
         for (const file of item.payload.attachments || []) if (file.path) paths.push(file.path);
+    }
     return paths;
   },
 });
@@ -254,6 +256,7 @@ function emit(event) {
 }
 
 const client = new SessionHub({
+  attachmentDirectory: attachmentsDirectory,
   authorizeRead: (input) => access.authorizeRead(input),
   storageFile: path.join(app.getPath('userData'), 'queued-tasks.json'),
   getExecutable: () => resolveGrok(settings.grokPath),

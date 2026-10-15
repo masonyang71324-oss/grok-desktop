@@ -1,5 +1,5 @@
 {
-  "cliVersion": "1.0.46",
+  "cliVersion": "1.0.52",
   "protocolVersion": 1,
   "protocolMethods": [
     "authenticate",
@@ -53,6 +53,11 @@
     "ClientSessionCapabilities",
     "CloseSessionRequest",
     "CloseSessionResponse",
+    "CompactionCapabilities",
+    "CompactionId",
+    "CompactionStatus",
+    "CompactionSummaryChunk",
+    "CompactionUpdate",
     "CompleteElicitationNotification",
     "ConfigOptionUpdate",
     "Content",
@@ -115,6 +120,9 @@
     "MultiSelectPropertySchema",
     "NewSessionRequest",
     "NewSessionResponse",
+    "Notice",
+    "NoticeCapabilities",
+    "NoticeSeverity",
     "NumberPropertySchema",
     "PermissionOption",
     "PermissionOptionId",

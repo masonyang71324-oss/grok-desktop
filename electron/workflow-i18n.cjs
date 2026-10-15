@@ -1,4 +1,22 @@
 module.exports = {
+  '剪贴板图片超过 50 MB，请压缩图片或选择本地文件。':
+    'The clipboard image exceeds 50 MB. Compress it or select a local file.',
+  '大图片将在发送后由 Grok 按需读取，可用默认程序查看原图。':
+    'Grok will read this large image on demand after sending. Open the original in its default app to preview it.',
+  '本地 Word 转换文字超过 {limit} MB 的处理预算；这不是 Grok Build 的文件大小限制。请另存为 PDF 后添加。':
+    'Local Word conversion exceeds its {limit} MB text-processing budget. This is not a Grok Build file-size limit. Save as PDF and attach it instead.',
+  '本地 Word 转换超时，请另存为 PDF 后添加；这不是 Grok Build 的文件大小限制。':
+    'Local Word conversion timed out. Save as PDF and attach it instead; this is not a Grok Build file-size limit.',
+  '本地 Word 转换达到内存处理预算，请另存为 PDF 后添加；原文件未更改。':
+    'Local Word conversion reached its memory budget. Save as PDF and attach it instead. The original is unchanged.',
+  '本地文档转换内容超过 {limit} MB 的处理预算；这不是 Grok Build 的文件大小限制。请另存为 PDF 后添加。':
+    'Local document conversion exceeds its {limit} MB text-processing budget. This is not a Grok Build file-size limit. Save as PDF and attach it instead.',
+  '此格式需要本地转换，文件超过 {limit} MB 的转换处理预算。请另存为 PDF 后添加；这不是 Grok Build 的文件大小限制。':
+    'This format needs local conversion and exceeds its {limit} MB input-processing budget. Save as PDF and attach it instead; this is not a Grok Build file-size limit.',
+  '本地文档转换超时，请另存为 PDF 后添加；这不是 Grok Build 的文件大小限制。':
+    'Local document conversion timed out. Save as PDF and attach it instead; this is not a Grok Build file-size limit.',
+  '本地文档转换达到结构或内存处理上限，请另存为 PDF 后添加；原文件未更改。':
+    'Local document conversion reached its structure or memory-processing limit. Save as PDF and attach it instead. The original is unchanged.',
   '已提取工作表和单元格数据；公式显示文件中的已有结果，不会重新计算。图片、图表和排版未包含在内。':
     'Worksheet and cell data extracted. Formulas show saved results and are not recalculated. Images, charts and layout are not included.',
   '已提取正文和邮件信息；内嵌附件仅列出名称，需另行添加才能读取。图片和排版未包含在内。':

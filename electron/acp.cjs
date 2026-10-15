@@ -43,12 +43,16 @@ class GrokClient {
     spawnFn = spawn,
     clientVersion = require('../package.json').version,
     authorizeRead = authorizeProjectRead,
+    attachmentDirectory = undefined,
   }) {
     this.getExecutable = getExecutable;
     this.emit = emit;
     this.spawnFn = spawnFn;
     this.clientVersion = clientVersion;
     this.authorizeRead = authorizeRead;
+    this.attachmentDirectory = attachmentDirectory;
+    this.generatedAttachmentPaths = new Set();
+    this._preparing = null;
     this.connected = false;
     this.models = emptyModels();
     this.commands = [];
@@ -395,7 +399,7 @@ class GrokClient {
       return;
     }
     const session = this._sessions.get(params.sessionId);
-    if (turn && session?.permissionMode === 'read') {
+    if (session?.permissionMode === 'read') {
       const option = params.options.find((item) => item.kind === 'allow_once');
       const paths = readApprovalPaths(params.toolCall, session.cwd);
       if (option && paths) {
@@ -406,7 +410,7 @@ class GrokClient {
       }
     }
     this._publishPermission(id, permission);
-    if (turn && session?.permissionMode === 'auto') {
+    if (session?.permissionMode === 'auto') {
       const option = params.options.find((item) => item.kind === 'allow_once');
       if (option) this.respondPermission({ requestId: id, optionId: option.optionId });
     }
@@ -429,8 +433,7 @@ class GrokClient {
     } catch {
       // Missing/inaccessible paths or an unavailable scope check require a user decision.
     }
-    if (this._permissions.get(id) !== permission || this.activeTurn !== turn || turn.cancelling)
-      return;
+    if (this._permissions.get(id) !== permission || turn?.cancelling) return;
     if (
       allowed &&
       this._sessions.get(session.sessionId) === session &&
@@ -482,6 +485,7 @@ class GrokClient {
 
   _fail(error, child = this._proc, state = 'error') {
     if (child && child !== this._proc) return;
+    this._preparing?.controller.abort();
     this._proc = null;
     this.connected = false;
     this._clearPermissions(null, false);
@@ -514,7 +518,7 @@ class GrokClient {
   }
 
   dispose() {
-    if (this._proc || this.activeTurn || this._pending.size)
+    if (this._proc || this.activeTurn || this._preparing || this._pending.size)
       this._fail(new Error(t('Grok 连接已关闭')), this._proc, 'disconnected');
   }
 
@@ -751,11 +755,16 @@ class GrokClient {
     }
   }
 
-  async _promptContent(text, attachments) {
+  async _promptContent(text, attachments, options = {}) {
     return require('./attachments.cjs').preparePrompt(
       text,
       attachments,
       this.capabilities.promptCapabilities,
+      {
+        outputDirectory: this.attachmentDirectory,
+        onReference: (filename) => this.generatedAttachmentPaths.add(filename),
+        ...options,
+      },
     );
   }
 
@@ -763,7 +772,17 @@ class GrokClient {
     return this._exclusive('send', async () => {
       this._session(payload.sessionId);
       if (payload.permissionMode !== undefined) this.setPermissionMode(payload);
-      const prompt = await this._promptContent(payload.text, payload.attachments);
+      const preparation = { sessionId: payload.sessionId, controller: new AbortController() };
+      this._preparing = preparation;
+      let prompt;
+      try {
+        if (isCancelled()) preparation.controller.abort();
+        prompt = await this._promptContent(payload.text, payload.attachments, {
+          signal: preparation.controller.signal,
+        });
+      } finally {
+        if (this._preparing === preparation) this._preparing = null;
+      }
       if (isCancelled()) throw new Error(t('已取消发送。'));
       await this._configure(payload);
       if (isCancelled()) throw new Error(t('已取消发送。'));
@@ -792,7 +811,11 @@ class GrokClient {
   _finishTurn(turn, result, error) {
     if (this.activeTurn !== turn) return;
     clearTimeout(turn.cancelTimer);
-    this._clearPermissions(turn.sessionId);
+    // A completed foreground prompt can leave background subagents awaiting
+    // approval on the same session. The pending RPC, not the parent turn,
+    // owns its lifetime; only cancellation/failure invalidates it here.
+    if (error || turn.cancelling || result?.stopReason === 'cancelled')
+      this._clearPermissions(turn.sessionId);
     this.activeTurn = null;
     if (error)
       this.emit({
@@ -807,8 +830,12 @@ class GrokClient {
   }
 
   async cancel({ sessionId }) {
+    if (this._preparing?.sessionId === sessionId) this._preparing.controller.abort();
     const turn = this.activeTurn;
-    if (!turn) return;
+    if (!turn) {
+      this._clearPermissions(sessionId);
+      return;
+    }
     if (turn.sessionId !== sessionId) throw new Error(t('所选会话没有正在运行的任务'));
     if (!turn.cancelling) {
       turn.cancelling = true;
@@ -932,6 +959,7 @@ class GrokClient {
         ...(cwd ? { cwd } : {}),
       });
       if (result?.success !== true) throw new Error(t('Grok 未确认会话已删除'));
+      this._clearPermissions(sessionId);
       this._sessions.delete(sessionId);
       if (this.activeSessionId === sessionId) this.activeSessionId = null;
       this.emit({ type: 'sessions-changed', sessionId });
