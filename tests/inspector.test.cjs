@@ -174,6 +174,11 @@ test('closing during a pending save preserves an edit reverted to the previous b
   );
   await release(page, 'workspace.save');
   await page.waitForFunction(() => window.notices.includes('文件已保存'));
+  // notify fires before React commits the saved baseline and clears saving.
+  await page
+    .getByRole('button', { name: '保存文件', exact: true })
+    .and(page.locator(':enabled'))
+    .waitFor();
   await page.keyboard.press('Escape');
   await page.getByRole('dialog', { name: '放弃未保存的修改' }).waitFor();
   await page.getByRole('button', { name: '继续编辑', exact: true }).click();
@@ -184,6 +189,7 @@ test('closing during a pending save preserves an edit reverted to the previous b
     () => window.notices.filter((text) => text === '文件已保存').length === 2,
   );
   assert.equal(await page.evaluate(() => window.files['C:/a/note.txt'].text), 'original');
+  await page.getByText('所有修改已保存', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
   await editor.waitFor({ state: 'detached' });
 });
