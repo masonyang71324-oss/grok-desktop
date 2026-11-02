@@ -84,6 +84,7 @@ test('project preparation prevents trust downgrade until its owned operation set
     projectKey,
     pendingProjectOperations: new Map(),
     externalProjectTerminals: new Set(),
+    activity: new RuntimeActivity({ isForegroundBusy: () => false }),
     access: {
       project: () => ({ cwd, trusted }),
       setProjectTrust: (_, next) => ({ cwd, trusted: (trusted = next) }),
@@ -134,6 +135,7 @@ test('a live owned external project terminal blocks trust downgrade until its ex
   const child = new EventEmitter();
   Object.assign(child, { exitCode: null, signalCode: null, unref() {} });
   const context = {
+    activity: new RuntimeActivity({ isForegroundBusy: () => false }),
     path,
     Buffer,
     projectKey,
@@ -173,6 +175,9 @@ test('a live owned external project terminal blocks trust downgrade until its ex
   child.exitCode = 0;
   child.emit('exit', 0);
   assert.equal((await context.selectProjectTrust(cwd)).trusted, false);
+  context.activity.mutating = true;
+  await assert.rejects(context.openSystem({ target: 'terminal', cwd }), /管理操作/);
+  assert.equal(context.externalProjectTerminals.size, 0);
 });
 test('main send registers session ownership before asynchronous preparation so early cancellation cannot be lost', async () => {
   let releaseValidation,
