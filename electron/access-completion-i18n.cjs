@@ -1,4 +1,32 @@
 module.exports = {
+  '请先完成或取消官方登录，再更新引擎。':
+    'Finish or cancel the official sign-in before updating the engine.',
+  '请先关闭由本程序打开的 Grok 终端，再更新引擎。':
+    'Close the external Grok terminals opened by this app before updating the engine.',
+  '无法确认 Grok 引擎进程已退出，请关闭桌面程序后重试。':
+    'Could not confirm the Grok engine processes exited. Close the desktop app and retry.',
+  '无法确认目标引擎版本，请重新检查更新。':
+    'Could not determine the target engine version. Check for updates again.',
+  '未能验证目标引擎版本 {version}。': 'Could not verify the target engine version {version}.',
+  '引擎更新命令未成功完成。': 'The engine update command did not complete successfully.',
+  '官方引擎修复未成功完成，请稍后重试。':
+    'The official engine repair did not complete. Retry later.',
+  '自动修复失败：{message}': 'Automatic repair failed: {message}',
+  '原始更新错误：{message}': 'Original update error: {message}',
+  '程序文件恢复失败：{message}': 'Program file recovery failed: {message}',
+  '引擎可运行，但重新连接失败：{message}': 'The engine can run, but reconnection failed: {message}',
+  '引擎已更新至 {version}，但重新连接失败。请刷新引擎与模型。':
+    'The engine updated to {version}, but reconnection failed. Refresh the engine and model catalog.',
+  '请选择有效的引擎安装目录。': 'Select a valid engine installation directory.',
+  '安装后未检测到目标引擎 {version}，请重新修复。':
+    'The target engine {version} was not detected after installation. Run repair again.',
+  '无法备份当前引擎，已取消更新：{message}':
+    'Could not back up the current engine; the update was cancelled: {message}',
+  '桌面程序正在退出，请重新打开后刷新引擎。':
+    'The desktop app is exiting. Reopen it and refresh the engine.',
+  '引擎正在更新或修复，请等待完成后再退出。':
+    'The engine is updating or repairing. Wait for it to finish before exiting.',
+  'Grok Build 已是最新版本。': 'Grok Build is already up to date.',
   '原附件尚未重新授权，已取消本轮发送。':
     'The original attachment has not been reauthorized. This send was cancelled.',
   重新选择原附件以恢复授权: 'Reselect original attachments to restore access',

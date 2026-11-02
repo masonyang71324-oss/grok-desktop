@@ -347,3 +347,85 @@ test('engine sign-in cancellation leaves no success or error; failed cancellatio
   assert.equal(await page.evaluate(() => window.refreshed), 0);
   assert.deepEqual(await page.evaluate(() => window.notifications), []);
 });
+
+async function updateFixture(t) {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    const { React, createRoot, flushSync, EngineDialog, useEngine, setLocale } = window.ui;
+    setLocale('zh-CN');
+    window.notifications = [];
+    window.updated = 0;
+    window.engineStatus = { version: '1.0.51', authStatus: 'authenticated' };
+    window.desktop = {
+      request: async (command) => {
+        if (command === 'cli.status') return { ok: true, data: { ...window.engineStatus } };
+        if (command === 'system.run')
+          return new Promise((resolve) => {
+            window.finishUpdate = resolve;
+          });
+        throw new Error(`Unexpected command ${command}`);
+      },
+    };
+    function Harness() {
+      const engine = useEngine({
+        getCwd: () => 'C:/project',
+        isUpdateBlocked: () => false,
+        hasSession: () => false,
+        onRefresh: () => {},
+        onUpdated: async () => window.updated++,
+        notify: (message) => window.notifications.push(message),
+      });
+      window.engine = engine;
+      return React.createElement(EngineDialog, {
+        status: engine.cliStatus,
+        authLabel: engine.engineAuthLabel,
+        action: engine.engineAction,
+        error: engine.engineError,
+        busy: false,
+        updateBlocked: false,
+        onAction: engine.runEngineAction,
+        onCancelLogin: engine.cancelEngineLogin,
+        onClose: () => {},
+        onOnboarding: () => {},
+        onProviders: () => {},
+      });
+    }
+    flushSync(() =>
+      createRoot(document.getElementById('root')).render(React.createElement(Harness)),
+    );
+    return window.engine.readEngineStatus();
+  });
+  return page;
+}
+
+test('failed engine update refreshes the surviving version while preserving its error and never announcing success', async (t) => {
+  const page = await updateFixture(t);
+  await page.getByRole('button', { name: '更新 Grok Build', exact: true }).click();
+  await page.evaluate(() => {
+    window.engineStatus.version = '1.0.52';
+    window.engineStatus.error = '无法检查登录状态。';
+    window.finishUpdate({ ok: false, error: '官方安装修复失败，请重试。' });
+  });
+  await page.getByRole('alert').filter({ hasText: '官方安装修复失败' }).waitFor();
+  assert.equal(await page.getByText('1.0.52', { exact: true }).count(), 1);
+  assert.equal(await page.getByRole('alert').filter({ hasText: '无法检查登录状态' }).count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.notifications), []);
+  assert.equal(await page.evaluate(() => window.updated), 0);
+  assert.equal(
+    await page.getByRole('button', { name: '更新 Grok Build', exact: true }).isEnabled(),
+    true,
+  );
+});
+
+test('engine update does not announce success when the actual version differs from the verified result', async (t) => {
+  const page = await updateFixture(t);
+  await page.getByRole('button', { name: '更新 Grok Build', exact: true }).click();
+  await page.evaluate(() => {
+    window.engineStatus.version = '1.0.52';
+    window.finishUpdate({ ok: true, data: { exitCode: 0, data: { version: '1.0.70' } } });
+  });
+  await page.getByRole('button', { name: '更新 Grok Build', exact: true }).waitFor();
+  await page.getByRole('alert').filter({ hasText: '1.0.70' }).waitFor();
+  assert.equal(await page.getByText('1.0.52', { exact: true }).count(), 1);
+  assert.deepEqual(await page.evaluate(() => window.notifications), []);
+});

@@ -44,6 +44,7 @@ class GrokClient {
     clientVersion = require('../package.json').version,
     authorizeRead = authorizeProjectRead,
     attachmentDirectory = undefined,
+    updateStopTimeoutMs = 5000,
   }) {
     this.getExecutable = getExecutable;
     this.emit = emit;
@@ -70,9 +71,15 @@ class GrokClient {
     this._operation = null;
     this._loading = null;
     this._modelConfiguration = null;
+    this._ownedProcesses = new Set();
+    this._stoppedForUpdate = false;
+    this._stopForUpdatePromise = null;
+    this.updateStopTimeoutMs = updateStopTimeoutMs;
   }
 
   async ensure() {
+    if (this._stoppedForUpdate)
+      throw new Error(t('正在执行管理操作或重新加载配置，请完成后再操作会话或更换 Grok 程序。'));
     if (this.connected) return this.initializeResult;
     if (this._connecting) return this._connecting;
     const connecting = this._connect();
@@ -88,12 +95,16 @@ class GrokClient {
     this.emit({ type: 'connection', state: 'connecting' });
     let child;
     try {
+      if (this._stoppedForUpdate) throw new Error(t('Grok 连接已关闭'));
       child = this.spawnFn(this.getExecutable(), ['agent', '--no-leader', 'stdio'], {
         windowsHide: true,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       this._proc = child;
+      this._ownedProcesses.add(child);
+      child.once('exit', () => this._ownedProcesses.delete(child));
+      child.once('close', () => this._ownedProcesses.delete(child));
       const decoder = new StringDecoder('utf8');
       let buffer = '',
         stderr = '';
@@ -161,6 +172,7 @@ class GrokClient {
       this.commands = copy(initialized._meta?.availableCommands || []);
       this.connected = true;
       await this._discoverCommands();
+      if (this._proc !== child || this._stoppedForUpdate) throw new Error(t('Grok 连接已关闭'));
       this.emit({ type: 'models', models: copy(this.models) });
       this.emit({ type: 'connection', state: 'ready' });
       return copy(initialized);
@@ -483,7 +495,12 @@ class GrokClient {
     }
   }
 
-  _fail(error, child = this._proc, state = 'error') {
+  _fail(
+    error,
+    child = this._proc,
+    state = 'error',
+    { preserveSessions = false, killChild = true } = {},
+  ) {
     if (child && child !== this._proc) return;
     this._preparing?.controller.abort();
     this._proc = null;
@@ -495,13 +512,15 @@ class GrokClient {
     }
     this._pending.clear();
     if (this.activeTurn) this._finishTurn(this.activeTurn, null, error);
-    this.activeSessionId = null;
-    this._sessions.clear();
-    this.models = emptyModels();
-    this.commands = [];
-    this.capabilities = {};
-    this.initializeResult = null;
-    if (child) {
+    if (!preserveSessions) {
+      this.activeSessionId = null;
+      this._sessions.clear();
+      this.models = emptyModels();
+      this.commands = [];
+      this.capabilities = {};
+      this.initializeResult = null;
+    }
+    if (child && killChild) {
       try {
         child.kill();
       } catch {}
@@ -511,10 +530,73 @@ class GrokClient {
 
   async restart() {
     this._assertIdle();
+    if (this._stopForUpdatePromise) await this._stopForUpdatePromise;
+    this.resumeAfterUpdate();
     const connecting = this._connecting;
     this.dispose();
     if (connecting) await connecting.catch(() => {});
     return this.ensure();
+  }
+
+  stopForUpdate() {
+    if (this._stopForUpdatePromise) return this._stopForUpdatePromise;
+    try {
+      this._assertIdle();
+      if (this._preparing || this._permissions.size)
+        throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    this._stoppedForUpdate = true;
+    const connecting = this._connecting?.catch(() => {});
+    const children = [...this._ownedProcesses];
+    this._fail(new Error(t('Grok 连接已关闭')), this._proc, 'disconnected', {
+      preserveSessions: true,
+      killChild: false,
+    });
+    const stopping = Promise.allSettled(children.map((child) => this._stopOwnedForUpdate(child)))
+      .then(async (results) => {
+        if (connecting) await connecting;
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed) throw failed.reason;
+      })
+      .finally(() => {
+        if (this._stopForUpdatePromise === stopping) this._stopForUpdatePromise = null;
+      });
+    this._stopForUpdatePromise = stopping;
+    return stopping;
+  }
+
+  _stopOwnedForUpdate(child) {
+    if (child.exitCode != null || child.signalCode != null) {
+      this._ownedProcesses.delete(child);
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const error = () => new Error(t('无法确认 Grok 引擎进程已退出，请关闭桌面程序后重试。'));
+      const finish = (failure) => {
+        clearTimeout(timer);
+        child.removeListener('exit', exited);
+        child.removeListener('close', exited);
+        failure ? reject(failure) : resolve(undefined);
+      };
+      const exited = () => finish(null);
+      const timer = setTimeout(() => finish(error()), this.updateStopTimeoutMs);
+      child.once('exit', exited);
+      child.once('close', exited);
+      try {
+        child.kill();
+      } catch {
+        finish(error());
+      }
+    });
+  }
+
+  resumeAfterUpdate() {
+    if (!this._stoppedForUpdate) return;
+    if (this._stopForUpdatePromise || this._ownedProcesses.size)
+      throw new Error(t('无法确认 Grok 引擎进程已退出，请关闭桌面程序后重试。'));
+    this._stoppedForUpdate = false;
   }
 
   dispose() {

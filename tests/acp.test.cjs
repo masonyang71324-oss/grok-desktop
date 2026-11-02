@@ -128,6 +128,125 @@ function fixture(t, override = () => false, options = {}) {
   return { client, received, events, children, child: () => children.at(-1).child };
 }
 
+test('update stop waits for the owned process to exit and retains the loaded session', async (t) => {
+  const f = fixture(t);
+  await f.client.newSession({ cwd: 'C:\\project' });
+  const snapshot = f.client._sessions.get('session-a');
+  const child = f.child();
+  let kills = 0,
+    stopped = false;
+  child.kill = () => {
+    kills++;
+    return true;
+  };
+  const stopping = f.client.stopForUpdate().then(() => {
+    stopped = true;
+  });
+  await tick();
+  assert.equal(kills, 1);
+  assert.equal(stopped, false);
+  assert.equal(f.client.connected, false);
+  assert.equal(f.client._sessions.get('session-a'), snapshot);
+  await assert.rejects(f.client.ensure(), /管理操作/);
+  child.emit('exit', 0, null);
+  await stopping;
+  assert.equal(stopped, true);
+  assert.equal(f.children.length, 1, 'stopping must never reconnect');
+  await f.client.restart();
+  assert.equal(f.children.length, 2);
+  assert.equal(f.client.connected, true);
+});
+
+test('update stop prevents initialization and command discovery from publishing a late ready', async (t) => {
+  for (const method of ['initialize', '_x.ai/commands/list']) {
+    let held = false;
+    const f = fixture(t, (req) => {
+      if (req.method === method && !held) {
+        held = true;
+        return true;
+      }
+      return false;
+    });
+    const connecting = f.client.ensure();
+    const rejected = assert.rejects(connecting, /连接已关闭/);
+    await tick();
+    await f.client.stopForUpdate();
+    await rejected;
+    assert.equal(
+      f.events.some((event) => event.state === 'ready'),
+      false,
+    );
+    assert.equal(f.children.length, 1);
+    await f.client.restart();
+    assert.equal(f.children.length, 2);
+  }
+});
+
+test('update stop also awaits an owned process detached earlier by dispose', async (t) => {
+  const f = fixture(t);
+  await f.client.ensure();
+  const old = f.child();
+  let oldKills = 0,
+    stopped = false;
+  old.kill = () => {
+    oldKills++;
+    return true;
+  };
+  f.client.dispose();
+  await f.client.ensure();
+  const stopping = f.client.stopForUpdate().then(() => {
+    stopped = true;
+  });
+  await tick();
+  assert.ok(oldKills >= 2);
+  assert.equal(stopped, false);
+  old.emit('close', 0, null);
+  await stopping;
+  assert.equal(f.children.length, 2);
+});
+
+test('update stop rejects live work without terminating its child', async (t) => {
+  const f = fixture(t);
+  await f.client.newSession({ cwd: 'C:\\project' });
+  await f.client.send({ sessionId: 'session-a', text: 'work' });
+  const child = f.child();
+  let killed = false;
+  child.kill = () => {
+    killed = true;
+    return true;
+  };
+  await assert.rejects(f.client.stopForUpdate(), /当前任务正在运行/);
+  assert.equal(killed, false);
+  assert.equal(f.client.connected, true);
+});
+
+test('update stop has a bounded failure when its owned child does not exit', async (t) => {
+  const f = fixture(t, undefined, { updateStopTimeoutMs: 15 });
+  await f.client.ensure();
+  const child = f.child();
+  child.kill = () => false;
+  await assert.rejects(f.client.stopForUpdate(), /无法确认 Grok 引擎进程已退出/);
+  await assert.rejects(f.client.ensure(), /管理操作/);
+  assert.equal(f.children.length, 1);
+  child.emit('close', 0, null);
+  await f.client.restart();
+  assert.equal(f.client.connected, true);
+});
+
+test('update stop from a connecting callback prevents a late process spawn', async (t) => {
+  let stopping;
+  const f = fixture(t, undefined, {
+    emit: (event) => {
+      if (event.type === 'connection' && event.state === 'connecting' && !stopping)
+        stopping = f.client.stopForUpdate();
+    },
+  });
+  await assert.rejects(f.client.ensure(), /连接已关闭/);
+  await stopping;
+  assert.equal(f.children.length, 0);
+  await assert.rejects(f.client.ensure(), /管理操作/);
+});
+
 test('uses one isolated process and applies model plus effort before prompting', async (t) => {
   const f = fixture(t);
   await f.client.ensure();

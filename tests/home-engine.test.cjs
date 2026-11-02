@@ -666,7 +666,7 @@ async function fixture(t, { language = 'zh-CN', authStatus = 'required', savedMo
               // The idle restoration can finish before the management IPC response.
               await new Promise((resolve) => setTimeout(resolve, 30));
             }
-            data = { exitCode: 0, text: 'Updated' };
+            data = { exitCode: 0, text: 'Updated', data: { version: window.engineStatus.version } };
           } else if (command === 'system.open') data = true;
           else return { ok: false, error: `Unexpected command ${command}` };
           return { ok: true, data };
@@ -938,6 +938,112 @@ test('idle engine update refreshes the version and coalesces restart restoration
     await page.getByRole('combobox', { name: '上下文窗口', exact: true }).inputValue(),
     '256000',
   );
+});
+
+test('engine update shows automatic repair progress and keeps disconnected sessions stopped until the update finishes', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.getByRole('button', { name: '打开项目文件夹', exact: true }).click();
+  await page.getByRole('button', { name: 'My existing session', exact: true }).click();
+  await page.evaluate(() => {
+    const request = window.desktop.request;
+    window.calls = [];
+    window.desktop.request = (command, payload) => {
+      if (command === 'system.run')
+        return new Promise((resolve) => {
+          window.finishUpdate = resolve;
+        });
+      return request(command, payload);
+    };
+  });
+  await page.getByRole('button', { name: 'Grok Build 引擎详情', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grok Build 引擎', exact: true });
+  await dialog.getByRole('button', { name: '更新 Grok Build', exact: true }).click();
+  await page.waitForFunction(() => !!window.finishUpdate);
+  await page.evaluate(() => {
+    window.emit({ type: 'connection', sessionId: 'existing', state: 'disconnected' });
+    window.emit({ type: 'notification', kind: 'settings-reloaded', payload: {} });
+    window.emit({
+      type: 'engine-update-state',
+      state: { status: 'repairing', version: '1.0.70', error: 'Original auto-update failed' },
+    });
+    window.emit({
+      type: 'cli-install-state',
+      state: { status: 'installing', log: 'Downloading Grok 1.0.70 (windows-x86_64)...' },
+    });
+  });
+  await dialog.getByRole('status').filter({ hasText: '官方安装程序自动修复' }).waitFor();
+  await dialog.getByText('Downloading Grok 1.0.70 (windows-x86_64)...', { exact: true }).waitFor();
+  assert.equal(await dialog.getByRole('alert').count(), 0);
+  assert.equal(
+    await dialog.getByRole('button', { name: '更新 Grok Build', exact: true }).isDisabled(),
+    true,
+  );
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.calls.filter((call) =>
+        ['bootstrap', 'cli.refresh', 'session.load'].includes(call.command),
+      ),
+    ),
+    [],
+  );
+  await page.evaluate(() => {
+    window.engineStatus.version = '1.0.70';
+    window.emit({
+      type: 'engine-update-state',
+      state: { status: 'completed', version: '1.0.70', repaired: true },
+    });
+  });
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.equal(await dialog.getByText('Grok Build 已更新至 1.0.70。', { exact: true }).count(), 0);
+  assert.equal(
+    await dialog.getByRole('button', { name: '更新 Grok Build', exact: true }).isDisabled(),
+    true,
+  );
+  await page.evaluate(() => {
+    window.finishUpdate({
+      ok: true,
+      data: { exitCode: 0, text: 'Updated', data: { version: '1.0.70', repaired: true } },
+    });
+  });
+  await dialog.getByText('1.0.70', { exact: true }).waitFor();
+  await page.waitForFunction(() => window.calls.some((call) => call.command === 'session.load'));
+  assert.equal(await dialog.getByRole('alert').count(), 0);
+});
+
+test('background recovery after a failed update preserves the update error while refreshing the real version', async (t) => {
+  const page = await fixture(t, { authStatus: 'authenticated' });
+  await page.evaluate(() => {
+    const request = window.desktop.request;
+    window.calls = [];
+    window.desktop.request = (command, payload) => {
+      if (command === 'system.run')
+        return new Promise((resolve) => {
+          window.finishUpdate = resolve;
+        });
+      return request(command, payload);
+    };
+  });
+  await page.getByRole('button', { name: 'Grok Build 引擎详情', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Grok Build 引擎', exact: true });
+  await dialog.getByRole('button', { name: '更新 Grok Build', exact: true }).click();
+  await page.waitForFunction(() => !!window.finishUpdate);
+  await page.evaluate(() => {
+    window.emit({ type: 'connection', state: 'disconnected' });
+    window.engineStatus.version = '1.0.52';
+    window.finishUpdate({ ok: false, error: '官方安装修复失败，请重试。' });
+  });
+  await page.waitForFunction(() => window.calls.some((call) => call.command === 'bootstrap'));
+  await dialog.getByText('1.0.52', { exact: true }).waitFor();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.equal(await dialog.getByRole('alert').filter({ hasText: '官方安装修复失败' }).count(), 1);
+  assert.equal(await dialog.getByText('Grok Build 已更新', { exact: true }).count(), 0);
 });
 
 test('a paused task with no queued messages or permissions permits engine update', async (t) => {

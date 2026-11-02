@@ -85,6 +85,9 @@ class SessionHub {
     this.sessions = new Map();
     this.locks = new Map();
     this.closed = false;
+    this._updating = false;
+    this._opening = new Set();
+    this._stopForUpdatePromise = null;
     this.pending = new Set();
     this.maxIdleConnections = maxIdleConnections;
     this.activeSessionId = null;
@@ -146,6 +149,7 @@ class SessionHub {
   }
 
   _entry(sessionId, cwd) {
+    this._assertUpdateAllowed();
     const entry = {
       sessionId,
       cwd,
@@ -409,6 +413,7 @@ class SessionHub {
 
   async newSession(payload) {
     const entry = this._entry(null, payload.cwd);
+    this._opening.add(entry);
     try {
       entry.snapshot = await entry.client.newSession(payload);
       entry.sessionId = entry.snapshot.sessionId;
@@ -418,10 +423,13 @@ class SessionHub {
     } catch (error) {
       entry.client.dispose();
       throw error;
+    } finally {
+      this._opening.delete(entry);
     }
   }
 
   async loadSession(payload) {
+    this._assertUpdateAllowed();
     let entry = this.sessions.get(payload.sessionId);
     if (!entry) entry = this._entry(payload.sessionId, payload.cwd);
     entry.lastUsed = Date.now();
@@ -467,6 +475,7 @@ class SessionHub {
   }
 
   async send(payload) {
+    this._assertUpdateAllowed();
     const entry = this._get(payload.sessionId);
     if (this._isWorkflowControl(entry, payload)) {
       if (entry.control) throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
@@ -544,6 +553,7 @@ class SessionHub {
   }
 
   enqueue(payload) {
+    this._assertUpdateAllowed();
     const entry = this._get(payload.sessionId);
     const item = this._item({ ...payload, cwd: entry.cwd });
     item.queued = true;
@@ -562,6 +572,7 @@ class SessionHub {
   }
 
   resume({ sessionId }) {
+    this._assertUpdateAllowed();
     const entry = this._get(sessionId);
     entry.paused = false;
     entry.interrupted = false;
@@ -573,7 +584,7 @@ class SessionHub {
   }
 
   _drain() {
-    if (this.closed) return;
+    if (this.closed || this._updating) return;
     for (const entry of this.sessions.values()) {
       if (
         entry.running ||
@@ -774,6 +785,7 @@ class SessionHub {
   }
 
   async configure(payload) {
+    this._assertUpdateAllowed();
     const entry = this._get(payload.sessionId);
     if (entry.running) throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
     if (entry.connection === 'sleeping')
@@ -826,14 +838,79 @@ class SessionHub {
   }
   async restart() {
     if (this.activeTurn) throw new Error(t('当前任务正在运行，请先等待完成或停止任务。'));
+    if (this._stopForUpdatePromise) await this._stopForUpdatePromise;
+    const updating = this._updating;
     for (const entry of this.sessions.values()) {
       entry.client.dispose();
+      entry.client.resumeAfterUpdate?.();
       entry.error = undefined;
-      entry.paused = !!entry.queue.length;
+      entry.paused = !!entry.queue.length || (updating && entry.paused);
+      if (updating && entry.snapshot) entry.connection = 'sleeping';
       entry.status = entry.paused ? 'paused' : 'idle';
     }
     this._changed();
-    return this.catalog.restart();
+    try {
+      return await this.catalog.restart();
+    } finally {
+      this._updating = false;
+    }
+  }
+
+  _assertUpdateAllowed() {
+    if (this._updating)
+      throw new Error(t('正在执行管理操作或重新加载配置，请完成后再操作会话或更换 Grok 程序。'));
+  }
+
+  stopForUpdate() {
+    if (this._stopForUpdatePromise) return this._stopForUpdatePromise;
+    const entries = [...this.sessions.values()];
+    const clients = [this.catalog, ...entries.map((entry) => entry.client)];
+    const busy =
+      this.closed ||
+      this._opening.size ||
+      this.pending.size ||
+      this.locks.size ||
+      entries.some(
+        (entry) =>
+          entry.running ||
+          entry.control ||
+          entry.loading ||
+          entry.reactivating ||
+          entry.backgroundDone ||
+          entry.permissions.size ||
+          entry.activity.busy ||
+          entry.activity.background.size,
+      ) ||
+      clients.some(
+        (client) =>
+          client.activeTurn ||
+          client._preparing ||
+          client._operation ||
+          client._loading ||
+          client._permissions?.size,
+      );
+    if (busy) return Promise.reject(new Error(t('当前任务正在运行，请先等待完成或停止任务。')));
+    this._updating = true;
+    for (const entry of entries) {
+      entry.paused = entry.paused || !!entry.queue.length;
+      entry.evicting = true;
+    }
+    const stopping = Promise.allSettled(clients.map((client) => client.stopForUpdate()))
+      .then((results) => {
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed) throw failed.reason;
+        for (const entry of entries) {
+          entry.connection = entry.snapshot ? 'sleeping' : 'disconnected';
+          entry.status = entry.paused ? 'paused' : 'idle';
+        }
+      })
+      .finally(() => {
+        for (const entry of entries) entry.evicting = false;
+        this._changed();
+        if (this._stopForUpdatePromise === stopping) this._stopForUpdatePromise = null;
+      });
+    this._stopForUpdatePromise = stopping;
+    return stopping;
   }
   async dispose() {
     try {

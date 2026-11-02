@@ -1,13 +1,17 @@
 import { Modal, Spinner } from './components';
 import { useI18n } from './i18n';
 import type { CliStatus } from './types';
-import type { EngineAction } from './useEngine';
+import type { EngineAction, EngineUpdateState } from './useEngine';
+import type { CliInstallState } from './FirstRunWizard';
+import './runtime-upgrades.css';
 
 export default function EngineDialog({
   status,
   fallbackPath,
   authLabel,
   action,
+  engineUpdateState,
+  installState,
   error,
   busy,
   updateBlocked,
@@ -21,6 +25,8 @@ export default function EngineDialog({
   fallbackPath?: string;
   authLabel: string;
   action: EngineAction | '';
+  engineUpdateState?: EngineUpdateState | null;
+  installState?: CliInstallState;
   error: string;
   busy: boolean;
   updateBlocked: boolean;
@@ -31,6 +37,23 @@ export default function EngineDialog({
   onProviders: () => void;
 }) {
   const { t } = useI18n();
+  const updateStatus =
+    action === 'update' && engineUpdateState?.status === 'completed'
+      ? 'verifying'
+      : engineUpdateState?.status;
+  const updateMessages = {
+    stopping: t('正在停止引擎连接…'),
+    updating: t('正在更新 Grok Build…'),
+    repairing: t('更新遇到问题，正在使用官方安装程序自动修复…'),
+    verifying: t('正在验证引擎版本…'),
+    reconnecting: t('正在重新连接引擎…'),
+    completed: engineUpdateState?.version
+      ? t('Grok Build 已更新至 {version}。', { version: engineUpdateState.version })
+      : t('Grok Build 已更新'),
+    error: t('引擎更新未完成。'),
+  };
+  const showRepairLog =
+    action === 'update' && (updateStatus === 'repairing' || engineUpdateState?.repaired);
   return (
     <Modal
       title={t('Grok Build 引擎')}
@@ -61,6 +84,16 @@ export default function EngineDialog({
           </div>
         )}
       </dl>
+      {updateStatus && (
+        <p className="engine-hint" role="status">
+          {updateMessages[updateStatus]}
+        </p>
+      )}
+      {showRepairLog && installState?.log && (
+        <pre className="runtime-install-log" aria-label={t('安装进度')}>
+          {installState.log}
+        </pre>
+      )}
       {error && (
         <p className="danger-text" role="alert">
           {error}

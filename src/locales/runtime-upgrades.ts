@@ -16,6 +16,18 @@ export const runtimeUpgrades: Record<string, string> = {
   '安装已取消，可重新开始。': 'Installation cancelled. You can retry.',
   'CLI 版本验证通过。': 'CLI version verified.',
   安装进度: 'Installation progress',
+  '正在停止引擎连接…': 'Stopping engine connections…',
+  '正在更新 Grok Build…': 'Updating Grok Build…',
+  '更新遇到问题，正在使用官方安装程序自动修复…':
+    'The update needs repair. Running the official installer automatically…',
+  '正在验证引擎版本…': 'Verifying the engine version…',
+  '正在重新连接引擎…': 'Reconnecting the engine…',
+  'Grok Build 已更新至 {version}。': 'Grok Build updated to {version}.',
+  '引擎更新未完成。': 'The engine update did not complete.',
+  '更新后无法确认引擎 {version}，请检查程序路径后重试。':
+    'Unable to verify engine {version} after the update. Check the CLI path and retry.',
+  '更新后无法确认引擎版本，请检查程序路径后重试。':
+    'Unable to verify the engine version after the update. Check the CLI path and retry.',
   '登录 Grok': 'Sign in to Grok',
   '已验证登录状态。': 'Sign-in status verified.',
   '在浏览器完成官方授权，登录状态将自动更新。':

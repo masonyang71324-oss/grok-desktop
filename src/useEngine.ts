@@ -4,6 +4,13 @@ import { errorText, request } from './lib';
 import { useI18n } from './i18n';
 
 export type EngineAction = 'check' | 'refresh' | 'update' | 'login';
+export type EngineUpdateState = {
+  status:
+    'stopping' | 'updating' | 'repairing' | 'verifying' | 'reconnecting' | 'completed' | 'error';
+  version?: string;
+  repaired?: boolean;
+  error?: string;
+};
 export function useEngine({
   getCwd,
   isUpdateBlocked,
@@ -23,26 +30,33 @@ export function useEngine({
   const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
   const [engineAction, setEngineAction] = useState<EngineAction | ''>('');
   const [engineError, setEngineError] = useState('');
+  const [engineUpdateState, setEngineUpdateState] = useState<EngineUpdateState | null>(null);
+  const engineUpdatingRef = useRef(false);
+  const preserveUpdateError = useRef(false);
   const inFlight = useRef(false);
   const cancellingLogin = useRef(false);
-  async function readEngineStatus(checkUpdate = false) {
+  async function readEngineStatus(checkUpdate = false, { preserveError = false } = {}) {
     try {
       const status = await request<CliStatus>(
         'cli.status',
         checkUpdate ? { checkUpdate: true } : undefined,
       );
       setCliStatus(status);
-      setEngineError(status.error || '');
+      if (!preserveError && !preserveUpdateError.current) setEngineError(status.error || '');
+      return status;
     } catch (error) {
-      setEngineError(errorText(error));
+      if (!preserveError && !preserveUpdateError.current) setEngineError(errorText(error));
       setCliStatus((previous) => (previous ? { ...previous, authStatus: 'unknown' } : previous));
     }
   }
   async function runEngineAction(action: EngineAction) {
     if (inFlight.current || (action === 'update' && isUpdateBlocked())) return;
     inFlight.current = true;
+    engineUpdatingRef.current = action === 'update';
+    preserveUpdateError.current = false;
     setEngineAction(action);
     setEngineError('');
+    setEngineUpdateState(action === 'update' ? { status: 'stopping' } : null);
     try {
       if (action === 'login') {
         const result = await request<{ cancelled: boolean; status?: CliStatus }>('cli.login');
@@ -61,9 +75,20 @@ export function useEngine({
             values: {},
           });
           if (result.exitCode) throw new Error(result.text || t('引擎更新失败'));
+          const version = result.data?.version;
+          const status = await readEngineStatus(false, { preserveError: true });
+          if (!version || status?.version !== version)
+            throw new Error(
+              version
+                ? t('更新后无法确认引擎 {version}，请检查程序路径后重试。', { version })
+                : t('更新后无法确认引擎版本，请检查程序路径后重试。'),
+            );
           await onUpdated();
-        } else onRefresh(await request<Bootstrap>('cli.refresh'));
-        await readEngineStatus();
+          setEngineUpdateState({ status: 'completed', version, repaired: result.data?.repaired });
+        } else {
+          onRefresh(await request<Bootstrap>('cli.refresh'));
+          await readEngineStatus();
+        }
         notify(
           t(
             action === 'update'
@@ -75,9 +100,16 @@ export function useEngine({
         );
       }
     } catch (error) {
-      setEngineError(errorText(error));
+      const message = errorText(error);
+      setEngineError(message);
+      if (action === 'update') {
+        preserveUpdateError.current = true;
+        setEngineUpdateState((previous) => ({ ...previous, status: 'error', error: message }));
+        await readEngineStatus(false, { preserveError: true });
+      }
     } finally {
       inFlight.current = false;
+      engineUpdatingRef.current = false;
       setEngineAction('');
     }
   }
@@ -106,6 +138,9 @@ export function useEngine({
     setCliStatus,
     engineAction,
     engineError,
+    engineUpdateState,
+    setEngineUpdateState,
+    engineUpdatingRef,
     engineAuthStatus,
     engineAuthLabel,
     readEngineStatus,

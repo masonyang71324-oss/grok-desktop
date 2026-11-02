@@ -8,7 +8,7 @@ const { resolveGrok } = require('../electron/settings.cjs');
 const { readCliStatus } = require('../electron/cli-status.cjs');
 const { GrokClient } = require('../electron/acp.cjs');
 async function main() {
-  const executable = resolveGrok('');
+  const executable = resolveGrok(process.argv[2] || '');
   const status = await readCliStatus(executable, { checkUpdate: true });
   const methods = [],
     events = [];

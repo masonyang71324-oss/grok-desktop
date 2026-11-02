@@ -741,6 +741,10 @@ export default function App() {
         setInstallState(event.state);
         return;
       }
+      if (event.type === 'engine-update-state') {
+        setEngineUpdateState(event.state);
+        return;
+      }
       if (event.type === 'terminal-data' || event.type === 'terminal-exit') return;
       if (event.type === 'connection') {
         if (!event.sessionId && sessionRef.current) return;
@@ -895,7 +899,7 @@ export default function App() {
         if (event.kind === 'settings-reloaded') {
           if (sessionRef.current) {
             needsRestoreRef.current = true;
-            void restoreSession();
+            if (!engineUpdatingRef.current) void restoreSession();
           }
           return;
         }
@@ -1785,6 +1789,9 @@ export default function App() {
     setCliStatus,
     engineAction,
     engineError,
+    engineUpdateState,
+    setEngineUpdateState,
+    engineUpdatingRef,
     engineAuthStatus,
     engineAuthLabel,
     readEngineStatus,
@@ -1813,6 +1820,7 @@ export default function App() {
       enabled: settings.autoReconnect !== false,
       trusted: projectTrusted && cliStatus?.authStatus !== 'required',
       blocked:
+        engineAction === 'update' ||
         initializing ||
         deleteBusy ||
         pending ||
@@ -1829,6 +1837,7 @@ export default function App() {
   }, [
     connection,
     connectionError,
+    engineAction,
     settings.autoReconnect,
     projectTrusted,
     cliStatus?.authStatus,
@@ -3000,6 +3009,8 @@ export default function App() {
             fallbackPath={bootstrap?.cli.path}
             authLabel={engineAuthLabel}
             action={engineAction}
+            engineUpdateState={engineUpdateState}
+            installState={installState}
             error={engineError}
             busy={engineBusy}
             updateBlocked={engineBusy || configuring || !!loadingSession || initializing}

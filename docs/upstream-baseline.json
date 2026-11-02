@@ -1,5 +1,5 @@
 {
-  "cliVersion": "1.0.52",
+  "cliVersion": "1.0.70",
   "protocolVersion": 1,
   "protocolMethods": [
     "authenticate",

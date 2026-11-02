@@ -36,7 +36,7 @@ const { createProjectRunner } = require('./project-runner.cjs');
 const { storeClipboardImage, previewAttachment } = require('./attachments.cjs');
 const documentFormats = require('./document.cjs');
 const { createAppUpdater } = require('./updater.cjs');
-const { readCliStatus, selectUpdatedCli } = require('./cli-status.cjs');
+const { readCliStatus } = require('./cli-status.cjs');
 const { CliInstaller } = require('./cli-installer.cjs');
 const { CliLogin } = require('./cli-login.cjs');
 const { ProviderStore } = require('./providers.cjs');
@@ -50,7 +50,8 @@ const { createCheckpointTurnHooks } = require('./checkpoint-turns.cjs');
 const { createAccessPolicy, projectKey } = require('./access-policy.cjs');
 const { validateRequest } = require('./request-validation.cjs');
 const { createAttachmentStorage } = require('./attachment-storage.cjs');
-const { withUpdateHealth } = require('./update-health.cjs');
+const { runEngineUpdate } = require('./engine-update.cjs');
+const { createEngineBackup } = require('./engine-program-backup.cjs');
 const { createDiagnostics } = require('./diagnostics.cjs');
 
 app.enableSandbox();
@@ -100,6 +101,7 @@ let win = null,
   exitDialogOpen = false,
   installUpdateRequested = false;
 let engineState = { authStatus: 'unknown' };
+let engineUpdateInFlight = false;
 let draftFlushTimer = null;
 let draftAttachmentPaths = [];
 const activity = new RuntimeActivity({
@@ -581,6 +583,7 @@ async function engineStatus({ checkUpdate = false } = {}) {
 }
 
 async function loginGrok() {
+  activity.assertSessionAllowed();
   const result = await cliLogin.start(resolveGrok(settings.grokPath));
   if (result.cancelled) return result;
   const status = await engineStatus();
@@ -595,6 +598,97 @@ async function refreshEngine() {
   await client.catalog.restart();
   await engineStatus();
   return bootstrap();
+}
+
+async function updateEngine() {
+  engineUpdateInFlight = true;
+  let saved;
+  const publish = (status, details = {}) =>
+    emit({ type: 'engine-update-state', state: { status, ...details } });
+  try {
+    publish('verifying');
+    if (cliLogin.operation) throw new Error(t('请先完成或取消官方登录，再更新引擎。'));
+    if (externalProjectTerminals.size)
+      throw new Error(t('请先关闭由本程序打开的 Grok 终端，再更新引擎。'));
+    const executable = resolveGrok(settings.grokPath);
+    const before = await readCliStatus(executable, { run: runGrokDiagnostic, checkUpdate: true });
+    if (!before.latestVersion)
+      throw new Error(before.error || t('无法检查 Grok Build 更新，请检查网络后重试。'));
+    if (!before.updateAvailable && before.version === before.latestVersion) {
+      publish('completed', { version: before.version, repaired: false });
+      return {
+        exitCode: 0,
+        text: t('Grok Build 已是最新版本。'),
+        data: { version: before.version, repaired: false },
+      };
+    }
+    const expectedVersion = before.latestVersion;
+    const result = await runEngineUpdate({
+      executable,
+      expectedVersion,
+      stop: async () => {
+        await client.stopForUpdate();
+        try {
+          saved = await createEngineBackup(
+            executable,
+            path.join(app.getPath('userData'), 'engine-backups'),
+          );
+        } catch (error) {
+          await client.restart().catch(() => {});
+          throw new Error(
+            t('无法备份当前引擎，已取消更新：{message}', { message: error.message }),
+            { cause: error },
+          );
+        }
+      },
+      update: () => runManagement(executable, 'update-install', {}, os.homedir()),
+      repair: ({ binDir, version }) => cliInstaller.start({ binDir, version }),
+      probe: (filename) =>
+        runGrokDiagnostic(filename, ['--no-auto-update', '--version'], {
+          timeout: 10000,
+          maxBytes: 4096,
+        }),
+      restore: async () => {
+        if (saved) await saved.restore();
+      },
+      reconnect: async (installed) => {
+        if (quitting) throw new Error(t('桌面程序正在退出，请重新打开后刷新引擎。'));
+        await access.grantExecutable(installed.path);
+        if (installed.path !== settings.grokPath) {
+          const save = settingsQueue.then(async () => {
+            settings = await writeSettings(settingsFile, { ...settings, grokPath: installed.path });
+          });
+          settingsQueue = save.catch(() => {});
+          await save;
+        }
+        await client.restart();
+        await engineStatus();
+        emit({
+          type: 'notification',
+          kind: 'settings-reloaded',
+          payload: { message: t('配置已更新，Grok 已重新连接。') },
+        });
+      },
+      onState: ({ phase }) =>
+        publish({ ready: 'completed', failed: 'error', restoring: 'repairing' }[phase] || phase, {
+          version: expectedVersion,
+        }),
+    });
+    publish('completed', { version: result.version, repaired: result.repaired });
+    return {
+      exitCode: 0,
+      text: t('Grok Build 已更新'),
+      data: { version: result.version, repaired: result.repaired },
+    };
+  } catch (error) {
+    publish('error', {
+      error: error.message,
+      ...(error.engineVersion ? { version: error.engineVersion } : {}),
+    });
+    throw error;
+  } finally {
+    engineUpdateInFlight = false;
+  }
 }
 
 async function validCwd(cwd, trusted = false) {
@@ -687,6 +781,7 @@ async function openSystem({ target, cwd, path: filepath, url }) {
   }
   if (target === 'grok-login') return loginGrok();
   if (target === 'terminal') {
+    activity.assertSessionAllowed();
     const directory = access.project(cwd || settings.lastProject, true).cwd;
     const exe = resolveGrok(settings.grokPath);
     const code = `& '${exe.replaceAll("'", "''")}'`;
@@ -816,38 +911,12 @@ async function management({ action, cwd, values = {} }) {
     });
   }
   const command = buildCommand(action, values);
+  activity.assertSessionAllowed();
   const run = async () => {
+    if (action === 'update-install') return updateEngine();
     const directory = cwd && !action.startsWith('update-') ? await validCwd(cwd) : os.homedir();
     const executable = resolveGrok(settings.grokPath);
-    const beforeUpdate =
-      action === 'update-install'
-        ? await readCliStatus(executable, { run: runGrokDiagnostic, checkUpdate: true })
-        : null;
-    if (beforeUpdate && !beforeUpdate.latestVersion)
-      throw new Error(beforeUpdate.error || t('无法检查 Grok Build 更新，请检查网络后重试。'));
-    const runCommand = () => runManagement(executable, action, values, directory);
-    const result =
-      action === 'update-install'
-        ? await withUpdateHealth(executable, runCommand, (filename) =>
-            runGrokDiagnostic(filename, ['--version'], { timeout: 10000, maxBytes: 4096 }),
-          )
-        : await runCommand();
-    if (beforeUpdate) {
-      const updatedPath = await selectUpdatedCli(
-        executable,
-        resolveGrok(),
-        beforeUpdate.latestVersion,
-        { run: runGrokDiagnostic },
-      );
-      if (updatedPath !== executable) {
-        const savePath = settingsQueue.then(async () => {
-          settings = await writeSettings(settingsFile, { ...settings, grokPath: updatedPath });
-        });
-        settingsQueue = savePath.catch(() => {});
-        await savePath;
-        await engineStatus();
-      }
-    }
+    const result = await runManagement(executable, action, values, directory);
     if (command.mutates) {
       await client.restart();
       emit({
@@ -864,6 +933,8 @@ async function management({ action, cwd, values = {} }) {
 const handlers = {
   bootstrap,
   'cli.status': async (payload) => {
+    // UI polling/reloads must not open the executable while it is being replaced.
+    if (engineUpdateInFlight) return { ...engineState, models: client.models };
     try {
       return await engineStatus(payload);
     } catch (error) {
@@ -973,6 +1044,7 @@ const handlers = {
   'attachments.storage': (payload) => attachmentStorage.list(payload),
   'attachments.removeMany': (payload) => attachmentStorage.removeMany(payload),
   'dialog.grok': async () => {
+    activity.assertSessionAllowed();
     const result = await dialog.showOpenDialog(win, {
       title: t('选择 Grok Build 程序'),
       defaultPath: settings.grokPath || undefined,
@@ -1339,6 +1411,15 @@ function createWindow() {
   });
   win.on('close', (event) => {
     saveWindowState();
+    if (engineUpdateInFlight) {
+      event.preventDefault();
+      emit({
+        type: 'notification',
+        kind: 'engine-update-wait',
+        payload: { message: t('引擎正在更新或修复，请等待完成后再退出。') },
+      });
+      return;
+    }
     if (quitting || (!activity.busy && !runner.busy && !terminals.busy)) return;
     event.preventDefault();
     if (exitDialogOpen) return;

@@ -99,10 +99,15 @@ class CliInstaller {
       child.once('close', (code) => finish(null, code));
     });
   }
-  start() {
+  /** @param {{binDir?: string, version?: string}} [options] */
+  start({ binDir = this.binDir, version } = {}) {
     if (this.operation) return this.operation.done;
     if (this.closed) return Promise.reject(new Error(t('CLI 安装器已关闭。')));
-    const op = { cancelled: false };
+    if (typeof binDir !== 'string' || !path.isAbsolute(binDir))
+      return Promise.reject(new Error(t('请选择有效的引擎安装目录。')));
+    if (version !== undefined && !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version))
+      return Promise.reject(new Error(t('无法确认目标引擎版本，请重新检查更新。')));
+    const op = { cancelled: false, binDir: path.resolve(binDir), version };
     this.operation = op;
     this.current = { status: 'installing', log: '' };
     this._publish({});
@@ -114,10 +119,11 @@ class CliInstaller {
   async _run(op) {
     try {
       /** @type {NodeJS.ProcessEnv} */
-      const env = { ...process.env, GROK_CHANNEL: 'stable', GROK_BIN_DIR: this.binDir };
+      const env = { ...process.env, GROK_CHANNEL: 'stable', GROK_BIN_DIR: op.binDir };
       // Explicit stable release ignores an inherited version pin / deployment configuration.
       delete env.GROK_VERSION;
       delete env.GROK_DEPLOYMENT_KEY;
+      if (op.version) env.GROK_VERSION = op.version;
       const result = await this._process(
         windowsPowerShellPath(),
         [
@@ -134,13 +140,17 @@ class CliInstaller {
       );
       if (op.cancelled) throw new Error(t('CLI 安装已取消。'));
       if (result.code !== 0) throw new Error(t('官方 CLI 安装程序未成功退出，请查看进度后重试。'));
-      const executable = path.join(this.binDir, 'grok.exe');
+      const executable = path.join(op.binDir, 'grok.exe');
       this._publish({ status: 'verifying' });
       const verification = await this._process(executable, ['--version'], op);
       if (op.cancelled) throw new Error(t('CLI 安装已取消。'));
       const version = verification.output.match(/\bgrok\s+v?(\d+\.\d+\.\d+(?:[-+][\w.-]+)?)/i)?.[1];
       if (verification.code !== 0 || !version)
         throw new Error(t('安装后无法验证 grok.exe 版本，请重新选择程序或重试。'));
+      if (op.version && version !== op.version)
+        throw new Error(
+          t('安装后未检测到目标引擎 {version}，请重新修复。', { version: op.version }),
+        );
       this._publish({ status: 'installed', path: executable, version });
     } catch (error) {
       this._publish({

@@ -163,6 +163,64 @@ test('official installation requires zero exit and verified executable version',
   assert.deepEqual(calls[1].args, ['--version']);
 });
 
+test('official repair installs the requested stable version in the configured executable directory', async (t) => {
+  const { CliInstaller } = require('../electron/cli-installer.cjs');
+  const binDir = path.join(home(t), 'custom engine');
+  const calls = [];
+  const installer = new CliInstaller({
+    spawnFn: (exe, args, options) => {
+      calls.push({ exe, args, options });
+      const child = fakeProcess();
+      setImmediate(() => {
+        child.stdout.write(args[0] === '--version' ? 'grok 1.0.70\n' : 'Installed\n');
+        child.emit('close', 0);
+      });
+      return child;
+    },
+  });
+  const result = await installer.start({ binDir, version: '1.0.70' });
+  assert.equal(result.status, 'installed');
+  assert.equal(result.path, path.join(binDir, 'grok.exe'));
+  assert.equal(calls[0].options.env.GROK_BIN_DIR, binDir);
+  assert.equal(calls[0].options.env.GROK_VERSION, '1.0.70');
+  assert.equal(calls[0].options.env.GROK_CHANNEL, 'stable');
+  assert.equal(calls[1].exe, result.path);
+});
+
+test('official repair rejects an installed executable whose version differs from the target', async (t) => {
+  const { CliInstaller } = require('../electron/cli-installer.cjs');
+  const installer = new CliInstaller({
+    binDir: home(t),
+    spawnFn: (_exe, args) => {
+      const child = fakeProcess();
+      setImmediate(() => {
+        child.stdout.write(args[0] === '--version' ? 'grok 1.0.52\n' : 'Install completed\n');
+        child.emit('close', 0);
+      });
+      return child;
+    },
+  });
+  const state = await installer.start({ version: '1.0.70' });
+  assert.equal(state.status, 'error');
+  assert.match(state.error, /1\.0\.70/);
+});
+
+test('official repair rejects invalid target parameters before starting an installer', async () => {
+  const { CliInstaller } = require('../electron/cli-installer.cjs');
+  let launches = 0;
+  const installer = new CliInstaller({
+    timeout: 25,
+    killTree: async () => {},
+    spawnFn: () => {
+      launches++;
+      return fakeProcess();
+    },
+  });
+  await assert.rejects(installer.start({ version: 'stable; launch' }), /版本/);
+  await assert.rejects(installer.start({ binDir: 'relative/path' }), /目录/);
+  assert.equal(launches, 0);
+});
+
 test('installation cancellation kills the owned tree and ignores late success', async (t) => {
   const { CliInstaller } = require('../electron/cli-installer.cjs');
   const child = fakeProcess();

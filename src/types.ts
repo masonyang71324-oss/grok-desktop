@@ -145,6 +145,22 @@ export interface PermissionRequest {
 }
 export type DesktopEvent =
   | {
+      type: 'engine-update-state';
+      state: {
+        status:
+          | 'stopping'
+          | 'updating'
+          | 'repairing'
+          | 'verifying'
+          | 'reconnecting'
+          | 'completed'
+          | 'error';
+        version?: string;
+        repaired?: boolean;
+        error?: string;
+      };
+    }
+  | {
       type: 'cli-install-state';
       state: {
         status: 'idle' | 'installing' | 'verifying' | 'installed' | 'cancelled' | 'error';

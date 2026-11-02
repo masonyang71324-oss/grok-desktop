@@ -6,6 +6,96 @@ const path = require('node:path');
 const { SessionHub } = require('../electron/session-hub.cjs');
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+test('update stop awaits catalog and idle sessions without losing snapshots or replaying queued work', async () => {
+  const { hub, clients } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  const b = await hub.newSession({ cwd: '/b' });
+  const snapshot = hub.sessions.get(a.sessionId).snapshot;
+  const entry = hub.sessions.get(b.sessionId);
+  entry.paused = true;
+  await hub.enqueue({ ...b, text: 'keep queued' });
+  const releases = [];
+  for (const client of clients) {
+    client.stopForUpdate = () =>
+      new Promise((resolve) =>
+        releases.push(() => {
+          client.connected = false;
+          resolve();
+        }),
+      );
+    client.resumeAfterUpdate = () => {
+      client.resumed = true;
+    };
+    client.restart = async () => {
+      client.connected = true;
+      client.resumed = true;
+      return {};
+    };
+  }
+  let stopped = false;
+  const stopping = hub.stopForUpdate().then(() => {
+    stopped = true;
+  });
+  await tick();
+  assert.equal(releases.length, 3);
+  assert.equal(stopped, false);
+  await assert.rejects(hub.newSession({ cwd: '/c' }), /管理操作/);
+  await assert.rejects(hub.send({ ...a, text: 'must not start' }), /管理操作/);
+  releases.slice(0, 2).forEach((release) => release());
+  await tick();
+  assert.equal(stopped, false);
+  releases[2]();
+  await stopping;
+  assert.equal(hub.sessions.get(a.sessionId).snapshot, snapshot);
+  assert.equal(entry.queue[0].payload.text, 'keep queued');
+  await hub.restart();
+  assert.equal(
+    clients.every((client) => client.resumed),
+    true,
+  );
+  assert.equal(entry.paused, true);
+  assert.deepEqual(clients[2].sent, []);
+  assert.ok((await hub.newSession({ cwd: '/c' })).sessionId);
+  await hub.dispose();
+});
+
+test('update stop refuses active tasks and pending session creation before stopping any client', async () => {
+  const { hub, clients } = fixture();
+  const a = await hub.newSession({ cwd: '/a' });
+  let stops = 0;
+  clients.forEach(
+    (client) =>
+      (client.stopForUpdate = async () => {
+        stops++;
+      }),
+  );
+  await hub.send({ ...a, text: 'still running' });
+  await assert.rejects(hub.stopForUpdate(), /当前任务正在运行/);
+  assert.equal(stops, 0);
+  await hub.cancel(a);
+  await tick();
+  let release;
+  const original = hub.createClient;
+  hub.createClient = (emit) => {
+    const client = original(emit);
+    client.newSession = () =>
+      new Promise((resolve) => {
+        release = () => resolve({ sessionId: 'opening', cwd: '/b', updates: [] });
+      });
+    client.stopForUpdate = async () => {
+      stops++;
+    };
+    return client;
+  };
+  const opening = hub.newSession({ cwd: '/b' });
+  await tick();
+  await assert.rejects(hub.stopForUpdate(), /当前任务正在运行/);
+  assert.equal(stops, 0);
+  release();
+  await opening;
+  await hub.dispose();
+});
+
 test('workspace mutation reserves the directory before await and drains queued sends afterward', async () => {
   const { hub, clients } = fixture();
   const a = await hub.newSession({ cwd: '/same' });
